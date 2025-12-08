@@ -1,0 +1,501 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import * as path from 'node:path';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+
+import {
+  normalizePath,
+  toRelativePath,
+  toAbsolutePath,
+  isPathTraversal,
+  safeJoin,
+  isWithinDirectory,
+  getStorageRoot,
+  getIndexPath,
+  getIndexesDir,
+  getLogsPath,
+  getConfigPath,
+  getMetadataPath,
+  getFingerprintsPath,
+  getLanceDbPath,
+  expandTilde,
+  getExtension,
+  getBaseName,
+} from '../../src/utils/paths.js';
+
+// Mock fs and os modules for testing storage paths
+vi.mock('node:fs', async () => {
+  const actual = await vi.importActual<typeof fs>('node:fs');
+  return {
+    ...actual,
+    existsSync: vi.fn().mockReturnValue(true),
+    mkdirSync: vi.fn(),
+  };
+});
+
+vi.mock('node:os', async () => {
+  const actual = await vi.importActual<typeof os>('node:os');
+  return {
+    ...actual,
+    homedir: vi.fn().mockReturnValue(
+      process.platform === 'win32' ? 'C:\\Users\\testuser' : '/home/testuser'
+    ),
+  };
+});
+
+describe('Path Utilities', () => {
+  describe('normalizePath', () => {
+    it('should resolve relative paths to absolute', () => {
+      const cwd = process.cwd();
+      const result = normalizePath('.');
+      expect(result).toBe(cwd);
+    });
+
+    it('should normalize parent directory references', () => {
+      const cwd = process.cwd();
+      const parent = path.dirname(cwd);
+      const result = normalizePath('..');
+      expect(result).toBe(parent);
+    });
+
+    it('should remove trailing separators', () => {
+      const testPath =
+        process.platform === 'win32' ? 'C:\\Users\\test\\' : '/home/test/';
+      const expected =
+        process.platform === 'win32' ? 'C:\\Users\\test' : '/home/test';
+      const result = normalizePath(testPath);
+      expect(result).toBe(expected);
+    });
+
+    it('should preserve root path', () => {
+      if (process.platform === 'win32') {
+        const result = normalizePath('C:\\');
+        expect(result).toBe('C:\\');
+      } else {
+        const result = normalizePath('/');
+        expect(result).toBe('/');
+      }
+    });
+
+    it('should handle paths with redundant separators', () => {
+      if (process.platform !== 'win32') {
+        const result = normalizePath('/home//test///project');
+        expect(result).toBe('/home/test/project');
+      }
+    });
+  });
+
+  describe('toRelativePath', () => {
+    it('should convert absolute path to relative with forward slashes', () => {
+      const basePath =
+        process.platform === 'win32'
+          ? 'C:\\Users\\dev\\project'
+          : '/Users/dev/project';
+      const absolutePath =
+        process.platform === 'win32'
+          ? 'C:\\Users\\dev\\project\\src\\utils\\hash.ts'
+          : '/Users/dev/project/src/utils/hash.ts';
+
+      const result = toRelativePath(absolutePath, basePath);
+      expect(result).toBe('src/utils/hash.ts');
+    });
+
+    it('should return empty string for same path', () => {
+      const basePath =
+        process.platform === 'win32'
+          ? 'C:\\Users\\dev\\project'
+          : '/Users/dev/project';
+
+      const result = toRelativePath(basePath, basePath);
+      expect(result).toBe('');
+    });
+
+    it('should handle nested paths correctly', () => {
+      const basePath =
+        process.platform === 'win32'
+          ? 'C:\\Users\\dev\\project'
+          : '/Users/dev/project';
+      const absolutePath =
+        process.platform === 'win32'
+          ? 'C:\\Users\\dev\\project\\deeply\\nested\\path\\file.ts'
+          : '/Users/dev/project/deeply/nested/path/file.ts';
+
+      const result = toRelativePath(absolutePath, basePath);
+      expect(result).toBe('deeply/nested/path/file.ts');
+    });
+
+    it('should always use forward slashes regardless of platform', () => {
+      // This test verifies the cross-platform consistency requirement
+      const basePath =
+        process.platform === 'win32'
+          ? 'C:\\Users\\dev\\project'
+          : '/Users/dev/project';
+      const absolutePath =
+        process.platform === 'win32'
+          ? 'C:\\Users\\dev\\project\\src\\file.ts'
+          : '/Users/dev/project/src/file.ts';
+
+      const result = toRelativePath(absolutePath, basePath);
+      expect(result).not.toContain('\\');
+      expect(result).toBe('src/file.ts');
+    });
+  });
+
+  describe('toAbsolutePath', () => {
+    it('should convert relative path to absolute', () => {
+      const basePath =
+        process.platform === 'win32'
+          ? 'C:\\Users\\dev\\project'
+          : '/Users/dev/project';
+      const relativePath = 'src/utils/hash.ts';
+
+      const result = toAbsolutePath(relativePath, basePath);
+      const expected =
+        process.platform === 'win32'
+          ? 'C:\\Users\\dev\\project\\src\\utils\\hash.ts'
+          : '/Users/dev/project/src/utils/hash.ts';
+
+      expect(result).toBe(expected);
+    });
+
+    it('should handle forward slashes on Windows', () => {
+      const basePath =
+        process.platform === 'win32'
+          ? 'C:\\Users\\dev\\project'
+          : '/Users/dev/project';
+
+      const result = toAbsolutePath('src/utils/hash.ts', basePath);
+      expect(path.isAbsolute(result)).toBe(true);
+    });
+  });
+
+  describe('isPathTraversal', () => {
+    it('should detect parent directory traversal', () => {
+      expect(isPathTraversal('../../../etc/passwd')).toBe(true);
+      expect(isPathTraversal('../file.txt')).toBe(true);
+      expect(isPathTraversal('foo/../../../bar')).toBe(true);
+    });
+
+    it('should detect absolute paths', () => {
+      expect(isPathTraversal('/etc/passwd')).toBe(true);
+      expect(isPathTraversal('/home/user/file.txt')).toBe(true);
+    });
+
+    it('should detect Windows absolute paths', () => {
+      expect(isPathTraversal('C:\\Windows\\System32')).toBe(true);
+      expect(isPathTraversal('D:/data/file.txt')).toBe(true);
+    });
+
+    it('should detect null byte injection', () => {
+      expect(isPathTraversal('file.txt\0.jpg')).toBe(true);
+    });
+
+    it('should allow safe relative paths', () => {
+      expect(isPathTraversal('src/utils/hash.ts')).toBe(false);
+      expect(isPathTraversal('file.txt')).toBe(false);
+      expect(isPathTraversal('deeply/nested/path/file.ts')).toBe(false);
+    });
+
+    it('should handle mixed separators', () => {
+      expect(isPathTraversal('..\\..\\etc\\passwd')).toBe(true);
+      expect(isPathTraversal('foo\\..\\..\\bar')).toBe(true);
+    });
+  });
+
+  describe('safeJoin', () => {
+    const basePath =
+      process.platform === 'win32'
+        ? 'C:\\Users\\dev\\project'
+        : '/Users/dev/project';
+
+    it('should join safe relative paths', () => {
+      const result = safeJoin(basePath, 'src/utils/hash.ts');
+      expect(result).not.toBeNull();
+      expect(result).toContain('src');
+      expect(result).toContain('utils');
+      expect(result).toContain('hash.ts');
+    });
+
+    it('should return null for obvious traversal attacks', () => {
+      const result = safeJoin(basePath, '../../../../etc/passwd');
+      expect(result).toBeNull();
+    });
+
+    it('should allow paths with .. that resolve within base', () => {
+      const result = safeJoin(basePath, 'src/../config.ts');
+      expect(result).not.toBeNull();
+      if (result) {
+        expect(result).toContain('config.ts');
+        expect(isWithinDirectory(result, basePath)).toBe(true);
+      }
+    });
+
+    it('should return null for paths escaping base via ..', () => {
+      const result = safeJoin(basePath, 'src/../../other-project/file.ts');
+      expect(result).toBeNull();
+    });
+
+    it('should handle simple file names', () => {
+      const result = safeJoin(basePath, 'README.md');
+      expect(result).not.toBeNull();
+      if (result) {
+        expect(result.endsWith('README.md')).toBe(true);
+      }
+    });
+  });
+
+  describe('isWithinDirectory', () => {
+    const baseDir =
+      process.platform === 'win32'
+        ? 'C:\\Users\\dev\\project'
+        : '/Users/dev/project';
+
+    it('should return true for paths within directory', () => {
+      const targetPath =
+        process.platform === 'win32'
+          ? 'C:\\Users\\dev\\project\\src\\file.ts'
+          : '/Users/dev/project/src/file.ts';
+
+      expect(isWithinDirectory(targetPath, baseDir)).toBe(true);
+    });
+
+    it('should return true for the directory itself', () => {
+      expect(isWithinDirectory(baseDir, baseDir)).toBe(true);
+    });
+
+    it('should return false for paths outside directory', () => {
+      const outsidePath =
+        process.platform === 'win32'
+          ? 'C:\\Users\\dev\\other-project\\file.ts'
+          : '/Users/dev/other-project/file.ts';
+
+      expect(isWithinDirectory(outsidePath, baseDir)).toBe(false);
+    });
+
+    it('should return false for sibling paths', () => {
+      const siblingPath =
+        process.platform === 'win32'
+          ? 'C:\\Users\\dev\\project-backup\\file.ts'
+          : '/Users/dev/project-backup/file.ts';
+
+      expect(isWithinDirectory(siblingPath, baseDir)).toBe(false);
+    });
+  });
+
+  describe('Storage Path Helpers', () => {
+    beforeEach(() => {
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+      vi.mocked(fs.mkdirSync).mockClear();
+    });
+
+    describe('getStorageRoot', () => {
+      it('should return path under home directory', () => {
+        const result = getStorageRoot();
+        const expectedBase =
+          process.platform === 'win32'
+            ? 'C:\\Users\\testuser\\.mcp\\search'
+            : '/home/testuser/.mcp/search';
+
+        expect(result).toBe(expectedBase);
+      });
+
+      it('should create directory if not exists', () => {
+        getStorageRoot();
+        expect(fs.mkdirSync).toHaveBeenCalledWith(expect.any(String), {
+          recursive: true,
+        });
+      });
+
+      it('should not create directory if exists', () => {
+        vi.mocked(fs.existsSync).mockReturnValue(true);
+        getStorageRoot();
+        expect(fs.mkdirSync).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('getIndexPath', () => {
+      it('should return path under indexes directory with hash', () => {
+        const projectPath =
+          process.platform === 'win32'
+            ? 'C:\\Users\\dev\\my-project'
+            : '/Users/dev/my-project';
+
+        const result = getIndexPath(projectPath);
+
+        expect(result).toContain('.mcp');
+        expect(result).toContain('search');
+        expect(result).toContain('indexes');
+        // Should contain a hash (16 hex characters)
+        const parts = result.split(path.sep);
+        const hash = parts[parts.length - 1];
+        expect(hash).toMatch(/^[a-f0-9]{16}$/);
+      });
+
+      it('should create directory if not exists', () => {
+        const projectPath =
+          process.platform === 'win32'
+            ? 'C:\\Users\\dev\\my-project'
+            : '/Users/dev/my-project';
+
+        getIndexPath(projectPath);
+        expect(fs.mkdirSync).toHaveBeenCalled();
+      });
+    });
+
+    describe('getIndexesDir', () => {
+      it('should return indexes directory path', () => {
+        const result = getIndexesDir();
+        const expectedBase =
+          process.platform === 'win32'
+            ? 'C:\\Users\\testuser\\.mcp\\search\\indexes'
+            : '/home/testuser/.mcp/search/indexes';
+
+        expect(result).toBe(expectedBase);
+      });
+    });
+  });
+
+  describe('Index Subdirectory Helpers', () => {
+    const indexPath =
+      process.platform === 'win32'
+        ? 'C:\\Users\\testuser\\.mcp\\search\\indexes\\abc123'
+        : '/home/testuser/.mcp/search/indexes/abc123';
+
+    it('getLogsPath should return logs subdirectory', () => {
+      const result = getLogsPath(indexPath);
+      expect(result).toBe(path.join(indexPath, 'logs'));
+    });
+
+    it('getConfigPath should return config.json path', () => {
+      const result = getConfigPath(indexPath);
+      expect(result).toBe(path.join(indexPath, 'config.json'));
+    });
+
+    it('getMetadataPath should return metadata.json path', () => {
+      const result = getMetadataPath(indexPath);
+      expect(result).toBe(path.join(indexPath, 'metadata.json'));
+    });
+
+    it('getFingerprintsPath should return fingerprints.json path', () => {
+      const result = getFingerprintsPath(indexPath);
+      expect(result).toBe(path.join(indexPath, 'fingerprints.json'));
+    });
+
+    it('getLanceDbPath should return index.lancedb path', () => {
+      const result = getLanceDbPath(indexPath);
+      expect(result).toBe(path.join(indexPath, 'index.lancedb'));
+    });
+  });
+
+  describe('Utility Functions', () => {
+    describe('expandTilde', () => {
+      it('should expand ~ to home directory', () => {
+        const result = expandTilde('~/documents/file.txt');
+        const homeDir =
+          process.platform === 'win32'
+            ? 'C:\\Users\\testuser'
+            : '/home/testuser';
+
+        expect(result.startsWith(homeDir)).toBe(true);
+        expect(result).toContain('documents');
+        expect(result).toContain('file.txt');
+      });
+
+      it('should not modify paths without tilde', () => {
+        const inputPath =
+          process.platform === 'win32'
+            ? 'C:\\Users\\dev\\file.txt'
+            : '/Users/dev/file.txt';
+
+        const result = expandTilde(inputPath);
+        expect(result).toBe(inputPath);
+      });
+
+      it('should handle just tilde', () => {
+        const result = expandTilde('~');
+        const homeDir =
+          process.platform === 'win32'
+            ? 'C:\\Users\\testuser'
+            : '/home/testuser';
+
+        expect(result).toBe(homeDir);
+      });
+    });
+
+    describe('getExtension', () => {
+      it('should return file extension without dot', () => {
+        expect(getExtension('/path/to/file.ts')).toBe('ts');
+        expect(getExtension('/path/to/file.test.js')).toBe('js');
+        expect(getExtension('file.json')).toBe('json');
+      });
+
+      it('should return empty string for no extension', () => {
+        expect(getExtension('/path/to/Makefile')).toBe('');
+        expect(getExtension('/path/to/file')).toBe('');
+      });
+
+      it('should handle dotfiles', () => {
+        // Node.js path.extname treats dotfiles as having no extension
+        // e.g., .gitignore has basename ".gitignore" with no extension
+        expect(getExtension('/path/to/.gitignore')).toBe('');
+        expect(getExtension('.env')).toBe('');
+        // But files like .eslintrc.json do have an extension
+        expect(getExtension('/path/to/.eslintrc.json')).toBe('json');
+      });
+    });
+
+    describe('getBaseName', () => {
+      it('should return file name without extension', () => {
+        expect(getBaseName('/path/to/file.ts')).toBe('file');
+        expect(getBaseName('/path/to/component.test.js')).toBe('component.test');
+        expect(getBaseName('config.json')).toBe('config');
+      });
+
+      it('should return full name for files without extension', () => {
+        expect(getBaseName('/path/to/Makefile')).toBe('Makefile');
+        expect(getBaseName('/path/to/Dockerfile')).toBe('Dockerfile');
+      });
+
+      it('should handle dotfiles', () => {
+        // Node.js path.basename without extension returns full name for dotfiles
+        expect(getBaseName('/path/to/.gitignore')).toBe('.gitignore');
+        expect(getBaseName('.env')).toBe('.env');
+        // Dotfiles with extensions return name without extension
+        expect(getBaseName('/path/to/.eslintrc.json')).toBe('.eslintrc');
+      });
+    });
+  });
+
+  describe('Cross-Platform Consistency', () => {
+    it('relative paths should always use forward slashes', () => {
+      // This is a key requirement: stored relative paths must be consistent
+      const basePath =
+        process.platform === 'win32'
+          ? 'C:\\Users\\dev\\project'
+          : '/Users/dev/project';
+      const absolutePath =
+        process.platform === 'win32'
+          ? 'C:\\Users\\dev\\project\\deeply\\nested\\file.ts'
+          : '/Users/dev/project/deeply/nested/file.ts';
+
+      const relativePath = toRelativePath(absolutePath, basePath);
+
+      // Should never contain backslashes
+      expect(relativePath).not.toContain('\\');
+      // Should use forward slashes
+      expect(relativePath).toBe('deeply/nested/file.ts');
+    });
+
+    it('should handle mixed input separators', () => {
+      // Someone might accidentally use wrong separators
+      const basePath =
+        process.platform === 'win32'
+          ? 'C:\\Users\\dev\\project'
+          : '/Users/dev/project';
+
+      // Using forward slashes even on Windows in relative path
+      const result = toAbsolutePath('src/utils/hash.ts', basePath);
+      expect(path.isAbsolute(result)).toBe(true);
+    });
+  });
+});

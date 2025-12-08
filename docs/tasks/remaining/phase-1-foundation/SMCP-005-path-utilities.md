@@ -3,11 +3,11 @@ task_id: "SMCP-005"
 title: "Path Utilities"
 category: "Technical"
 priority: "P1"
-status: "not-started"
+status: "completed"
 created_date: "2025-12-09"
 due_date: ""
 estimated_hours: 1
-actual_hours: 0
+actual_hours: 1
 assigned_to: "blakazulu"
 tags: ["foundation", "utilities", "filesystem"]
 ---
@@ -20,10 +20,10 @@ Implement path manipulation utilities for safe path operations across platforms.
 
 ## Goals
 
-- [ ] Create cross-platform path normalization
-- [ ] Implement relative path conversion
-- [ ] Add path traversal prevention
-- [ ] Provide index storage path helpers
+- [x] Create cross-platform path normalization
+- [x] Implement relative path conversion
+- [x] Add path traversal prevention
+- [x] Provide index storage path helpers
 
 ## Success Criteria
 
@@ -53,7 +53,7 @@ Implement path manipulation utilities for safe path operations across platforms.
 
 ### Phase 1: Path Normalization (0.25 hours)
 
-- [ ] 1.1 Implement path normalization
+- [x] 1.1 Implement path normalization
     ```typescript
     function normalizePath(inputPath: string): string
     // Resolves to absolute path
@@ -61,7 +61,7 @@ Implement path manipulation utilities for safe path operations across platforms.
     // Removes trailing slashes
     ```
 
-- [ ] 1.2 Implement relative path conversion
+- [x] 1.2 Implement relative path conversion
     ```typescript
     function toRelativePath(absolutePath: string, basePath: string): string
     // Returns forward-slash separated relative path
@@ -70,13 +70,13 @@ Implement path manipulation utilities for safe path operations across platforms.
 
 ### Phase 2: Security Functions (0.25 hours)
 
-- [ ] 2.1 Implement traversal detection
+- [x] 2.1 Implement traversal detection
     ```typescript
     function isPathTraversal(relativePath: string): boolean
     // Detects ../ or absolute paths in relative context
     ```
 
-- [ ] 2.2 Implement safe path joining
+- [x] 2.2 Implement safe path joining
     ```typescript
     function safeJoin(basePath: string, relativePath: string): string | null
     // Joins paths and validates result is within base
@@ -85,21 +85,21 @@ Implement path manipulation utilities for safe path operations across platforms.
 
 ### Phase 3: Storage Paths (0.25 hours)
 
-- [ ] 3.1 Implement global storage root
+- [x] 3.1 Implement global storage root
     ```typescript
     function getStorageRoot(): string
     // Returns ~/.mcp/search/
     // Creates directory if not exists
     ```
 
-- [ ] 3.2 Implement index path getter
+- [x] 3.2 Implement index path getter
     ```typescript
     function getIndexPath(projectPath: string): string
     // Returns ~/.mcp/search/indexes/<hash>/
     // Uses hashProjectPath for directory name
     ```
 
-- [ ] 3.3 Implement subdirectory helpers
+- [x] 3.3 Implement subdirectory helpers
     ```typescript
     function getLogsPath(indexPath: string): string
     function getConfigPath(indexPath: string): string
@@ -110,9 +110,9 @@ Implement path manipulation utilities for safe path operations across platforms.
 
 ### Phase 4: Export & Tests (0.25 hours)
 
-- [ ] 4.1 Export from `src/utils/paths.ts`
+- [x] 4.1 Export from `src/utils/paths.ts`
 
-- [ ] 4.2 Write unit tests
+- [x] 4.2 Write unit tests
     - Test cross-platform normalization
     - Test traversal detection
     - Test storage path generation
@@ -128,11 +128,11 @@ Implement path manipulation utilities for safe path operations across platforms.
 
 Before marking this task complete:
 
-- [ ] All subtasks completed
-- [ ] Paths work correctly on Windows
-- [ ] Traversal prevention blocks ../ attacks
-- [ ] Storage paths match RFC spec
-- [ ] Unit tests pass
+- [x] All subtasks completed
+- [x] Paths work correctly on Windows
+- [x] Traversal prevention blocks ../ attacks
+- [x] Storage paths match RFC spec
+- [x] Unit tests pass
 - [ ] Changes committed to Git
 
 ## Progress Log
@@ -142,16 +142,30 @@ Before marking this task complete:
 - Task created
 - Subtasks defined
 
+### 2025-12-09 - 1 hour
+
+- Implemented `src/utils/paths.ts` with all required functions:
+  - Path normalization: `normalizePath`, `toRelativePath`, `toAbsolutePath`
+  - Security functions: `isPathTraversal`, `safeJoin`, `isWithinDirectory`
+  - Storage paths: `getStorageRoot`, `getIndexPath`, `getIndexesDir`
+  - Subdirectory helpers: `getLogsPath`, `getConfigPath`, `getMetadataPath`, `getFingerprintsPath`, `getLanceDbPath`
+  - Utility functions: `expandTilde`, `getExtension`, `getBaseName`
+- Updated `src/utils/index.ts` to export all path utilities
+- Created comprehensive unit tests in `tests/unit/paths.test.ts` (48 tests)
+- All 151 project tests pass
+- Build succeeds with no TypeScript errors
+
 ## Notes
 
 - Windows uses backslashes, Unix uses forward slashes
 - Relative paths in index should always use forward slashes for consistency
 - Home directory expansion (~) needs platform-specific handling
 - Consider using `os.homedir()` for cross-platform home directory
+- Added extra helper functions beyond spec: `toAbsolutePath`, `isWithinDirectory`, `getIndexesDir`, `expandTilde`, `getExtension`, `getBaseName`
 
 ## Blockers
 
-_None yet_
+_None_
 
 ## Related Tasks
 

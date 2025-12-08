@@ -26,3 +26,29 @@ export {
   hashFileSync,
   hashProjectPath,
 } from './hash.js';
+
+// Path exports
+export {
+  // Path normalization
+  normalizePath,
+  toRelativePath,
+  toAbsolutePath,
+  // Security functions
+  isPathTraversal,
+  safeJoin,
+  isWithinDirectory,
+  // Storage paths
+  getStorageRoot,
+  getIndexPath,
+  getIndexesDir,
+  // Index subdirectory helpers
+  getLogsPath,
+  getConfigPath,
+  getMetadataPath,
+  getFingerprintsPath,
+  getLanceDbPath,
+  // Utility functions
+  expandTilde,
+  getExtension,
+  getBaseName,
+} from './paths.js';

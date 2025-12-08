@@ -27,3 +27,21 @@ export {
   // Class
   ConfigManager,
 } from './config.js';
+
+// Metadata Management
+export {
+  // Types
+  type Metadata,
+  type Stats,
+  // Schema
+  MetadataSchema,
+  StatsSchema,
+  // Constants
+  CURRENT_VERSION,
+  // Functions
+  loadMetadata,
+  saveMetadata,
+  createMetadata,
+  // Class
+  MetadataManager,
+} from './metadata.js';

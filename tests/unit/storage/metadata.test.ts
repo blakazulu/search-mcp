@@ -1,0 +1,774 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
+import {
+  CURRENT_VERSION,
+  MetadataSchema,
+  StatsSchema,
+  loadMetadata,
+  saveMetadata,
+  createMetadata,
+  MetadataManager,
+  type Metadata,
+  type Stats,
+} from '../../../src/storage/metadata.js';
+import { ErrorCode } from '../../../src/errors/index.js';
+
+// Mock the logger to avoid file system side effects
+vi.mock('../../../src/utils/logger.js', () => ({
+  getLogger: () => ({
+    error: vi.fn(),
+    warn: vi.fn(),
+    info: vi.fn(),
+    debug: vi.fn(),
+  }),
+}));
+
+describe('Metadata Manager', () => {
+  let testDir: string;
+  let indexPath: string;
+
+  beforeEach(async () => {
+    // Create a temporary directory for tests
+    testDir = path.join(
+      os.tmpdir(),
+      `search-mcp-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    );
+    indexPath = path.join(testDir, 'test-index');
+    await fs.promises.mkdir(indexPath, { recursive: true });
+  });
+
+  afterEach(async () => {
+    // Clean up test directory
+    try {
+      await fs.promises.rm(testDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  });
+
+  // ==========================================================================
+  // Version Constant Tests
+  // ==========================================================================
+
+  describe('CURRENT_VERSION', () => {
+    it('should be a valid semver string', () => {
+      expect(CURRENT_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+    });
+
+    it('should be 1.0.0 initially', () => {
+      expect(CURRENT_VERSION).toBe('1.0.0');
+    });
+  });
+
+  // ==========================================================================
+  // Stats Schema Tests
+  // ==========================================================================
+
+  describe('StatsSchema', () => {
+    it('should accept valid stats', () => {
+      const stats: Stats = {
+        totalFiles: 100,
+        totalChunks: 500,
+        storageSizeBytes: 1024000,
+      };
+
+      const result = StatsSchema.safeParse(stats);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).toEqual(stats);
+      }
+    });
+
+    it('should accept zero values', () => {
+      const stats: Stats = {
+        totalFiles: 0,
+        totalChunks: 0,
+        storageSizeBytes: 0,
+      };
+
+      const result = StatsSchema.safeParse(stats);
+      expect(result.success).toBe(true);
+    });
+
+    it('should reject negative values', () => {
+      const stats = {
+        totalFiles: -1,
+        totalChunks: 500,
+        storageSizeBytes: 1024000,
+      };
+
+      const result = StatsSchema.safeParse(stats);
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject non-integer values', () => {
+      const stats = {
+        totalFiles: 100.5,
+        totalChunks: 500,
+        storageSizeBytes: 1024000,
+      };
+
+      const result = StatsSchema.safeParse(stats);
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject missing fields', () => {
+      const stats = {
+        totalFiles: 100,
+        // Missing totalChunks and storageSizeBytes
+      };
+
+      const result = StatsSchema.safeParse(stats);
+      expect(result.success).toBe(false);
+    });
+  });
+
+  // ==========================================================================
+  // Metadata Schema Tests
+  // ==========================================================================
+
+  describe('MetadataSchema', () => {
+    const validMetadata: Metadata = {
+      version: '1.0.0',
+      projectPath: '/Users/dev/my-project',
+      createdAt: '2025-01-15T10:30:00.000Z',
+      lastFullIndex: '2025-01-15T10:30:00.000Z',
+      stats: {
+        totalFiles: 100,
+        totalChunks: 500,
+        storageSizeBytes: 1024000,
+      },
+    };
+
+    it('should accept valid metadata', () => {
+      const result = MetadataSchema.safeParse(validMetadata);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).toEqual(validMetadata);
+      }
+    });
+
+    it('should accept metadata with lastIncrementalUpdate', () => {
+      const metadata = {
+        ...validMetadata,
+        lastIncrementalUpdate: '2025-01-16T12:00:00.000Z',
+      };
+
+      const result = MetadataSchema.safeParse(metadata);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.lastIncrementalUpdate).toBe(
+          '2025-01-16T12:00:00.000Z'
+        );
+      }
+    });
+
+    it('should allow lastIncrementalUpdate to be undefined', () => {
+      const result = MetadataSchema.safeParse(validMetadata);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.lastIncrementalUpdate).toBeUndefined();
+      }
+    });
+
+    it('should reject invalid datetime strings', () => {
+      const metadata = {
+        ...validMetadata,
+        createdAt: 'not-a-date',
+      };
+
+      const result = MetadataSchema.safeParse(metadata);
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject missing version', () => {
+      const { version, ...metadataWithoutVersion } = validMetadata;
+      const result = MetadataSchema.safeParse(metadataWithoutVersion);
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject missing projectPath', () => {
+      const { projectPath, ...metadataWithoutPath } = validMetadata;
+      const result = MetadataSchema.safeParse(metadataWithoutPath);
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject invalid stats', () => {
+      const metadata = {
+        ...validMetadata,
+        stats: {
+          totalFiles: -1, // Invalid
+          totalChunks: 500,
+          storageSizeBytes: 1024000,
+        },
+      };
+
+      const result = MetadataSchema.safeParse(metadata);
+      expect(result.success).toBe(false);
+    });
+  });
+
+  // ==========================================================================
+  // createMetadata Tests
+  // ==========================================================================
+
+  describe('createMetadata', () => {
+    it('should create metadata with current version', () => {
+      const metadata = createMetadata('/test/project');
+      expect(metadata.version).toBe(CURRENT_VERSION);
+    });
+
+    it('should set projectPath correctly', () => {
+      const projectPath = '/Users/dev/my-project';
+      const metadata = createMetadata(projectPath);
+      expect(metadata.projectPath).toBe(projectPath);
+    });
+
+    it('should set createdAt to current time', () => {
+      const before = new Date().toISOString();
+      const metadata = createMetadata('/test/project');
+      const after = new Date().toISOString();
+
+      expect(metadata.createdAt >= before).toBe(true);
+      expect(metadata.createdAt <= after).toBe(true);
+    });
+
+    it('should set lastFullIndex to same as createdAt', () => {
+      const metadata = createMetadata('/test/project');
+      expect(metadata.lastFullIndex).toBe(metadata.createdAt);
+    });
+
+    it('should leave lastIncrementalUpdate undefined', () => {
+      const metadata = createMetadata('/test/project');
+      expect(metadata.lastIncrementalUpdate).toBeUndefined();
+    });
+
+    it('should initialize stats to zero', () => {
+      const metadata = createMetadata('/test/project');
+      expect(metadata.stats).toEqual({
+        totalFiles: 0,
+        totalChunks: 0,
+        storageSizeBytes: 0,
+      });
+    });
+
+    it('should create valid metadata according to schema', () => {
+      const metadata = createMetadata('/test/project');
+      const result = MetadataSchema.safeParse(metadata);
+      expect(result.success).toBe(true);
+    });
+  });
+
+  // ==========================================================================
+  // loadMetadata Tests
+  // ==========================================================================
+
+  describe('loadMetadata', () => {
+    it('should return null when no metadata file exists', async () => {
+      const metadata = await loadMetadata(indexPath);
+      expect(metadata).toBeNull();
+    });
+
+    it('should load valid metadata from file', async () => {
+      const testMetadata: Metadata = {
+        version: '1.0.0',
+        projectPath: '/test/project',
+        createdAt: '2025-01-15T10:30:00.000Z',
+        lastFullIndex: '2025-01-15T10:30:00.000Z',
+        stats: {
+          totalFiles: 50,
+          totalChunks: 200,
+          storageSizeBytes: 512000,
+        },
+      };
+
+      const metadataPath = path.join(indexPath, 'metadata.json');
+      await fs.promises.writeFile(metadataPath, JSON.stringify(testMetadata));
+
+      const loaded = await loadMetadata(indexPath);
+      expect(loaded).toEqual(testMetadata);
+    });
+
+    it('should load metadata with lastIncrementalUpdate', async () => {
+      const testMetadata: Metadata = {
+        version: '1.0.0',
+        projectPath: '/test/project',
+        createdAt: '2025-01-15T10:30:00.000Z',
+        lastFullIndex: '2025-01-15T10:30:00.000Z',
+        lastIncrementalUpdate: '2025-01-16T12:00:00.000Z',
+        stats: {
+          totalFiles: 50,
+          totalChunks: 200,
+          storageSizeBytes: 512000,
+        },
+      };
+
+      const metadataPath = path.join(indexPath, 'metadata.json');
+      await fs.promises.writeFile(metadataPath, JSON.stringify(testMetadata));
+
+      const loaded = await loadMetadata(indexPath);
+      expect(loaded?.lastIncrementalUpdate).toBe('2025-01-16T12:00:00.000Z');
+    });
+
+    it('should throw MCPError for invalid JSON', async () => {
+      const metadataPath = path.join(indexPath, 'metadata.json');
+      await fs.promises.writeFile(metadataPath, 'not valid json {{{');
+
+      await expect(loadMetadata(indexPath)).rejects.toMatchObject({
+        code: ErrorCode.INDEX_CORRUPT,
+      });
+    });
+
+    it('should throw MCPError for invalid metadata structure', async () => {
+      const invalidMetadata = {
+        version: '1.0.0',
+        projectPath: '/test/project',
+        // Missing required fields
+      };
+
+      const metadataPath = path.join(indexPath, 'metadata.json');
+      await fs.promises.writeFile(metadataPath, JSON.stringify(invalidMetadata));
+
+      await expect(loadMetadata(indexPath)).rejects.toMatchObject({
+        code: ErrorCode.INDEX_CORRUPT,
+      });
+    });
+
+    it('should throw MCPError for invalid stats', async () => {
+      const invalidMetadata = {
+        version: '1.0.0',
+        projectPath: '/test/project',
+        createdAt: '2025-01-15T10:30:00.000Z',
+        lastFullIndex: '2025-01-15T10:30:00.000Z',
+        stats: {
+          totalFiles: -1, // Invalid
+          totalChunks: 200,
+          storageSizeBytes: 512000,
+        },
+      };
+
+      const metadataPath = path.join(indexPath, 'metadata.json');
+      await fs.promises.writeFile(metadataPath, JSON.stringify(invalidMetadata));
+
+      await expect(loadMetadata(indexPath)).rejects.toMatchObject({
+        code: ErrorCode.INDEX_CORRUPT,
+      });
+    });
+  });
+
+  // ==========================================================================
+  // saveMetadata Tests
+  // ==========================================================================
+
+  describe('saveMetadata', () => {
+    it('should save metadata to file', async () => {
+      const testMetadata = createMetadata('/test/project');
+      testMetadata.stats = {
+        totalFiles: 100,
+        totalChunks: 500,
+        storageSizeBytes: 1024000,
+      };
+
+      await saveMetadata(indexPath, testMetadata);
+
+      const metadataPath = path.join(indexPath, 'metadata.json');
+      const content = await fs.promises.readFile(metadataPath, 'utf-8');
+      const saved = JSON.parse(content);
+
+      expect(saved.version).toBe(testMetadata.version);
+      expect(saved.projectPath).toBe(testMetadata.projectPath);
+      expect(saved.stats).toEqual(testMetadata.stats);
+    });
+
+    it('should pretty-print the JSON', async () => {
+      const testMetadata = createMetadata('/test/project');
+      await saveMetadata(indexPath, testMetadata);
+
+      const metadataPath = path.join(indexPath, 'metadata.json');
+      const content = await fs.promises.readFile(metadataPath, 'utf-8');
+
+      expect(content).toContain('\n');
+      expect(content).toContain('  '); // Indentation
+    });
+
+    it('should use atomic write (no temp files left behind)', async () => {
+      const testMetadata = createMetadata('/test/project');
+      await saveMetadata(indexPath, testMetadata);
+
+      const files = await fs.promises.readdir(indexPath);
+      const tempFiles = files.filter((f) => f.includes('.tmp.'));
+      expect(tempFiles).toHaveLength(0);
+    });
+
+    it('should overwrite existing metadata', async () => {
+      const initialMetadata = createMetadata('/test/project');
+      initialMetadata.stats.totalFiles = 50;
+      await saveMetadata(indexPath, initialMetadata);
+
+      const updatedMetadata = createMetadata('/test/project');
+      updatedMetadata.stats.totalFiles = 100;
+      await saveMetadata(indexPath, updatedMetadata);
+
+      const loaded = await loadMetadata(indexPath);
+      expect(loaded?.stats.totalFiles).toBe(100);
+    });
+
+    it('should throw on invalid metadata', async () => {
+      const invalidMetadata = {
+        version: '1.0.0',
+        projectPath: '/test/project',
+        // Missing required fields
+      } as unknown as Metadata;
+
+      await expect(saveMetadata(indexPath, invalidMetadata)).rejects.toThrow();
+    });
+  });
+
+  // ==========================================================================
+  // MetadataManager Class Tests
+  // ==========================================================================
+
+  describe('MetadataManager', () => {
+    describe('constructor', () => {
+      it('should create instance with index path', () => {
+        const manager = new MetadataManager(indexPath);
+        expect(manager.getIndexPath()).toBe(indexPath);
+      });
+
+      it('should not be loaded initially', () => {
+        const manager = new MetadataManager(indexPath);
+        expect(manager.isLoaded()).toBe(false);
+      });
+
+      it('should have null metadata initially', () => {
+        const manager = new MetadataManager(indexPath);
+        expect(manager.getMetadata()).toBeNull();
+      });
+    });
+
+    describe('load', () => {
+      it('should return null when no metadata exists', async () => {
+        const manager = new MetadataManager(indexPath);
+        const metadata = await manager.load();
+        expect(metadata).toBeNull();
+        expect(manager.isLoaded()).toBe(false);
+      });
+
+      it('should load metadata from disk', async () => {
+        const testMetadata = createMetadata('/test/project');
+        testMetadata.stats.totalFiles = 75;
+        await saveMetadata(indexPath, testMetadata);
+
+        const manager = new MetadataManager(indexPath);
+        const loaded = await manager.load();
+
+        expect(loaded?.stats.totalFiles).toBe(75);
+        expect(manager.isLoaded()).toBe(true);
+      });
+
+      it('should update lastLoadedAt', async () => {
+        const manager = new MetadataManager(indexPath);
+        expect(manager.getLastLoadedAt()).toBe(0);
+
+        const before = Date.now();
+        await manager.load();
+        const after = Date.now();
+
+        expect(manager.getLastLoadedAt()).toBeGreaterThanOrEqual(before);
+        expect(manager.getLastLoadedAt()).toBeLessThanOrEqual(after);
+      });
+    });
+
+    describe('save', () => {
+      it('should throw if no metadata loaded', async () => {
+        const manager = new MetadataManager(indexPath);
+        await expect(manager.save()).rejects.toThrow('No metadata to save');
+      });
+
+      it('should save initialized metadata to disk', async () => {
+        const manager = new MetadataManager(indexPath);
+        manager.initialize('/test/project');
+        await manager.save();
+
+        const metadataPath = path.join(indexPath, 'metadata.json');
+        expect(fs.existsSync(metadataPath)).toBe(true);
+
+        const content = await fs.promises.readFile(metadataPath, 'utf-8');
+        const saved = JSON.parse(content);
+        expect(saved.projectPath).toBe('/test/project');
+      });
+
+      it('should save updated metadata', async () => {
+        const manager = new MetadataManager(indexPath);
+        manager.initialize('/test/project');
+        manager.updateStats(100, 500, 1024000);
+        await manager.save();
+
+        const loaded = await loadMetadata(indexPath);
+        expect(loaded?.stats.totalFiles).toBe(100);
+        expect(loaded?.stats.totalChunks).toBe(500);
+        expect(loaded?.stats.storageSizeBytes).toBe(1024000);
+      });
+    });
+
+    describe('exists', () => {
+      it('should return false when no metadata file', async () => {
+        const manager = new MetadataManager(indexPath);
+        expect(await manager.exists()).toBe(false);
+      });
+
+      it('should return true when metadata file exists', async () => {
+        const testMetadata = createMetadata('/test/project');
+        await saveMetadata(indexPath, testMetadata);
+
+        const manager = new MetadataManager(indexPath);
+        expect(await manager.exists()).toBe(true);
+      });
+    });
+
+    describe('initialize', () => {
+      it('should create initial metadata in cache', () => {
+        const manager = new MetadataManager(indexPath);
+        manager.initialize('/test/project');
+
+        expect(manager.isLoaded()).toBe(true);
+        expect(manager.getMetadata()?.projectPath).toBe('/test/project');
+        expect(manager.getMetadata()?.version).toBe(CURRENT_VERSION);
+      });
+
+      it('should initialize stats to zero', () => {
+        const manager = new MetadataManager(indexPath);
+        manager.initialize('/test/project');
+
+        const stats = manager.getStats();
+        expect(stats?.totalFiles).toBe(0);
+        expect(stats?.totalChunks).toBe(0);
+        expect(stats?.storageSizeBytes).toBe(0);
+      });
+
+      it('should not save to disk automatically', async () => {
+        const manager = new MetadataManager(indexPath);
+        manager.initialize('/test/project');
+
+        expect(await manager.exists()).toBe(false);
+      });
+    });
+
+    describe('updateStats', () => {
+      it('should update stats in cached metadata', () => {
+        const manager = new MetadataManager(indexPath);
+        manager.initialize('/test/project');
+        manager.updateStats(100, 500, 1024000);
+
+        const stats = manager.getStats();
+        expect(stats?.totalFiles).toBe(100);
+        expect(stats?.totalChunks).toBe(500);
+        expect(stats?.storageSizeBytes).toBe(1024000);
+      });
+
+      it('should throw if metadata not loaded', () => {
+        const manager = new MetadataManager(indexPath);
+        expect(() => manager.updateStats(100, 500, 1024000)).toThrow(
+          'Metadata not loaded'
+        );
+      });
+
+      it('should allow updating stats multiple times', () => {
+        const manager = new MetadataManager(indexPath);
+        manager.initialize('/test/project');
+
+        manager.updateStats(50, 200, 512000);
+        expect(manager.getStats()?.totalFiles).toBe(50);
+
+        manager.updateStats(100, 500, 1024000);
+        expect(manager.getStats()?.totalFiles).toBe(100);
+      });
+    });
+
+    describe('markFullIndex', () => {
+      it('should update lastFullIndex timestamp', async () => {
+        const manager = new MetadataManager(indexPath);
+        manager.initialize('/test/project');
+
+        const originalTime = manager.getMetadata()?.lastFullIndex;
+
+        // Wait a tiny bit to ensure timestamp changes
+        await new Promise((resolve) => setTimeout(resolve, 10));
+
+        manager.markFullIndex();
+        const newTime = manager.getMetadata()?.lastFullIndex;
+
+        expect(newTime).not.toBe(originalTime);
+        expect(new Date(newTime!).getTime()).toBeGreaterThan(
+          new Date(originalTime!).getTime()
+        );
+      });
+
+      it('should throw if metadata not loaded', () => {
+        const manager = new MetadataManager(indexPath);
+        expect(() => manager.markFullIndex()).toThrow('Metadata not loaded');
+      });
+    });
+
+    describe('markIncrementalUpdate', () => {
+      it('should set lastIncrementalUpdate timestamp', () => {
+        const manager = new MetadataManager(indexPath);
+        manager.initialize('/test/project');
+
+        expect(manager.getMetadata()?.lastIncrementalUpdate).toBeUndefined();
+
+        manager.markIncrementalUpdate();
+
+        expect(manager.getMetadata()?.lastIncrementalUpdate).toBeDefined();
+      });
+
+      it('should update lastIncrementalUpdate on subsequent calls', async () => {
+        const manager = new MetadataManager(indexPath);
+        manager.initialize('/test/project');
+
+        manager.markIncrementalUpdate();
+        const firstTime = manager.getMetadata()?.lastIncrementalUpdate;
+
+        // Wait a tiny bit to ensure timestamp changes
+        await new Promise((resolve) => setTimeout(resolve, 10));
+
+        manager.markIncrementalUpdate();
+        const secondTime = manager.getMetadata()?.lastIncrementalUpdate;
+
+        expect(new Date(secondTime!).getTime()).toBeGreaterThan(
+          new Date(firstTime!).getTime()
+        );
+      });
+
+      it('should throw if metadata not loaded', () => {
+        const manager = new MetadataManager(indexPath);
+        expect(() => manager.markIncrementalUpdate()).toThrow(
+          'Metadata not loaded'
+        );
+      });
+    });
+
+    describe('getMetadata', () => {
+      it('should return null if not loaded', () => {
+        const manager = new MetadataManager(indexPath);
+        expect(manager.getMetadata()).toBeNull();
+      });
+
+      it('should return cached metadata after initialize', () => {
+        const manager = new MetadataManager(indexPath);
+        manager.initialize('/test/project');
+
+        const metadata = manager.getMetadata();
+        expect(metadata).not.toBeNull();
+        expect(metadata?.projectPath).toBe('/test/project');
+      });
+
+      it('should return cached metadata after load', async () => {
+        const testMetadata = createMetadata('/test/project');
+        await saveMetadata(indexPath, testMetadata);
+
+        const manager = new MetadataManager(indexPath);
+        await manager.load();
+
+        const metadata = manager.getMetadata();
+        expect(metadata).not.toBeNull();
+        expect(metadata?.projectPath).toBe('/test/project');
+      });
+    });
+
+    describe('getMetadataPath', () => {
+      it('should return correct metadata path', () => {
+        const manager = new MetadataManager(indexPath);
+        const expectedPath = path.join(indexPath, 'metadata.json');
+        expect(manager.getMetadataPath()).toBe(expectedPath);
+      });
+    });
+
+    describe('getProjectPath', () => {
+      it('should return null if metadata not loaded', () => {
+        const manager = new MetadataManager(indexPath);
+        expect(manager.getProjectPath()).toBeNull();
+      });
+
+      it('should return project path from metadata', () => {
+        const manager = new MetadataManager(indexPath);
+        manager.initialize('/Users/dev/my-project');
+        expect(manager.getProjectPath()).toBe('/Users/dev/my-project');
+      });
+    });
+
+    describe('getStats', () => {
+      it('should return null if metadata not loaded', () => {
+        const manager = new MetadataManager(indexPath);
+        expect(manager.getStats()).toBeNull();
+      });
+
+      it('should return stats from metadata', () => {
+        const manager = new MetadataManager(indexPath);
+        manager.initialize('/test/project');
+        manager.updateStats(100, 500, 1024000);
+
+        const stats = manager.getStats();
+        expect(stats?.totalFiles).toBe(100);
+        expect(stats?.totalChunks).toBe(500);
+        expect(stats?.storageSizeBytes).toBe(1024000);
+      });
+    });
+
+    describe('getVersion', () => {
+      it('should return null if metadata not loaded', () => {
+        const manager = new MetadataManager(indexPath);
+        expect(manager.getVersion()).toBeNull();
+      });
+
+      it('should return version from metadata', () => {
+        const manager = new MetadataManager(indexPath);
+        manager.initialize('/test/project');
+        expect(manager.getVersion()).toBe(CURRENT_VERSION);
+      });
+    });
+
+    describe('integration', () => {
+      it('should support full workflow: initialize, update, save, load', async () => {
+        // Initialize and set up
+        const manager1 = new MetadataManager(indexPath);
+        manager1.initialize('/test/project');
+        manager1.updateStats(100, 500, 1024000);
+        manager1.markFullIndex();
+        await manager1.save();
+
+        // Load in new manager
+        const manager2 = new MetadataManager(indexPath);
+        await manager2.load();
+
+        expect(manager2.getProjectPath()).toBe('/test/project');
+        expect(manager2.getStats()?.totalFiles).toBe(100);
+        expect(manager2.getStats()?.totalChunks).toBe(500);
+        expect(manager2.getStats()?.storageSizeBytes).toBe(1024000);
+        expect(manager2.getVersion()).toBe(CURRENT_VERSION);
+      });
+
+      it('should support incremental update workflow', async () => {
+        // Initial indexing
+        const manager = new MetadataManager(indexPath);
+        manager.initialize('/test/project');
+        manager.updateStats(100, 500, 1024000);
+        manager.markFullIndex();
+        await manager.save();
+
+        // Reload and do incremental update
+        await manager.load();
+        manager.updateStats(105, 525, 1050000);
+        manager.markIncrementalUpdate();
+        await manager.save();
+
+        // Verify
+        const loaded = await loadMetadata(indexPath);
+        expect(loaded?.stats.totalFiles).toBe(105);
+        expect(loaded?.lastIncrementalUpdate).toBeDefined();
+      });
+    });
+  });
+});

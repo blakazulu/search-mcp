@@ -3,11 +3,12 @@ task_id: "SMCP-007"
 title: "Metadata Manager"
 category: "Technical"
 priority: "P1"
-status: "not-started"
+status: "completed"
 created_date: "2025-12-09"
+completed_date: "2025-12-09"
 due_date: ""
 estimated_hours: 2
-actual_hours: 0
+actual_hours: 1.5
 assigned_to: "blakazulu"
 tags: ["storage", "metadata", "statistics"]
 ---
@@ -20,17 +21,17 @@ Implement metadata management for index statistics and state tracking. Stores ve
 
 ## Goals
 
-- [ ] Define metadata schema with Zod
-- [ ] Implement metadata persistence
-- [ ] Track index statistics (files, chunks, size)
-- [ ] Support incremental updates
+- [x] Define metadata schema with Zod
+- [x] Implement metadata persistence
+- [x] Track index statistics (files, chunks, size)
+- [x] Support incremental updates
 
 ## Success Criteria
 
-- Metadata persists to `metadata.json`
-- Stats accurately reflect index state
-- Timestamps update on index operations
-- Version tracking for future migrations
+- [x] Metadata persists to `metadata.json`
+- [x] Stats accurately reflect index state
+- [x] Timestamps update on index operations
+- [x] Version tracking for future migrations
 
 ## Dependencies
 
@@ -52,7 +53,7 @@ Implement metadata management for index statistics and state tracking. Stores ve
 
 ### Phase 1: Schema Definition (0.5 hours)
 
-- [ ] 1.1 Define metadata schema
+- [x] 1.1 Define metadata schema
     ```typescript
     const MetadataSchema = z.object({
       version: z.string(),
@@ -70,27 +71,27 @@ Implement metadata management for index statistics and state tracking. Stores ve
     type Metadata = z.infer<typeof MetadataSchema>;
     ```
 
-- [ ] 1.2 Define current version constant
+- [x] 1.2 Define current version constant
     ```typescript
     const CURRENT_VERSION = '1.0.0';
     ```
 
 ### Phase 2: Metadata I/O (0.75 hours)
 
-- [ ] 2.1 Implement metadata loading
+- [x] 2.1 Implement metadata loading
     ```typescript
     async function loadMetadata(indexPath: string): Promise<Metadata | null>
     // Returns null if metadata.json doesn't exist
     // Throws MCPError if corrupt
     ```
 
-- [ ] 2.2 Implement metadata saving
+- [x] 2.2 Implement metadata saving
     ```typescript
     async function saveMetadata(indexPath: string, metadata: Metadata): Promise<void>
     // Atomic write (write to temp, rename)
     ```
 
-- [ ] 2.3 Implement metadata creation
+- [x] 2.3 Implement metadata creation
     ```typescript
     function createMetadata(projectPath: string): Metadata
     // Creates initial metadata with zero stats
@@ -98,7 +99,7 @@ Implement metadata management for index statistics and state tracking. Stores ve
 
 ### Phase 3: Metadata Manager Class (0.5 hours)
 
-- [ ] 3.1 Create MetadataManager class
+- [x] 3.1 Create MetadataManager class
     ```typescript
     class MetadataManager {
       constructor(indexPath: string)
@@ -118,9 +119,9 @@ Implement metadata management for index statistics and state tracking. Stores ve
 
 ### Phase 4: Export & Tests (0.25 hours)
 
-- [ ] 4.1 Export from `src/storage/metadata.ts`
+- [x] 4.1 Export from `src/storage/metadata.ts`
 
-- [ ] 4.2 Write unit tests
+- [x] 4.2 Write unit tests
     - Test metadata creation
     - Test stats updates
     - Test timestamp updates
@@ -136,12 +137,12 @@ Implement metadata management for index statistics and state tracking. Stores ve
 
 Before marking this task complete:
 
-- [ ] All subtasks completed
-- [ ] Schema matches RFC specification
-- [ ] Stats accurately track index state
-- [ ] Atomic writes prevent corruption
-- [ ] Unit tests pass
-- [ ] Changes committed to Git
+- [x] All subtasks completed
+- [x] Schema matches RFC specification
+- [x] Stats accurately track index state
+- [x] Atomic writes prevent corruption
+- [x] Unit tests pass (66 tests)
+- [ ] Changes committed to Git (awaiting user approval)
 
 ## Progress Log
 
@@ -150,6 +151,17 @@ Before marking this task complete:
 - Task created
 - Subtasks defined
 
+### 2025-12-09 - 1.5 hours
+
+- Implemented metadata schema with Zod (MetadataSchema, StatsSchema)
+- Created CURRENT_VERSION constant ('1.0.0')
+- Implemented loadMetadata(), saveMetadata(), createMetadata() functions
+- Implemented MetadataManager class with all methods
+- Atomic writes using temp file + rename pattern
+- Added exports to src/storage/index.ts
+- Created comprehensive unit tests (66 tests)
+- All tests passing, build successful, lint clean
+
 ## Notes
 
 - Use ISO 8601 datetime strings for consistency
@@ -157,9 +169,34 @@ Before marking this task complete:
 - Consider adding indexingDuration stat in future
 - Storage size should include LanceDB directory size
 
+## Implementation Details
+
+### Files Created
+
+- `src/storage/metadata.ts` - Main implementation
+- `tests/unit/storage/metadata.test.ts` - Unit tests (66 tests)
+
+### Files Modified
+
+- `src/storage/index.ts` - Added metadata exports
+
+### Key Features
+
+- **Schema Validation**: Zod schemas for Metadata and Stats with strict validation
+- **Atomic Writes**: Uses temp file + rename for crash safety
+- **MCPError Integration**: Throws INDEX_CORRUPT for invalid/corrupt metadata
+- **ISO 8601 Timestamps**: All datetime fields use ISO 8601 format
+- **MetadataManager Class**: Full lifecycle management with:
+  - `initialize()` - Create new metadata
+  - `load()` - Load from disk
+  - `save()` - Persist to disk
+  - `updateStats()` - Update file/chunk/size counts
+  - `markFullIndex()` - Update lastFullIndex timestamp
+  - `markIncrementalUpdate()` - Update lastIncrementalUpdate timestamp
+
 ## Blockers
 
-_None yet_
+_None_
 
 ## Related Tasks
 

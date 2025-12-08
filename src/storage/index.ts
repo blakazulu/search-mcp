@@ -45,3 +45,18 @@ export {
   // Class
   MetadataManager,
 } from './metadata.js';
+
+// Fingerprints Management
+export {
+  // Types
+  type Fingerprints,
+  type DeltaResult,
+  // Constants
+  FINGERPRINTS_VERSION,
+  // Functions
+  loadFingerprints,
+  saveFingerprints,
+  calculateDelta,
+  // Class
+  FingerprintsManager,
+} from './fingerprints.js';

@@ -7,5 +7,14 @@
  * - logger: Logging
  */
 
-// Utility exports will be added as they are implemented
-export {};
+// Logger exports
+export {
+  LogLevel,
+  type Logger,
+  type LoggerConfig,
+  createLogger,
+  getLogger,
+  resetLogger,
+  getDefaultLogDir,
+  parseLogLevel,
+} from './logger.js';

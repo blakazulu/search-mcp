@@ -36,7 +36,8 @@ When you receive a task file:
 1. **Review Against Requirements**: Verify all original requirements are met
 2. **Test Where Applicable**: If code was written, ensure it works correctly
 3. **Polish**: Refine and improve the output quality
-4. **Final Verification**: Confirm the task is truly complete
+4. **Build**: Run build and verify no errors
+5. **Final Verification**: Confirm the task is truly complete - if the user approves - show commit message and ask to push
 
 ## Execution Principles
 

@@ -3,11 +3,11 @@ task_id: "SMCP-004"
 title: "Hash Utilities"
 category: "Technical"
 priority: "P1"
-status: "not-started"
+status: "completed"
 created_date: "2025-12-09"
 due_date: ""
 estimated_hours: 1
-actual_hours: 0
+actual_hours: 1
 assigned_to: "blakazulu"
 tags: ["foundation", "utilities", "crypto"]
 ---
@@ -20,9 +20,9 @@ Implement SHA256 hashing utilities for file content fingerprinting and project p
 
 ## Goals
 
-- [ ] Create SHA256 hash function for strings
-- [ ] Create SHA256 hash function for file content
-- [ ] Create project path to index directory hash function
+- [x] Create SHA256 hash function for strings
+- [x] Create SHA256 hash function for file content
+- [x] Create project path to index directory hash function
 
 ## Success Criteria
 
@@ -51,20 +51,20 @@ Implement SHA256 hashing utilities for file content fingerprinting and project p
 
 ### Phase 1: Core Hash Functions (0.5 hours)
 
-- [ ] 1.1 Implement string hashing
+- [x] 1.1 Implement string hashing
     ```typescript
     function hashString(input: string): string
     // Returns full SHA256 hex digest (64 chars)
     ```
 
-- [ ] 1.2 Implement file hashing
+- [x] 1.2 Implement file hashing
     ```typescript
     async function hashFile(filePath: string): Promise<string>
     // Reads file and returns SHA256 of content
     // Uses streaming for large files
     ```
 
-- [ ] 1.3 Implement project path hashing
+- [x] 1.3 Implement project path hashing
     ```typescript
     function hashProjectPath(projectPath: string): string
     // Returns first 16 chars of SHA256 for directory name
@@ -73,19 +73,20 @@ Implement SHA256 hashing utilities for file content fingerprinting and project p
 
 ### Phase 2: Error Handling (0.25 hours)
 
-- [ ] 2.1 Handle file read errors
-    - Return null or throw MCPError for missing files
-    - Log errors with file path
+- [x] 2.1 Handle file read errors
+    - Throws MCPError with FILE_NOT_FOUND for missing files
+    - Throws MCPError with PERMISSION_DENIED for access errors
+    - Logs errors with file path via logger
 
-- [ ] 2.2 Handle encoding edge cases
-    - Use UTF-8 for string hashing
-    - Use raw buffer for file hashing
+- [x] 2.2 Handle encoding edge cases
+    - Uses UTF-8 for string hashing
+    - Uses raw buffer for file hashing
 
 ### Phase 3: Export & Tests (0.25 hours)
 
-- [ ] 3.1 Export from `src/utils/hash.ts`
+- [x] 3.1 Export from `src/utils/hash.ts`
 
-- [ ] 3.2 Write unit tests
+- [x] 3.2 Write unit tests
     - Test known SHA256 outputs
     - Test file hashing with temp files
     - Test project path normalization
@@ -100,11 +101,11 @@ Implement SHA256 hashing utilities for file content fingerprinting and project p
 
 Before marking this task complete:
 
-- [ ] All subtasks completed
-- [ ] Hash outputs match expected SHA256 format
-- [ ] File hashing works with streaming
-- [ ] Project path hashing normalizes paths correctly
-- [ ] Unit tests pass
+- [x] All subtasks completed
+- [x] Hash outputs match expected SHA256 format
+- [x] File hashing works with streaming
+- [x] Project path hashing normalizes paths correctly
+- [x] Unit tests pass
 - [ ] Changes committed to Git
 
 ## Progress Log
@@ -114,6 +115,18 @@ Before marking this task complete:
 - Task created
 - Subtasks defined
 
+### 2025-12-09 - 1 hour
+
+- Implemented all hash functions in `src/utils/hash.ts`
+- Added `hashString()` - SHA256 string hashing
+- Added `hashFile()` - async file hashing with streaming for large files (>10MB)
+- Added `hashFileSync()` - synchronous file hashing for callback contexts
+- Added `hashProjectPath()` - truncated hash for directory names with path normalization
+- Integrated error handling with MCPError system
+- Exported all functions from `src/utils/index.ts`
+- Created comprehensive unit tests (28 tests)
+- All tests passing (103 total tests in project)
+
 ## Notes
 
 - Use Node.js built-in `crypto` module (no external deps)
@@ -121,9 +134,33 @@ Before marking this task complete:
 - Project path hash truncation (16 chars) provides enough uniqueness
 - Consider caching file hashes to avoid re-reading unchanged files
 
+## Implementation Details
+
+### Files Created/Modified
+
+1. **`src/utils/hash.ts`** (new) - Core hash utilities module
+2. **`src/utils/index.ts`** (modified) - Added hash exports
+3. **`tests/unit/utils/hash.test.ts`** (new) - Unit tests
+
+### API Reference
+
+```typescript
+// String hashing - returns 64-char hex SHA256
+hashString(input: string): string
+
+// Async file hashing - streams large files
+hashFile(filePath: string): Promise<string>
+
+// Sync file hashing - for callback contexts
+hashFileSync(filePath: string): string
+
+// Project path hashing - returns 16-char hex for directory names
+hashProjectPath(projectPath: string): string
+```
+
 ## Blockers
 
-_None yet_
+_None_
 
 ## Related Tasks
 

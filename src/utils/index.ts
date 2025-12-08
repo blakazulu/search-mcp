@@ -18,3 +18,11 @@ export {
   getDefaultLogDir,
   parseLogLevel,
 } from './logger.js';
+
+// Hash exports
+export {
+  hashString,
+  hashFile,
+  hashFileSync,
+  hashProjectPath,
+} from './hash.js';

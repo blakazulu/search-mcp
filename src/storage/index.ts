@@ -8,5 +8,22 @@
  * - metadata: Index metadata
  */
 
-// Storage exports will be added as they are implemented
-export {};
+// Config Management
+export {
+  // Types
+  type Config,
+  type ConfigWithDocs,
+  // Schema
+  ConfigSchema,
+  // Constants
+  DEFAULT_CONFIG,
+  HARDCODED_EXCLUDES,
+  // Functions
+  parseFileSize,
+  formatFileSize,
+  loadConfig,
+  saveConfig,
+  generateDefaultConfig,
+  // Class
+  ConfigManager,
+} from './config.js';

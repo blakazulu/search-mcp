@@ -597,6 +597,10 @@ Auto-generated at `~/.mcp/search/indexes/<hash>/config.json`:
   "maxFileSize": "1MB",
   "maxFiles": 50000,
 
+  "docPatterns": ["**/*.md", "**/*.txt"],
+  "indexDocs": true,
+  "enhancedToolDescriptions": false,
+
   "_hardcodedExcludes": [
     "// These patterns are ALWAYS excluded and cannot be overridden:",
     "// - node_modules/, jspm_packages/, bower_components/  (dependencies)",
@@ -614,7 +618,10 @@ Auto-generated at `~/.mcp/search/indexes/<hash>/config.json`:
     "exclude": "Glob patterns to skip (in addition to hardcoded excludes).",
     "respectGitignore": "If true, also excludes files matching .gitignore.",
     "maxFileSize": "Skip files larger than this. Supports: '500KB', '1MB', '2MB'.",
-    "maxFiles": "Warn if project exceeds this many files."
+    "maxFiles": "Warn if project exceeds this many files.",
+    "docPatterns": "Glob patterns for documentation files.",
+    "indexDocs": "If true, index docs with prose-optimized chunking.",
+    "enhancedToolDescriptions": "If true, add AI hints to tool descriptions."
   }
 }
 ```

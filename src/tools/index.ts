@@ -11,6 +11,22 @@
  * - delete_index: Remove project index
  */
 
+// create_index tool - primary index creation
+export {
+  createIndex,
+  createIndexTool,
+  CreateIndexInputSchema,
+  detectProject,
+  indexExists,
+  formatDuration,
+  formatProgressMessage,
+  getConfirmationMessage,
+  type CreateIndexInput,
+  type CreateIndexOutput,
+  type CreateIndexStatus,
+  type CreateIndexContext,
+} from './createIndex.js';
+
 // search_code tool - primary semantic search
 export {
   searchCode,

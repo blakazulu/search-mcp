@@ -3,11 +3,11 @@ task_id: "SMCP-020"
 title: "create_index Tool"
 category: "Technical"
 priority: "P0"
-status: "not-started"
+status: "done"
 created_date: "2025-12-09"
 due_date: ""
 estimated_hours: 4
-actual_hours: 0
+actual_hours: 3
 assigned_to: "blakazulu"
 tags: ["tools", "indexing", "mcp"]
 ---
@@ -20,10 +20,10 @@ Implement the index creation MCP tool. Creates a new search index for the curren
 
 ## Goals
 
-- [ ] Detect project root automatically
-- [ ] Create full index with progress reporting
-- [ ] Start file watcher after indexing
-- [ ] Require user confirmation
+- [x] Detect project root automatically
+- [x] Create full index with progress reporting
+- [x] Start file watcher after indexing
+- [x] Require user confirmation
 
 ## Success Criteria
 
@@ -53,14 +53,14 @@ Implement the index creation MCP tool. Creates a new search index for the curren
 
 ### Phase 1: Tool Schema (0.5 hours)
 
-- [ ] 1.1 Define input schema
+- [x] 1.1 Define input schema
     ```typescript
     const CreateIndexInputSchema = z.object({
       // No required inputs - uses current directory context
     });
     ```
 
-- [ ] 1.2 Define output schema
+- [x] 1.2 Define output schema
     ```typescript
     interface CreateIndexOutput {
       status: 'success' | 'cancelled';
@@ -73,7 +73,7 @@ Implement the index creation MCP tool. Creates a new search index for the curren
 
 ### Phase 2: Project Detection (0.5 hours)
 
-- [ ] 2.1 Implement project detection flow
+- [x] 2.1 Implement project detection flow
     ```typescript
     async function detectProject(
       context: ToolContext
@@ -82,13 +82,13 @@ Implement the index creation MCP tool. Creates a new search index for the curren
     // If not found, prompt user for choice
     ```
 
-- [ ] 2.2 Handle PROJECT_NOT_DETECTED
+- [x] 2.2 Handle PROJECT_NOT_DETECTED
     - Offer to use current directory
     - Or allow custom path input
 
 ### Phase 3: Index Creation Flow (2 hours)
 
-- [ ] 3.1 Implement main handler
+- [x] 3.1 Implement main handler
     ```typescript
     async function createIndex(
       input: CreateIndexInput,
@@ -96,13 +96,13 @@ Implement the index creation MCP tool. Creates a new search index for the curren
     ): Promise<CreateIndexOutput>
     ```
 
-- [ ] 3.2 Confirmation prompt
+- [x] 3.2 Confirmation prompt
     ```typescript
     // Ask user: "Index project at {path}? This may take a few minutes."
     // If declined, return status: 'cancelled'
     ```
 
-- [ ] 3.3 Progress reporting
+- [x] 3.3 Progress reporting
     ```typescript
     // Report progress to MCP client:
     // "Scanning files..."
@@ -111,7 +111,7 @@ Implement the index creation MCP tool. Creates a new search index for the curren
     // "Generating embeddings... [██████████] 100%"
     ```
 
-- [ ] 3.4 Post-indexing setup
+- [x] 3.4 Post-indexing setup
     ```typescript
     // After successful indexing:
     // 1. Generate default config.json
@@ -121,26 +121,25 @@ Implement the index creation MCP tool. Creates a new search index for the curren
 
 ### Phase 4: MCP Tool Registration (0.5 hours)
 
-- [ ] 4.1 Create tool definition
+- [x] 4.1 Create tool definition
     ```typescript
-    const createIndexTool: Tool = {
+    const createIndexTool = {
       name: 'create_index',
       description: 'Create a search index for the current project',
       inputSchema: CreateIndexInputSchema,
-      handler: createIndex,
       requiresConfirmation: true,  // User must approve
     };
     ```
 
-- [ ] 4.2 Handle existing index
+- [x] 4.2 Handle existing index
     - Check if index already exists
     - Offer to reindex if exists
 
 ### Phase 5: Export & Tests (0.5 hours)
 
-- [ ] 5.1 Export from `src/tools/createIndex.ts`
+- [x] 5.1 Export from `src/tools/createIndex.ts`
 
-- [ ] 5.2 Write tests
+- [x] 5.2 Write tests
     - Test project detection
     - Test confirmation flow
     - Test progress reporting
@@ -156,13 +155,13 @@ Implement the index creation MCP tool. Creates a new search index for the curren
 
 Before marking this task complete:
 
-- [ ] All subtasks completed
-- [ ] Project detection works from any subdirectory
-- [ ] Confirmation required before indexing
-- [ ] Progress updates shown during indexing
-- [ ] File watcher starts after completion
-- [ ] Tests pass
-- [ ] Changes committed to Git
+- [x] All subtasks completed
+- [x] Project detection works from any subdirectory
+- [x] Confirmation required before indexing
+- [x] Progress updates shown during indexing
+- [x] File watcher starts after completion
+- [x] Tests pass
+- [x] Changes committed to Git
 
 ## Progress Log
 
@@ -170,6 +169,23 @@ Before marking this task complete:
 
 - Task created
 - Subtasks defined
+
+### 2025-12-09 - 3 hours
+
+- Implemented CreateIndexInputSchema (empty input)
+- Implemented CreateIndexOutput interface with status, projectPath, filesIndexed, chunksCreated, duration
+- Implemented formatDuration() for human-readable duration strings ("45s", "2m 30s")
+- Implemented formatProgressMessage() for progress display
+- Implemented detectProject() using Project Root Detection engine
+- Implemented indexExists() to check for existing index
+- Implemented createIndex() main handler with confirmation flow
+- Progress reporting during all phases (scanning, chunking, embedding, storing)
+- Created MCP tool definition with requiresConfirmation: true
+- Added getConfirmationMessage() for user-friendly prompts
+- Handles existing index - rebuilds if confirmed
+- Exported from src/tools/index.ts
+- Wrote comprehensive unit tests (49 tests)
+- All 841 tests passing, build successful
 
 ## Notes
 
@@ -181,7 +197,7 @@ Before marking this task complete:
 
 ## Blockers
 
-_None yet_
+_None_
 
 ## Related Tasks
 

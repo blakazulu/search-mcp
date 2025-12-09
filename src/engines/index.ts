@@ -82,4 +82,32 @@ export {
   type DeltaResult,
 } from './indexManager.js';
 
-// Additional engine exports will be added as they are implemented
+// File Watcher Engine
+export {
+  type WatchEvent,
+  type FileEvent,
+  type WatcherStats,
+  DEFAULT_DEBOUNCE_DELAY,
+  STABILITY_THRESHOLD,
+  POLL_INTERVAL,
+  WATCHER_OPTIONS,
+  FileWatcher,
+  createFileWatcher,
+} from './fileWatcher.js';
+
+// Integrity Engine
+export {
+  type DriftReport,
+  type ReconcileResult,
+  type ReconcileProgress,
+  type ReconcileProgressCallback,
+  DEFAULT_CHECK_INTERVAL,
+  scanCurrentState,
+  calculateDrift,
+  reconcile,
+  IntegrityScheduler,
+  IntegrityEngine,
+  runStartupCheck,
+  runStartupCheckBackground,
+  createIntegrityEngine,
+} from './integrity.js';

@@ -3,11 +3,11 @@ task_id: "SMCP-016"
 title: "Integrity Engine"
 category: "Technical"
 priority: "P2"
-status: "not-started"
+status: "done"
 created_date: "2025-12-09"
 due_date: ""
 estimated_hours: 3
-actual_hours: 0
+actual_hours: 2
 assigned_to: "blakazulu"
 tags: ["orchestration", "integrity", "reconciliation"]
 ---
@@ -20,10 +20,10 @@ Implement periodic integrity checking to fix drift from missed file watcher even
 
 ## Goals
 
-- [ ] Detect drift between index and filesystem
-- [ ] Queue updates for out-of-sync files
-- [ ] Run on startup and periodically (24h default)
-- [ ] Minimize impact on normal operations
+- [x] Detect drift between index and filesystem
+- [x] Queue updates for out-of-sync files
+- [x] Run on startup and periodically (24h default)
+- [x] Minimize impact on normal operations
 
 ## Success Criteria
 
@@ -53,7 +53,7 @@ Implement periodic integrity checking to fix drift from missed file watcher even
 
 ### Phase 1: Drift Detection (1 hour)
 
-- [ ] 1.1 Implement filesystem scan
+- [x] 1.1 Implement filesystem scan
     ```typescript
     async function scanCurrentState(
       projectPath: string,
@@ -63,7 +63,7 @@ Implement periodic integrity checking to fix drift from missed file watcher even
     // Only includes files that pass policy
     ```
 
-- [ ] 1.2 Implement drift calculation
+- [x] 1.2 Implement drift calculation
     ```typescript
     interface DriftReport {
       added: string[];      // Files on disk but not in index
@@ -82,7 +82,7 @@ Implement periodic integrity checking to fix drift from missed file watcher even
 
 ### Phase 2: Reconciliation (1 hour)
 
-- [ ] 2.1 Implement reconcile function
+- [x] 2.1 Implement reconcile function
     ```typescript
     async function reconcile(
       projectPath: string,
@@ -94,7 +94,7 @@ Implement periodic integrity checking to fix drift from missed file watcher even
     ): Promise<ReconcileResult>
     ```
 
-- [ ] 2.2 Process drift categories
+- [x] 2.2 Process drift categories
     ```
     For added files:
       - Chunk, embed, insert into index
@@ -110,13 +110,13 @@ Implement periodic integrity checking to fix drift from missed file watcher even
       - Remove from fingerprints
     ```
 
-- [ ] 2.3 Handle large drift
+- [x] 2.3 Handle large drift
     - If many files changed, process in batches
     - Report progress during reconciliation
 
 ### Phase 3: Scheduling (0.5 hours)
 
-- [ ] 3.1 Implement startup check
+- [x] 3.1 Implement startup check
     ```typescript
     async function runStartupCheck(
       projectPath: string,
@@ -126,7 +126,7 @@ Implement periodic integrity checking to fix drift from missed file watcher even
     // Logs drift summary
     ```
 
-- [ ] 3.2 Implement periodic scheduling
+- [x] 3.2 Implement periodic scheduling
     ```typescript
     const DEFAULT_CHECK_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -140,7 +140,7 @@ Implement periodic integrity checking to fix drift from missed file watcher even
 
 ### Phase 4: Integrity Engine Class (0.25 hours)
 
-- [ ] 4.1 Create IntegrityEngine class
+- [x] 4.1 Create IntegrityEngine class
     ```typescript
     class IntegrityEngine {
       constructor(
@@ -161,9 +161,9 @@ Implement periodic integrity checking to fix drift from missed file watcher even
 
 ### Phase 5: Export & Tests (0.25 hours)
 
-- [ ] 5.1 Export from `src/engines/integrity.ts`
+- [x] 5.1 Export from `src/engines/integrity.ts`
 
-- [ ] 5.2 Write tests
+- [x] 5.2 Write tests
     - Test drift detection accuracy
     - Test reconciliation for each category
     - Test scheduling behavior
@@ -178,13 +178,13 @@ Implement periodic integrity checking to fix drift from missed file watcher even
 
 Before marking this task complete:
 
-- [ ] All subtasks completed
-- [ ] Drift detection correctly identifies all changes
-- [ ] Reconciliation updates index correctly
-- [ ] Startup check runs without blocking
-- [ ] Periodic check runs in background
-- [ ] Tests pass
-- [ ] Changes committed to Git
+- [x] All subtasks completed
+- [x] Drift detection correctly identifies all changes
+- [x] Reconciliation updates index correctly
+- [x] Startup check runs without blocking
+- [x] Periodic check runs in background
+- [x] Tests pass
+- [x] Changes committed to Git
 
 ## Progress Log
 
@@ -192,6 +192,22 @@ Before marking this task complete:
 
 - Task created
 - Subtasks defined
+
+### 2025-12-09 - 2 hours
+
+- Implemented DriftReport and ReconcileResult interfaces
+- Implemented scanCurrentState() with policy filtering and batch hashing
+- Implemented calculateDrift() comparing filesystem with fingerprints
+- Implemented reconcile() using IndexManager.applyDelta()
+- Created IntegrityScheduler class with start(), stop(), runNow()
+- Created IntegrityEngine class with checkDrift(), reconcile(), startPeriodicCheck(), stopPeriodicCheck()
+- Added isIndexingActive/setIndexingActive to prevent concurrent reconciliation
+- Implemented runStartupCheck() and runStartupCheckBackground() for non-blocking startup
+- Added createIntegrityEngine() factory function
+- Constants: DEFAULT_CHECK_INTERVAL (24h), RECONCILE_BATCH_SIZE (50), HASH_BATCH_SIZE (50)
+- Exported from src/engines/index.ts
+- Wrote comprehensive unit tests (57 tests)
+- All 351 tests passing, build successful
 
 ## Notes
 
@@ -203,7 +219,7 @@ Before marking this task complete:
 
 ## Blockers
 
-_None yet_
+_None_
 
 ## Related Tasks
 

@@ -10,5 +10,18 @@
  * - integrity: Drift reconciliation
  */
 
-// Engine exports will be added as they are implemented
-export {};
+// Project Root Detection
+export {
+  PROJECT_MARKERS,
+  MARKER_TYPES,
+  type ProjectMarker,
+  type MarkerType,
+  type DetectionResult,
+  detectProjectRoot,
+  findProjectRoot,
+  isProjectRoot,
+  isFilesystemRoot,
+  checkMarker,
+} from './projectRoot.js';
+
+// Additional engine exports will be added as they are implemented

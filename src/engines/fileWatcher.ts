@@ -15,8 +15,11 @@
 
 import chokidar from 'chokidar';
 import { IndexManager } from './indexManager.js';
+import { DocsIndexManager } from './docsIndexManager.js';
 import { IndexingPolicy, ALL_DENY_PATTERNS, isHardDenied } from './indexPolicy.js';
+import { isDocFile } from './docsChunking.js';
 import { FingerprintsManager } from '../storage/fingerprints.js';
+import { DocsFingerprintsManager } from '../storage/docsFingerprints.js';
 import { toRelativePath, toAbsolutePath, normalizePath } from '../utils/paths.js';
 import { hashFile } from '../utils/hash.js';
 import { getLogger } from '../utils/logger.js';
@@ -147,6 +150,11 @@ export class FileWatcher {
   private readonly fingerprints: FingerprintsManager;
   private readonly debounceDelay: number;
 
+  /** Optional DocsIndexManager for routing doc file changes */
+  private readonly docsIndexManager?: DocsIndexManager;
+  /** Optional docs fingerprints for doc file change detection */
+  private readonly docsFingerprints?: DocsFingerprintsManager;
+
   private watcher: chokidar.FSWatcher | null = null;
   private isRunning = false;
   private stats: WatcherStats = {
@@ -177,6 +185,8 @@ export class FileWatcher {
    * @param policy - IndexingPolicy instance for filtering
    * @param fingerprints - FingerprintsManager instance for change detection
    * @param debounceDelay - Debounce delay in milliseconds (default: 500)
+   * @param docsIndexManager - Optional DocsIndexManager for doc file routing
+   * @param docsFingerprints - Optional DocsFingerprintsManager for doc file change detection
    */
   constructor(
     projectPath: string,
@@ -184,7 +194,9 @@ export class FileWatcher {
     indexManager: IndexManager,
     policy: IndexingPolicy,
     fingerprints: FingerprintsManager,
-    debounceDelay: number = DEFAULT_DEBOUNCE_DELAY
+    debounceDelay: number = DEFAULT_DEBOUNCE_DELAY,
+    docsIndexManager?: DocsIndexManager,
+    docsFingerprints?: DocsFingerprintsManager
   ) {
     this.projectPath = normalizePath(projectPath);
     this.indexPath = normalizePath(indexPath);
@@ -192,6 +204,8 @@ export class FileWatcher {
     this.policy = policy;
     this.fingerprints = fingerprints;
     this.debounceDelay = debounceDelay;
+    this.docsIndexManager = docsIndexManager;
+    this.docsFingerprints = docsFingerprints;
   }
 
   // ==========================================================================
@@ -218,6 +232,11 @@ export class FileWatcher {
     // Ensure fingerprints are loaded
     if (!this.fingerprints.isLoaded()) {
       await this.fingerprints.load();
+    }
+
+    // Ensure docs fingerprints are loaded (if provided)
+    if (this.docsFingerprints && !this.docsFingerprints.isLoaded()) {
+      await this.docsFingerprints.load();
     }
 
     // Ensure policy is initialized
@@ -456,13 +475,31 @@ export class FileWatcher {
   /**
    * Handle add or change event
    *
-   * 1. Check if file passes policy
-   * 2. Calculate file hash
-   * 3. Compare with stored fingerprint
-   * 4. Update index if changed
+   * 1. Check if file is a doc file (route to DocsIndexManager if provided)
+   * 2. Check if file passes policy
+   * 3. Calculate file hash
+   * 4. Compare with stored fingerprint
+   * 5. Update index if changed
    */
   private async handleAddOrChange(event: FileEvent): Promise<void> {
     const logger = getLogger();
+
+    // Check if this is a doc file and we have a DocsIndexManager
+    const isDoc = isDocFile(event.relativePath);
+    if (isDoc && this.docsIndexManager) {
+      await this.handleDocAddOrChange(event);
+      return;
+    }
+
+    // If it's a doc file but no DocsIndexManager, skip it
+    // (doc files should only go to DocsIndexManager)
+    if (isDoc) {
+      logger.debug('FileWatcher', 'Doc file skipped - no DocsIndexManager', {
+        relativePath: event.relativePath,
+      });
+      this.stats.eventsSkipped++;
+      return;
+    }
 
     // Check policy
     const policyResult = await this.policy.shouldIndex(
@@ -519,13 +556,94 @@ export class FileWatcher {
   }
 
   /**
+   * Handle add or change event for doc files
+   *
+   * Routes doc file changes to DocsIndexManager instead of IndexManager.
+   */
+  private async handleDocAddOrChange(event: FileEvent): Promise<void> {
+    const logger = getLogger();
+
+    // Check policy (docs still need to pass policy checks)
+    const policyResult = await this.policy.shouldIndex(
+      event.relativePath,
+      event.path
+    );
+
+    if (!policyResult.shouldIndex) {
+      logger.debug('FileWatcher', 'Doc event skipped - policy', {
+        relativePath: event.relativePath,
+        reason: policyResult.reason,
+      });
+      this.stats.eventsSkipped++;
+      return;
+    }
+
+    // Calculate current hash
+    let currentHash: string;
+    try {
+      currentHash = await hashFile(event.path);
+    } catch (error) {
+      // File might have been deleted between event and processing
+      logger.debug('FileWatcher', 'Could not hash doc file, may have been deleted', {
+        relativePath: event.relativePath,
+      });
+      this.stats.eventsSkipped++;
+      return;
+    }
+
+    // Compare with stored fingerprint from docs fingerprints
+    const storedHash = this.docsFingerprints?.get(event.relativePath);
+
+    if (storedHash === currentHash) {
+      logger.debug('FileWatcher', 'Doc event skipped - content unchanged', {
+        relativePath: event.relativePath,
+      });
+      this.stats.eventsSkipped++;
+      return;
+    }
+
+    // Content changed - update docs index
+    logger.info('FileWatcher', 'Updating docs index for changed doc file', {
+      type: event.type,
+      relativePath: event.relativePath,
+      wasNew: storedHash === undefined,
+    });
+
+    await this.docsIndexManager!.updateDocFile(event.relativePath);
+
+    // Reload docs fingerprints to get the updated hash
+    if (this.docsFingerprints) {
+      await this.docsFingerprints.load();
+    }
+
+    this.stats.indexUpdates++;
+  }
+
+  /**
    * Handle unlink (delete) event
    *
-   * 1. Delete chunks from index
-   * 2. Remove from fingerprints
+   * 1. Check if file is a doc file (route to DocsIndexManager if provided)
+   * 2. Delete chunks from index
+   * 3. Remove from fingerprints
    */
   private async handleUnlink(event: FileEvent): Promise<void> {
     const logger = getLogger();
+
+    // Check if this is a doc file and we have a DocsIndexManager
+    const isDoc = isDocFile(event.relativePath);
+    if (isDoc && this.docsIndexManager) {
+      await this.handleDocUnlink(event);
+      return;
+    }
+
+    // If it's a doc file but no DocsIndexManager, skip it
+    if (isDoc) {
+      logger.debug('FileWatcher', 'Doc unlink skipped - no DocsIndexManager', {
+        relativePath: event.relativePath,
+      });
+      this.stats.eventsSkipped++;
+      return;
+    }
 
     // Check if file was even indexed (skip if not in fingerprints)
     if (!this.fingerprints.has(event.relativePath)) {
@@ -547,6 +665,37 @@ export class FileWatcher {
 
     this.stats.indexUpdates++;
   }
+
+  /**
+   * Handle unlink (delete) event for doc files
+   *
+   * Routes doc file deletions to DocsIndexManager instead of IndexManager.
+   */
+  private async handleDocUnlink(event: FileEvent): Promise<void> {
+    const logger = getLogger();
+
+    // Check if file was even indexed (skip if not in docs fingerprints)
+    if (!this.docsFingerprints?.has(event.relativePath)) {
+      logger.debug('FileWatcher', 'Doc unlink skipped - not in docs fingerprints', {
+        relativePath: event.relativePath,
+      });
+      this.stats.eventsSkipped++;
+      return;
+    }
+
+    logger.info('FileWatcher', 'Removing deleted doc file from docs index', {
+      relativePath: event.relativePath,
+    });
+
+    await this.docsIndexManager!.removeDocFile(event.relativePath);
+
+    // Reload docs fingerprints to reflect removal
+    if (this.docsFingerprints) {
+      await this.docsFingerprints.load();
+    }
+
+    this.stats.indexUpdates++;
+  }
 }
 
 // ============================================================================
@@ -564,6 +713,8 @@ export class FileWatcher {
  * @param policy - IndexingPolicy instance
  * @param fingerprints - FingerprintsManager instance
  * @param debounceDelay - Optional debounce delay in milliseconds
+ * @param docsIndexManager - Optional DocsIndexManager for doc file routing
+ * @param docsFingerprints - Optional DocsFingerprintsManager for doc file change detection
  * @returns FileWatcher instance (not yet started)
  */
 export function createFileWatcher(
@@ -572,7 +723,9 @@ export function createFileWatcher(
   indexManager: IndexManager,
   policy: IndexingPolicy,
   fingerprints: FingerprintsManager,
-  debounceDelay?: number
+  debounceDelay?: number,
+  docsIndexManager?: DocsIndexManager,
+  docsFingerprints?: DocsFingerprintsManager
 ): FileWatcher {
   return new FileWatcher(
     projectPath,
@@ -580,6 +733,8 @@ export function createFileWatcher(
     indexManager,
     policy,
     fingerprints,
-    debounceDelay
+    debounceDelay,
+    docsIndexManager,
+    docsFingerprints
   );
 }

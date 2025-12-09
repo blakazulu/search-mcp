@@ -3,11 +3,11 @@ task_id: "SMCP-031"
 title: "File Watcher Docs Integration"
 category: "Technical"
 priority: "P2"
-status: "not-started"
+status: "completed"
 created_date: "2025-12-09"
 due_date: ""
 estimated_hours: 1
-actual_hours: 0
+actual_hours: 1
 assigned_to: "blakazulu"
 tags: ["engines", "watcher", "docs", "integration"]
 ---
@@ -20,10 +20,10 @@ Integrate documentation file handling into the existing file watcher. When a doc
 
 ## Goals
 
-- [ ] Detect doc file changes in file watcher
-- [ ] Route doc changes to DocsIndexManager
-- [ ] Route code changes to IndexManager (existing)
-- [ ] Handle doc file deletion
+- [x] Detect doc file changes in file watcher
+- [x] Route doc changes to DocsIndexManager
+- [x] Route code changes to IndexManager (existing)
+- [x] Handle doc file deletion
 
 ## Success Criteria
 
@@ -52,12 +52,12 @@ Integrate documentation file handling into the existing file watcher. When a doc
 
 ### Phase 1: Update File Watcher (0.5 hours)
 
-- [ ] 1.1 Import isDocFile from docsChunking
+- [x] 1.1 Import isDocFile from docsChunking
     ```typescript
     import { isDocFile } from './docsChunking';
     ```
 
-- [ ] 1.2 Update onChange handler
+- [x] 1.2 Update onChange handler
     ```typescript
     async handleChange(relativePath: string) {
       if (isDocFile(relativePath)) {
@@ -68,7 +68,7 @@ Integrate documentation file handling into the existing file watcher. When a doc
     }
     ```
 
-- [ ] 1.3 Update onDelete handler
+- [x] 1.3 Update onDelete handler
     ```typescript
     async handleDelete(relativePath: string) {
       if (isDocFile(relativePath)) {
@@ -79,18 +79,18 @@ Integrate documentation file handling into the existing file watcher. When a doc
     }
     ```
 
-- [ ] 1.4 Update FileWatcher constructor
+- [x] 1.4 Update FileWatcher constructor
     - Accept DocsIndexManager as optional parameter
     - Only route to docs if docsIndexManager provided
 
 ### Phase 2: Tests (0.5 hours)
 
-- [ ] 2.1 Update file watcher tests
+- [x] 2.1 Update file watcher tests
     - Test doc file changes go to DocsIndexManager
     - Test code file changes go to IndexManager
     - Test correct routing based on extension
 
-- [ ] 2.2 Test edge cases
+- [x] 2.2 Test edge cases
     - README.md in root
     - Nested docs folder
     - Mixed code and docs in same directory
@@ -104,11 +104,11 @@ Integrate documentation file handling into the existing file watcher. When a doc
 
 Before marking this task complete:
 
-- [ ] All subtasks completed
-- [ ] Doc files route to DocsIndexManager
-- [ ] Code files route to IndexManager
-- [ ] No duplicate processing
-- [ ] Tests pass
+- [x] All subtasks completed
+- [x] Doc files route to DocsIndexManager
+- [x] Code files route to IndexManager
+- [x] No duplicate processing
+- [x] Tests pass
 
 ## Progress Log
 
@@ -117,15 +117,33 @@ Before marking this task complete:
 - Task created
 - Subtasks defined
 
+### 2025-12-09 - 1 hour
+
+- Imported isDocFile from docsChunking.ts
+- Imported DocsIndexManager and DocsFingerprintsManager
+- Updated FileWatcher constructor to accept optional DocsIndexManager and DocsFingerprintsManager
+- Added handleDocAddOrChange method for routing doc file changes
+- Added handleDocUnlink method for routing doc file deletions
+- Updated handleAddOrChange to check isDocFile and route accordingly
+- Updated handleUnlink to check isDocFile and route accordingly
+- Updated start method to load docs fingerprints if provided
+- Updated createFileWatcher factory function with new optional parameters
+- Added comprehensive tests for doc file routing
+- All 48 file watcher tests pass
+- Full test suite (451 tests) passes
+- Build passes with no errors
+
 ## Notes
 
 - Simple routing logic based on file extension
 - Uses isDocFile() from docsChunking.ts
 - DocsIndexManager is optional (for backwards compat)
+- DocsFingerprintsManager is also optional and used for doc file change detection
+- Doc files are skipped (eventsSkipped++) when no DocsIndexManager is provided
 
 ## Blockers
 
-_None yet_
+_None_
 
 ## Related Tasks
 

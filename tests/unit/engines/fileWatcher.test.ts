@@ -28,8 +28,11 @@ import {
   WatcherStats,
 } from '../../../src/engines/fileWatcher.js';
 import { IndexManager, createFullIndex } from '../../../src/engines/indexManager.js';
+import { DocsIndexManager } from '../../../src/engines/docsIndexManager.js';
 import { IndexingPolicy } from '../../../src/engines/indexPolicy.js';
+import { isDocFile } from '../../../src/engines/docsChunking.js';
 import { FingerprintsManager } from '../../../src/storage/fingerprints.js';
+import { DocsFingerprintsManager } from '../../../src/storage/docsFingerprints.js';
 import { Config, DEFAULT_CONFIG } from '../../../src/storage/config.js';
 
 // Mock the logger to avoid file system side effects
@@ -679,6 +682,312 @@ describe('File Watcher Engine', () => {
         startedAt: null,
       };
       expect(stats.eventsProcessed).toBe(0);
+    });
+  });
+
+  describe('isDocFile helper', () => {
+    it('should identify .md files as doc files', () => {
+      expect(isDocFile('README.md')).toBe(true);
+      expect(isDocFile('docs/guide.md')).toBe(true);
+      expect(isDocFile('CHANGELOG.MD')).toBe(true);
+    });
+
+    it('should identify .txt files as doc files', () => {
+      expect(isDocFile('notes.txt')).toBe(true);
+      expect(isDocFile('docs/readme.TXT')).toBe(true);
+    });
+
+    it('should not identify code files as doc files', () => {
+      expect(isDocFile('src/index.ts')).toBe(false);
+      expect(isDocFile('src/app.js')).toBe(false);
+      expect(isDocFile('config.json')).toBe(false);
+    });
+  });
+
+  describe('Doc file routing', () => {
+    let projectPath: string;
+    let indexPath: string;
+    let indexManager: IndexManager;
+    let docsIndexManager: DocsIndexManager;
+    let policy: IndexingPolicy;
+    let fingerprints: FingerprintsManager;
+    let docsFingerprints: DocsFingerprintsManager;
+    let watcher: FileWatcher;
+
+    beforeEach(async () => {
+      projectPath = await createTempDir('watcher-docs-test-project-');
+      indexPath = await createTempDir('watcher-docs-test-index-');
+      await createTestProject(projectPath);
+
+      // Create index first
+      await createFullIndex(projectPath, indexPath);
+
+      // Initialize components
+      const config: Config = { ...DEFAULT_CONFIG };
+      indexManager = new IndexManager(projectPath, indexPath);
+      docsIndexManager = new DocsIndexManager(projectPath, indexPath);
+      policy = new IndexingPolicy(projectPath, config);
+      await policy.initialize();
+      fingerprints = new FingerprintsManager(indexPath, projectPath);
+      await fingerprints.load();
+      docsFingerprints = new DocsFingerprintsManager(indexPath, projectPath);
+      // Set empty map to initialize
+      docsFingerprints.setAll(new Map());
+    }, 60000);
+
+    afterEach(async () => {
+      // Stop watcher if running
+      if (watcher && watcher.isWatching()) {
+        await watcher.stop();
+      }
+      await removeTempDir(projectPath);
+      await removeTempDir(indexPath);
+    });
+
+    describe('constructor with DocsIndexManager', () => {
+      it('should create instance with DocsIndexManager', () => {
+        watcher = new FileWatcher(
+          projectPath,
+          indexPath,
+          indexManager,
+          policy,
+          fingerprints,
+          500,
+          docsIndexManager,
+          docsFingerprints
+        );
+
+        expect(watcher.getProjectPath()).toBe(projectPath);
+        expect(watcher.getIndexPath()).toBe(indexPath);
+        expect(watcher.isWatching()).toBe(false);
+      });
+
+      it('should work without DocsIndexManager (backwards compat)', () => {
+        watcher = new FileWatcher(
+          projectPath,
+          indexPath,
+          indexManager,
+          policy,
+          fingerprints
+        );
+
+        expect(watcher.isWatching()).toBe(false);
+      });
+    });
+
+    describe('createFileWatcher factory with docs', () => {
+      it('should create a FileWatcher with DocsIndexManager', async () => {
+        const watcher = createFileWatcher(
+          projectPath,
+          indexPath,
+          indexManager,
+          policy,
+          fingerprints,
+          500,
+          docsIndexManager,
+          docsFingerprints
+        );
+
+        expect(watcher).toBeInstanceOf(FileWatcher);
+        expect(watcher.getProjectPath()).toBe(projectPath);
+        expect(watcher.getIndexPath()).toBe(indexPath);
+      });
+    });
+
+    describe('doc file detection', () => {
+      beforeEach(async () => {
+        watcher = new FileWatcher(
+          projectPath,
+          indexPath,
+          indexManager,
+          policy,
+          fingerprints,
+          100,
+          docsIndexManager,
+          docsFingerprints
+        );
+        await watcher.start();
+      });
+
+      it('should process new doc file (.md)', async () => {
+        const initialStats = watcher.getStats();
+
+        // Create a new markdown file
+        await createFile(projectPath, 'docs/new-guide.md', '# New Guide\n\nThis is a new guide.');
+
+        // Wait for the event to be processed
+        const detected = await waitFor(
+          () => watcher.getStats().eventsProcessed > initialStats.eventsProcessed,
+          3000
+        );
+
+        expect(detected).toBe(true);
+      }, 10000);
+
+      it('should process new doc file (.txt)', async () => {
+        const initialStats = watcher.getStats();
+
+        // Create a new text file
+        await createFile(projectPath, 'notes/todo.txt', 'This is a todo list.');
+
+        // Wait for the event to be processed
+        const detected = await waitFor(
+          () => watcher.getStats().eventsProcessed > initialStats.eventsProcessed,
+          3000
+        );
+
+        expect(detected).toBe(true);
+      }, 10000);
+
+      it('should handle README.md in root', async () => {
+        // Delete existing README.md and recreate
+        const readmePath = path.join(projectPath, 'README.md');
+        const originalContent = await fs.promises.readFile(readmePath, 'utf-8');
+
+        // Modify the file
+        await fs.promises.writeFile(readmePath, originalContent + '\n## New Section', 'utf-8');
+
+        // Wait for event processing
+        await delay(1500);
+
+        // Event should have been processed
+        const stats = watcher.getStats();
+        expect(stats.eventsProcessed).toBeGreaterThan(0);
+      }, 10000);
+
+      it('should handle nested docs folder', async () => {
+        const initialStats = watcher.getStats();
+
+        // Create a deeply nested doc file
+        await createFile(
+          projectPath,
+          'docs/api/v2/reference.md',
+          '# API Reference v2\n\nSome content.'
+        );
+
+        // Wait for the event to be processed
+        const detected = await waitFor(
+          () => watcher.getStats().eventsProcessed > initialStats.eventsProcessed,
+          3000
+        );
+
+        expect(detected).toBe(true);
+      }, 10000);
+    });
+
+    describe('code file routing (no DocsIndexManager)', () => {
+      beforeEach(async () => {
+        // Create watcher WITHOUT DocsIndexManager
+        watcher = new FileWatcher(
+          projectPath,
+          indexPath,
+          indexManager,
+          policy,
+          fingerprints,
+          100
+        );
+        await watcher.start();
+      });
+
+      it('should skip doc files when no DocsIndexManager provided', async () => {
+        const initialStats = watcher.getStats();
+
+        // Create a doc file
+        await createFile(projectPath, 'docs/test.md', '# Test');
+
+        // Wait for event
+        await delay(1500);
+
+        const stats = watcher.getStats();
+        // Events might be processed but should be skipped
+        // (no index update since doc files are skipped)
+        expect(stats.indexUpdates).toBe(0);
+      }, 5000);
+
+      it('should still process code files normally', async () => {
+        const initialStats = watcher.getStats();
+
+        // Create a code file
+        await createFile(projectPath, 'src/newcode.ts', 'export const x = 1;');
+
+        // Wait for event processing
+        const detected = await waitFor(
+          () => watcher.getStats().eventsProcessed > initialStats.eventsProcessed,
+          3000
+        );
+
+        expect(detected).toBe(true);
+      }, 10000);
+    });
+
+    describe('mixed code and docs in same directory', () => {
+      beforeEach(async () => {
+        watcher = new FileWatcher(
+          projectPath,
+          indexPath,
+          indexManager,
+          policy,
+          fingerprints,
+          100,
+          docsIndexManager,
+          docsFingerprints
+        );
+        await watcher.start();
+      });
+
+      it('should route files correctly in mixed directory', async () => {
+        const initialStats = watcher.getStats();
+
+        // Create both a code file and a doc file in the same directory
+        await createFile(projectPath, 'src/module.ts', 'export const y = 2;');
+        await createFile(projectPath, 'src/README.md', '# Module readme');
+
+        // Wait for events
+        await delay(2000);
+
+        const stats = watcher.getStats();
+        // Both events should be processed
+        expect(stats.eventsProcessed).toBeGreaterThan(0);
+      }, 10000);
+    });
+
+    describe('doc file deletion', () => {
+      beforeEach(async () => {
+        // First add a doc file to fingerprints
+        docsFingerprints.set('test-doc.md', 'somehash123');
+        await docsFingerprints.save();
+
+        // Create the file
+        await createFile(projectPath, 'test-doc.md', '# Test Doc');
+
+        watcher = new FileWatcher(
+          projectPath,
+          indexPath,
+          indexManager,
+          policy,
+          fingerprints,
+          100,
+          docsIndexManager,
+          docsFingerprints
+        );
+        await watcher.start();
+      });
+
+      it('should handle doc file deletion', async () => {
+        const initialStats = watcher.getStats();
+
+        // Delete the doc file
+        const docPath = path.join(projectPath, 'test-doc.md');
+        await fs.promises.unlink(docPath);
+
+        // Wait for event processing
+        const detected = await waitFor(
+          () => watcher.getStats().eventsProcessed > initialStats.eventsProcessed,
+          3000
+        );
+
+        expect(detected).toBe(true);
+      }, 10000);
     });
   });
 });

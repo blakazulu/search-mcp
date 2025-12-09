@@ -1,5 +1,5 @@
 {
-  "name": "@blakazulu/search-mcp",
+  "name": "@liraz-sbz/search-mcp",
   "version": "1.0.0",
   "description": "A local-first Model Context Protocol (MCP) server that provides semantic search capabilities for codebases",
   "type": "module",

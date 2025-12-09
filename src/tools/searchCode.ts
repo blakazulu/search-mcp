@@ -204,34 +204,48 @@ export async function searchCode(
 // MCP Tool Definition
 // ============================================================================
 
+import { getToolDescription } from './toolDescriptions.js';
+
 /**
  * MCP tool definition for search_code
  *
  * This tool provides semantic search over the code index.
  * It does NOT require confirmation as it's a read-only operation.
+ *
+ * @param enhanced - Whether to include enhanced AI guidance hints in the description
  */
-export const searchCodeTool = {
-  name: 'search_code',
-  description: 'Search your codebase for relevant code using natural language',
-  inputSchema: {
-    type: 'object' as const,
-    properties: {
-      query: {
-        type: 'string',
-        description: 'The question or code concept to search for',
+export function createSearchCodeTool(enhanced: boolean = false) {
+  return {
+    name: 'search_code',
+    description: getToolDescription('search_code', enhanced),
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        query: {
+          type: 'string',
+          description: 'The question or code concept to search for',
+        },
+        top_k: {
+          type: 'number',
+          description: 'Number of results to return (1-50, default 10)',
+          default: 10,
+          minimum: 1,
+          maximum: 50,
+        },
       },
-      top_k: {
-        type: 'number',
-        description: 'Number of results to return (1-50, default 10)',
-        default: 10,
-        minimum: 1,
-        maximum: 50,
-      },
+      required: ['query'],
     },
-    required: ['query'],
-  },
-  requiresConfirmation: false,
-};
+    requiresConfirmation: false,
+  };
+}
+
+/**
+ * Default search_code tool definition (without enhanced hints)
+ *
+ * For backward compatibility. Use createSearchCodeTool(enhanced) for
+ * dynamic description generation.
+ */
+export const searchCodeTool = createSearchCodeTool(false);
 
 // ============================================================================
 // Exports

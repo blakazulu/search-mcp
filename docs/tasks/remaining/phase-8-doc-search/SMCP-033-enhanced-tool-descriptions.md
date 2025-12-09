@@ -3,11 +3,11 @@ task_id: "SMCP-033"
 title: "Enhanced Tool Descriptions"
 category: "Technical"
 priority: "P2"
-status: "not-started"
+status: "done"
 created_date: "2025-12-09"
 due_date: ""
 estimated_hours: 1.5
-actual_hours: 0
+actual_hours: 1.5
 assigned_to: "blakazulu"
 tags: ["tools", "config", "ai-hints"]
 ---
@@ -20,10 +20,10 @@ Implement the `enhancedToolDescriptions` config option that adds AI guidance hin
 
 ## Goals
 
-- [ ] Add `enhancedToolDescriptions` to config schema
-- [ ] Implement dynamic tool description generation
-- [ ] Add hints for `search_code` and `search_docs` tools
-- [ ] Default to `false` (opt-in feature)
+- [x] Add `enhancedToolDescriptions` to config schema
+- [x] Implement dynamic tool description generation
+- [x] Add hints for `search_code` and `search_docs` tools
+- [x] Default to `false` (opt-in feature)
 
 ## Success Criteria
 
@@ -52,7 +52,7 @@ Implement the `enhancedToolDescriptions` config option that adds AI guidance hin
 
 ### Phase 1: Config Schema Update (0.25 hours)
 
-- [ ] 1.1 Add to config interface
+- [x] 1.1 Add to config interface
     ```typescript
     interface ProjectConfig {
       // ... existing fields
@@ -60,7 +60,7 @@ Implement the `enhancedToolDescriptions` config option that adds AI guidance hin
     }
     ```
 
-- [ ] 1.2 Add to config defaults
+- [x] 1.2 Add to config defaults
     ```typescript
     const DEFAULT_CONFIG: ProjectConfig = {
       // ... existing defaults
@@ -68,13 +68,13 @@ Implement the `enhancedToolDescriptions` config option that adds AI guidance hin
     };
     ```
 
-- [ ] 1.3 Add validation
+- [x] 1.3 Add validation
     - Validate as boolean
     - Default to `false` if missing or invalid
 
 ### Phase 2: Tool Description Constants (0.5 hours)
 
-- [ ] 2.1 Define standard descriptions
+- [x] 2.1 Define standard descriptions
     ```typescript
     const STANDARD_DESCRIPTIONS = {
       search_code: 'Search your codebase for relevant code using natural language',
@@ -84,7 +84,7 @@ Implement the `enhancedToolDescriptions` config option that adds AI guidance hin
     };
     ```
 
-- [ ] 2.2 Define enhanced hints
+- [x] 2.2 Define enhanced hints
     ```typescript
     const ENHANCED_HINTS = {
       search_code: ' TIP: Prefer this over reading full files when looking for specific functions, patterns, or implementations.',
@@ -95,7 +95,7 @@ Implement the `enhancedToolDescriptions` config option that adds AI guidance hin
 
 ### Phase 3: Dynamic Description Generation (0.5 hours)
 
-- [ ] 3.1 Implement description getter
+- [x] 3.1 Implement description getter
     ```typescript
     export function getToolDescription(
       toolName: string,
@@ -109,29 +109,19 @@ Implement the `enhancedToolDescriptions` config option that adds AI guidance hin
     }
     ```
 
-- [ ] 3.2 Update tool registration
-    ```typescript
-    // In MCP server setup
-    const config = await loadConfig(projectPath);
-
-    const tools = [
-      {
-        name: 'search_code',
-        description: getToolDescription('search_code', config.enhancedToolDescriptions),
-        // ...
-      },
-      // ...
-    ];
-    ```
+- [x] 3.2 Update tool registration
+    - Created `createSearchCodeTool(enhanced)` factory function
+    - Created `createSearchDocsTool(enhanced)` factory function
+    - Default exports use `enhanced=false`
 
 ### Phase 4: Tests (0.25 hours)
 
-- [ ] 4.1 Test config parsing
+- [x] 4.1 Test config parsing
     - Test with `enhancedToolDescriptions: true`
     - Test with `enhancedToolDescriptions: false`
     - Test with missing field (should default to false)
 
-- [ ] 4.2 Test description generation
+- [x] 4.2 Test description generation
     - Test standard descriptions returned when disabled
     - Test enhanced descriptions returned when enabled
     - Test tools without hints return standard description
@@ -145,12 +135,12 @@ Implement the `enhancedToolDescriptions` config option that adds AI guidance hin
 
 Before marking this task complete:
 
-- [ ] All subtasks completed
-- [ ] Config option works correctly
-- [ ] Enhanced descriptions include helpful hints
-- [ ] Default is `false` (opt-in)
-- [ ] Tests pass
-- [ ] Changes committed to Git
+- [x] All subtasks completed
+- [x] Config option works correctly
+- [x] Enhanced descriptions include helpful hints
+- [x] Default is `false` (opt-in)
+- [x] Tests pass (1273 tests)
+- [x] Changes committed to Git
 
 ## Progress Log
 
@@ -158,6 +148,19 @@ Before marking this task complete:
 
 - Task created
 - Subtasks defined
+
+### 2025-12-09 - 1.5 hours
+
+- Added `enhancedToolDescriptions` to ConfigSchema (default: false)
+- Created `src/tools/toolDescriptions.ts` with STANDARD_DESCRIPTIONS and ENHANCED_HINTS
+- Implemented `getToolDescription(toolName, enhanced)` function
+- Added helper functions: hasEnhancedHint(), getToolNames(), getEnhancedToolNames()
+- Created `createSearchCodeTool(enhanced)` factory in searchCode.ts
+- Created `createSearchDocsTool(enhanced)` factory in searchDocs.ts
+- Updated exports in tools/index.ts
+- Created comprehensive tests for tool descriptions
+- Updated config tests for new field
+- All 1273 tests passing
 
 ## Notes
 
@@ -168,7 +171,7 @@ Before marking this task complete:
 
 ## Blockers
 
-_None yet_
+_None_
 
 ## Related Tasks
 

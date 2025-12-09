@@ -635,6 +635,59 @@ describe('search_docs Tool', () => {
   });
 
   // --------------------------------------------------------------------------
+  // createSearchDocsTool Tests
+  // --------------------------------------------------------------------------
+
+  describe('createSearchDocsTool', () => {
+    it('should create tool with standard description when enhanced=false', async () => {
+      const { createSearchDocsTool } = await import(
+        '../../../src/tools/searchDocs.js'
+      );
+      const tool = createSearchDocsTool(false);
+
+      expect(tool.name).toBe('search_docs');
+      expect(tool.description).toContain('.md');
+      expect(tool.description).toContain('.txt');
+      expect(tool.description).not.toContain('TIP:');
+    });
+
+    it('should create tool with enhanced description when enhanced=true', async () => {
+      const { createSearchDocsTool } = await import(
+        '../../../src/tools/searchDocs.js'
+      );
+      const tool = createSearchDocsTool(true);
+
+      expect(tool.name).toBe('search_docs');
+      expect(tool.description).toContain('.md');
+      expect(tool.description).toContain('.txt');
+      expect(tool.description).toContain('TIP:');
+      expect(tool.description).toContain('follow-up questions');
+    });
+
+    it('should default to standard description when no argument provided', async () => {
+      const { createSearchDocsTool } = await import(
+        '../../../src/tools/searchDocs.js'
+      );
+      const tool = createSearchDocsTool();
+
+      expect(tool.description).not.toContain('TIP:');
+    });
+
+    it('should have same schema structure regardless of enhanced setting', async () => {
+      const { createSearchDocsTool } = await import(
+        '../../../src/tools/searchDocs.js'
+      );
+      const standardTool = createSearchDocsTool(false);
+      const enhancedTool = createSearchDocsTool(true);
+
+      expect(standardTool.inputSchema).toEqual(enhancedTool.inputSchema);
+      expect(standardTool.requiresConfirmation).toBe(
+        enhancedTool.requiresConfirmation
+      );
+    });
+  });
+
+  // --------------------------------------------------------------------------
   // docsIndexNotFound Error Factory Tests
   // --------------------------------------------------------------------------
 
@@ -699,6 +752,14 @@ describe('search_docs Tool', () => {
       const { docsIndexNotFound } = await import('../../../src/tools/index.js');
       expect(docsIndexNotFound).toBeDefined();
       expect(typeof docsIndexNotFound).toBe('function');
+    });
+
+    it('should export createSearchDocsTool from tools index', async () => {
+      const { createSearchDocsTool } = await import(
+        '../../../src/tools/index.js'
+      );
+      expect(createSearchDocsTool).toBeDefined();
+      expect(typeof createSearchDocsTool).toBe('function');
     });
   });
 

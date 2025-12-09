@@ -109,6 +109,9 @@ export const ConfigSchema = z
 
     /** Whether to index documentation files separately */
     indexDocs: z.boolean().default(true),
+
+    /** Whether to add AI guidance hints to tool descriptions */
+    enhancedToolDescriptions: z.boolean().default(false),
   })
   .strict()
   .passthrough(); // Allow underscore-prefixed documentation fields
@@ -147,6 +150,7 @@ export const DEFAULT_CONFIG: Config = {
   maxFiles: 50000,
   docPatterns: ['**/*.md', '**/*.txt'],
   indexDocs: true,
+  enhancedToolDescriptions: false,
 };
 
 /**
@@ -325,6 +329,8 @@ export async function generateDefaultConfig(indexPath: string): Promise<void> {
         'Array of glob patterns for documentation files (default: ["**/*.md", "**/*.txt"])',
       indexDocs:
         'Whether to index documentation files separately (default: true)',
+      enhancedToolDescriptions:
+        'Whether to add AI guidance hints to tool descriptions (default: false)',
     },
     ...DEFAULT_CONFIG,
   };

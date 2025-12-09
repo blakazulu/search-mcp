@@ -112,6 +112,7 @@ describe('Config Manager', () => {
         maxFiles: 10000,
         docPatterns: ['**/*.md', '**/*.rst'],
         indexDocs: false,
+        enhancedToolDescriptions: true,
       };
 
       const result = ConfigSchema.safeParse(config);
@@ -132,6 +133,7 @@ describe('Config Manager', () => {
         expect(result.data.maxFiles).toBe(50000);
         expect(result.data.docPatterns).toEqual(['**/*.md', '**/*.txt']);
         expect(result.data.indexDocs).toBe(true);
+        expect(result.data.enhancedToolDescriptions).toBe(false);
       }
     });
 
@@ -165,6 +167,23 @@ describe('Config Manager', () => {
     it('should reject invalid indexDocs type', () => {
       const result = ConfigSchema.safeParse({
         indexDocs: 'yes',
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('should accept enhancedToolDescriptions boolean', () => {
+      const result = ConfigSchema.safeParse({
+        enhancedToolDescriptions: true,
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.enhancedToolDescriptions).toBe(true);
+      }
+    });
+
+    it('should reject invalid enhancedToolDescriptions type', () => {
+      const result = ConfigSchema.safeParse({
+        enhancedToolDescriptions: 'yes',
       });
       expect(result.success).toBe(false);
     });
@@ -218,6 +237,11 @@ describe('Config Manager', () => {
       expect(DEFAULT_CONFIG.maxFiles).toBeDefined();
       expect(DEFAULT_CONFIG.docPatterns).toBeDefined();
       expect(DEFAULT_CONFIG.indexDocs).toBeDefined();
+      expect(DEFAULT_CONFIG.enhancedToolDescriptions).toBeDefined();
+    });
+
+    it('should have correct enhancedToolDescriptions default', () => {
+      expect(DEFAULT_CONFIG.enhancedToolDescriptions).toBe(false);
     });
 
     it('should have correct docPatterns default', () => {
@@ -274,6 +298,7 @@ describe('Config Manager', () => {
         maxFiles: 20000,
         docPatterns: ['docs/**/*.md'],
         indexDocs: false,
+        enhancedToolDescriptions: true,
       };
 
       const configPath = path.join(indexPath, 'config.json');
@@ -502,6 +527,7 @@ describe('Config Manager', () => {
       expect(config._availableOptions.maxFiles).toBeDefined();
       expect(config._availableOptions.docPatterns).toBeDefined();
       expect(config._availableOptions.indexDocs).toBeDefined();
+      expect(config._availableOptions.enhancedToolDescriptions).toBeDefined();
     });
 
     it('should include docPatterns and indexDocs fields', async () => {
@@ -513,6 +539,16 @@ describe('Config Manager', () => {
 
       expect(config.docPatterns).toEqual(['**/*.md', '**/*.txt']);
       expect(config.indexDocs).toBe(true);
+    });
+
+    it('should include enhancedToolDescriptions field with default false', async () => {
+      await generateDefaultConfig(indexPath);
+
+      const configPath = path.join(indexPath, 'config.json');
+      const content = await fs.promises.readFile(configPath, 'utf-8');
+      const config = JSON.parse(content);
+
+      expect(config.enhancedToolDescriptions).toBe(false);
     });
   });
 
@@ -543,6 +579,7 @@ describe('Config Manager', () => {
           maxFiles: 10000,
           docPatterns: ['**/*.md'],
           indexDocs: false,
+          enhancedToolDescriptions: true,
         };
 
         const configPath = path.join(indexPath, 'config.json');

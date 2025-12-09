@@ -229,32 +229,45 @@ export function docsIndexNotFound(indexPath: string): MCPError {
 // MCP Tool Definition
 // ============================================================================
 
+import { getToolDescription } from './toolDescriptions.js';
+
 /**
  * MCP tool definition for search_docs
  *
  * This tool provides semantic search over the documentation index.
  * It does NOT require confirmation as it's a read-only operation.
+ *
+ * @param enhanced - Whether to include enhanced AI guidance hints in the description
  */
-export const searchDocsTool = {
-  name: 'search_docs',
-  description:
-    'Search project documentation files (.md, .txt) using natural language. Optimized for prose content like README, guides, and technical docs.',
-  inputSchema: {
-    type: 'object' as const,
-    properties: {
-      query: {
-        type: 'string',
-        description: 'The question or topic to search for in documentation',
+export function createSearchDocsTool(enhanced: boolean = false) {
+  return {
+    name: 'search_docs',
+    description: getToolDescription('search_docs', enhanced),
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        query: {
+          type: 'string',
+          description: 'The question or topic to search for in documentation',
+        },
+        top_k: {
+          type: 'number',
+          description: 'Number of results to return (1-50, default 10)',
+          default: 10,
+          minimum: 1,
+          maximum: 50,
+        },
       },
-      top_k: {
-        type: 'number',
-        description: 'Number of results to return (1-50, default 10)',
-        default: 10,
-        minimum: 1,
-        maximum: 50,
-      },
+      required: ['query'],
     },
-    required: ['query'],
-  },
-  requiresConfirmation: false,
-};
+    requiresConfirmation: false,
+  };
+}
+
+/**
+ * Default search_docs tool definition (without enhanced hints)
+ *
+ * For backward compatibility. Use createSearchDocsTool(enhanced) for
+ * dynamic description generation.
+ */
+export const searchDocsTool = createSearchDocsTool(false);

@@ -576,6 +576,54 @@ describe('search_code Tool', () => {
   });
 
   // --------------------------------------------------------------------------
+  // createSearchCodeTool Tests
+  // --------------------------------------------------------------------------
+
+  describe('createSearchCodeTool', () => {
+    it('should create tool with standard description when enhanced=false', async () => {
+      const { createSearchCodeTool } = await import('../../../src/tools/searchCode.js');
+      const tool = createSearchCodeTool(false);
+
+      expect(tool.name).toBe('search_code');
+      expect(tool.description).toBe(
+        'Search your codebase for relevant code using natural language'
+      );
+      expect(tool.description).not.toContain('TIP:');
+    });
+
+    it('should create tool with enhanced description when enhanced=true', async () => {
+      const { createSearchCodeTool } = await import('../../../src/tools/searchCode.js');
+      const tool = createSearchCodeTool(true);
+
+      expect(tool.name).toBe('search_code');
+      expect(tool.description).toContain(
+        'Search your codebase for relevant code using natural language'
+      );
+      expect(tool.description).toContain('TIP:');
+      expect(tool.description).toContain('Prefer this over reading full files');
+    });
+
+    it('should default to standard description when no argument provided', async () => {
+      const { createSearchCodeTool } = await import('../../../src/tools/searchCode.js');
+      const tool = createSearchCodeTool();
+
+      expect(tool.description).toBe(
+        'Search your codebase for relevant code using natural language'
+      );
+      expect(tool.description).not.toContain('TIP:');
+    });
+
+    it('should have same schema structure regardless of enhanced setting', async () => {
+      const { createSearchCodeTool } = await import('../../../src/tools/searchCode.js');
+      const standardTool = createSearchCodeTool(false);
+      const enhancedTool = createSearchCodeTool(true);
+
+      expect(standardTool.inputSchema).toEqual(enhancedTool.inputSchema);
+      expect(standardTool.requiresConfirmation).toBe(enhancedTool.requiresConfirmation);
+    });
+  });
+
+  // --------------------------------------------------------------------------
   // Export Alias Tests
   // --------------------------------------------------------------------------
 
@@ -618,6 +666,12 @@ describe('search_code Tool', () => {
     it('should export SearchCodeInputSchema from tools index', async () => {
       const { SearchCodeInputSchema } = await import('../../../src/tools/index.js');
       expect(SearchCodeInputSchema).toBeDefined();
+    });
+
+    it('should export createSearchCodeTool from tools index', async () => {
+      const { createSearchCodeTool } = await import('../../../src/tools/index.js');
+      expect(createSearchCodeTool).toBeDefined();
+      expect(typeof createSearchCodeTool).toBe('function');
     });
   });
 

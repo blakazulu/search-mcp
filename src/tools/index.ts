@@ -33,6 +33,7 @@ export {
   searchNow,
   searchCodeTool,
   searchNowTool,
+  createSearchCodeTool,
   SearchCodeInputSchema,
   SearchNowInputSchema,
   type SearchCodeInput,
@@ -110,6 +111,7 @@ export {
 export {
   searchDocs,
   searchDocsTool,
+  createSearchDocsTool,
   SearchDocsInputSchema,
   docsIndexNotFound,
   type SearchDocsInput,
@@ -117,3 +119,13 @@ export {
   type SearchDocsResult,
   type DocsToolContext,
 } from './searchDocs.js';
+
+// Tool description utilities
+export {
+  getToolDescription,
+  hasEnhancedHint,
+  getToolNames,
+  getEnhancedToolNames,
+  STANDARD_DESCRIPTIONS,
+  ENHANCED_HINTS,
+} from './toolDescriptions.js';

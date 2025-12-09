@@ -24,3 +24,14 @@ export {
   type SearchCodeResult,
   type ToolContext,
 } from './searchCode.js';
+
+// search_by_path tool - glob pattern file search
+export {
+  searchByPath,
+  searchByPathTool,
+  SearchByPathInputSchema,
+  validateGlobPattern,
+  matchPattern,
+  type SearchByPathInput,
+  type SearchByPathOutput,
+} from './searchByPath.js';

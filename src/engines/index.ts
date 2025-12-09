@@ -50,4 +50,19 @@ export {
   chunkFileSync,
 } from './chunking.js';
 
+// Embedding Engine
+export {
+  MODEL_NAME,
+  EMBEDDING_DIMENSION,
+  BATCH_SIZE,
+  type EmbeddingResult,
+  type EmbeddingProgressCallback,
+  type DownloadProgressCallback,
+  EmbeddingEngine,
+  getEmbeddingEngine,
+  resetEmbeddingEngine,
+  embedText,
+  embedBatch,
+} from './embedding.js';
+
 // Additional engine exports will be added as they are implemented

@@ -72,3 +72,23 @@ export {
   atomicWrite,
   atomicWriteJson,
 } from './atomicWrite.js';
+
+// Memory monitoring exports
+export {
+  type MemoryStats,
+  type MemoryWarningLevel,
+  type MemoryStatus,
+  type MemoryWarningCallback,
+  MEMORY_WARNING_THRESHOLD,
+  MEMORY_CRITICAL_THRESHOLD,
+  DEFAULT_CHECK_INTERVAL,
+  getMemoryStats,
+  formatBytes,
+  getMemoryStatus,
+  logMemoryUsage,
+  isMemoryCritical,
+  isMemoryWarning,
+  requestGarbageCollection,
+  getAdaptiveBatchSize,
+  MemoryMonitor,
+} from './memory.js';

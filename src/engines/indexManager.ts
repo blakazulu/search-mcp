@@ -32,6 +32,7 @@ import { getEmbeddingEngine, EmbeddingEngine } from './embedding.js';
 import { toRelativePath, toAbsolutePath, normalizePath, getIndexPath } from '../utils/paths.js';
 import { hashFile } from '../utils/hash.js';
 import { getLogger } from '../utils/logger.js';
+import { logMemoryUsage, getAdaptiveBatchSize, isMemoryCritical } from '../utils/memory.js';
 import { MCPError, ErrorCode, fileLimitWarning, isMCPError } from '../errors/index.js';
 
 // ============================================================================
@@ -275,6 +276,9 @@ async function processFileBatch(
   const fileHashes = new Map<string, string>();
   const errors: string[] = [];
 
+  // Log memory at start of batch (MCP-22)
+  logMemoryUsage(`Processing batch: ${files.length} files`);
+
   for (let i = 0; i < files.length; i++) {
     const relativePath = files[i];
     const absolutePath = toAbsolutePath(relativePath, projectPath);
@@ -287,6 +291,16 @@ async function processFileBatch(
         total: totalFiles,
         currentFile: relativePath,
       });
+    }
+
+    // Check memory before processing each file (MCP-22)
+    if (isMemoryCritical()) {
+      logger.warn('IndexManager', 'Memory critical, skipping remaining files in batch', {
+        processed: i,
+        remaining: files.length - i,
+      });
+      errors.push(`Skipped ${files.length - i} files due to memory constraints`);
+      break;
     }
 
     try {
@@ -325,6 +339,9 @@ async function processFileBatch(
     }
   }
 
+  // Log memory after chunking phase
+  logMemoryUsage(`Chunking complete: ${allChunks.length} chunks`);
+
   // Generate embeddings for all chunks
   if (allChunks.length > 0) {
     const texts = allChunks.map((c) => c.text);
@@ -354,6 +371,9 @@ async function processFileBatch(
     for (let i = 0; i < allChunks.length; i++) {
       allChunks[i].vector = vectors[i];
     }
+
+    // Log memory after embedding phase
+    logMemoryUsage(`Embedding complete: ${vectors.length} vectors`);
   }
 
   return { chunks: allChunks, hashes: fileHashes, errors };
@@ -440,17 +460,24 @@ export async function createFullIndex(
       };
     }
 
-    // Process files in batches
+    // Process files in batches with adaptive sizing (MCP-22)
     let totalChunks = 0;
     const allHashes = new Map<string, string>();
 
-    for (let i = 0; i < files.length; i += FILE_BATCH_SIZE) {
-      const batch = files.slice(i, i + FILE_BATCH_SIZE);
+    // Log memory before starting indexing
+    logMemoryUsage('Starting full index');
+
+    let i = 0;
+    while (i < files.length) {
+      // Use adaptive batch sizing based on memory pressure (MCP-22)
+      const currentBatchSize = getAdaptiveBatchSize(FILE_BATCH_SIZE, 10);
+      const batch = files.slice(i, i + currentBatchSize);
       const batchNum = Math.floor(i / FILE_BATCH_SIZE) + 1;
       const totalBatches = Math.ceil(files.length / FILE_BATCH_SIZE);
 
       logger.debug('IndexManager', `Processing batch ${batchNum}/${totalBatches}`, {
         batchSize: batch.length,
+        adaptedBatchSize: currentBatchSize,
       });
 
       const { chunks, hashes, errors: batchErrors } = await processFileBatch(
@@ -482,7 +509,12 @@ export async function createFullIndex(
       for (const [path, hash] of hashes) {
         allHashes.set(path, hash);
       }
+
+      i += currentBatchSize;
     }
+
+    // Log memory after indexing
+    logMemoryUsage('Full index complete');
 
     // Update fingerprints
     fingerprintsManager.setAll(allHashes);

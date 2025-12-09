@@ -9,9 +9,12 @@
  */
 
 import * as fs from 'node:fs';
+import * as readline from 'node:readline';
+import * as crypto from 'node:crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { hashString } from '../utils/hash.js';
 import { fileNotFound, MCPError, ErrorCode } from '../errors/index.js';
+import { getLogger } from '../utils/logger.js';
 
 // ============================================================================
 // Types and Interfaces
@@ -75,6 +78,12 @@ export const DEFAULT_SPLIT_OPTIONS: SplitOptions = {
   chunkOverlap: 800,
   separators: ['\n\n', '\n', ' ', ''],
 };
+
+/**
+ * Maximum file size to read entirely into memory (MCP-26)
+ * Files larger than this will be processed with streaming
+ */
+export const MAX_IN_MEMORY_SIZE = 10 * 1024 * 1024; // 10MB
 
 // ============================================================================
 // Text Splitting Functions
@@ -444,10 +453,178 @@ function countLinesUntilPosition(text: string, position: number): number {
 // ============================================================================
 
 /**
+ * Chunk a large file using streaming to avoid memory explosion (MCP-26)
+ *
+ * This function processes files line by line to avoid loading the entire
+ * file into memory at once. It's used for files larger than MAX_IN_MEMORY_SIZE.
+ *
+ * @param absolutePath - Absolute path to the file on disk
+ * @param relativePath - Relative path from project root (stored in chunk)
+ * @param fileSize - Size of the file in bytes
+ * @param options - Optional split configuration
+ * @returns Promise resolving to array of chunks with IDs and metadata
+ */
+async function chunkLargeFile(
+  absolutePath: string,
+  relativePath: string,
+  fileSize: number,
+  options?: Partial<SplitOptions>
+): Promise<Chunk[]> {
+  const logger = getLogger();
+  const opts = { ...DEFAULT_SPLIT_OPTIONS, ...options };
+
+  logger.info('Chunking', `Streaming large file (${Math.round(fileSize / 1024 / 1024)}MB)`, {
+    path: relativePath,
+    size: fileSize,
+  });
+
+  // Create hash for streaming computation
+  const hash = crypto.createHash('sha256');
+
+  // Read file line by line and build chunks
+  const chunks: Chunk[] = [];
+  let currentChunkText = '';
+  let currentChunkStartLine = 1;
+  let currentLine = 1;
+  let overlapText = '';
+
+  return new Promise<Chunk[]>((resolve, reject) => {
+    const fileStream = fs.createReadStream(absolutePath, { encoding: 'utf8' });
+    const rl = readline.createInterface({
+      input: fileStream,
+      crlfDelay: Infinity,
+    });
+
+    rl.on('line', (line) => {
+      // Update hash
+      hash.update(line + '\n');
+
+      const lineWithNewline = line + '\n';
+
+      // Try to add line to current chunk
+      const potentialChunk = currentChunkText + lineWithNewline;
+
+      if (potentialChunk.length <= opts.chunkSize) {
+        // Line fits, add it
+        currentChunkText = potentialChunk;
+      } else {
+        // Chunk is full, save it and start a new one
+        if (currentChunkText.length > 0) {
+          chunks.push({
+            id: uuidv4(),
+            text: currentChunkText,
+            path: relativePath,
+            startLine: currentChunkStartLine,
+            endLine: currentLine - 1,
+            contentHash: '', // Will be updated after file is fully read
+          });
+
+          // Calculate overlap for next chunk
+          overlapText = calculateOverlapFromText(currentChunkText, opts.chunkOverlap);
+        }
+
+        // Start new chunk with overlap + current line
+        currentChunkText = overlapText + lineWithNewline;
+        currentChunkStartLine = currentLine - countLines(overlapText) + 1;
+        if (currentChunkStartLine < 1) currentChunkStartLine = 1;
+      }
+
+      currentLine++;
+    });
+
+    rl.on('close', () => {
+      // Handle the last chunk
+      if (currentChunkText.length > 0) {
+        chunks.push({
+          id: uuidv4(),
+          text: currentChunkText,
+          path: relativePath,
+          startLine: currentChunkStartLine,
+          endLine: currentLine - 1,
+          contentHash: '', // Will be updated below
+        });
+      }
+
+      // Get final hash
+      const contentHash = hash.digest('hex');
+
+      // Update all chunks with the content hash
+      for (const chunk of chunks) {
+        chunk.contentHash = contentHash;
+      }
+
+      logger.debug('Chunking', `Streamed large file into ${chunks.length} chunks`, {
+        path: relativePath,
+      });
+
+      resolve(chunks);
+    });
+
+    rl.on('error', (error) => {
+      reject(
+        new MCPError({
+          code: ErrorCode.FILE_NOT_FOUND,
+          userMessage: 'Failed to read the file.',
+          developerMessage: `Failed to stream file ${absolutePath}: ${error.message}`,
+          cause: error,
+        })
+      );
+    });
+
+    fileStream.on('error', (error) => {
+      const nodeError = error as NodeJS.ErrnoException;
+      if (nodeError.code === 'ENOENT') {
+        reject(fileNotFound(absolutePath));
+      } else if (nodeError.code === 'EACCES') {
+        reject(
+          new MCPError({
+            code: ErrorCode.PERMISSION_DENIED,
+            userMessage: 'Access denied. Please check that you have permission to access this file.',
+            developerMessage: `Permission denied reading file: ${absolutePath}`,
+            cause: nodeError,
+          })
+        );
+      } else {
+        reject(
+          new MCPError({
+            code: ErrorCode.FILE_NOT_FOUND,
+            userMessage: 'Failed to read the file.',
+            developerMessage: `Failed to stream file ${absolutePath}: ${nodeError.message}`,
+            cause: nodeError,
+          })
+        );
+      }
+    });
+  });
+}
+
+/**
+ * Calculate overlap text from the end of a chunk
+ *
+ * @param text - Text to extract overlap from
+ * @param overlapSize - Target overlap size in characters
+ * @returns Text to use as overlap
+ */
+function calculateOverlapFromText(text: string, overlapSize: number): string {
+  if (!text || overlapSize <= 0) {
+    return '';
+  }
+
+  if (text.length <= overlapSize) {
+    return text;
+  }
+
+  // Start from the end and go back overlapSize characters
+  return text.slice(-overlapSize);
+}
+
+/**
  * Chunk a file into indexable segments
  *
  * Reads the file, splits it into chunks, and assigns UUIDs and metadata
  * to each chunk. The content hash is computed for the entire file content.
+ *
+ * For large files (>10MB), uses streaming to avoid memory explosion (MCP-26).
  *
  * @param absolutePath - Absolute path to the file on disk
  * @param relativePath - Relative path from project root (stored in chunk)
@@ -472,7 +649,44 @@ export async function chunkFile(
   relativePath: string,
   options?: Partial<SplitOptions>
 ): Promise<Chunk[]> {
-  // Read file content
+  const logger = getLogger();
+
+  // Check file size first (MCP-26)
+  let stats: fs.Stats;
+  try {
+    stats = await fs.promises.stat(absolutePath);
+  } catch (error) {
+    const nodeError = error as NodeJS.ErrnoException;
+    if (nodeError.code === 'ENOENT') {
+      throw fileNotFound(absolutePath);
+    }
+    if (nodeError.code === 'EACCES') {
+      throw new MCPError({
+        code: ErrorCode.PERMISSION_DENIED,
+        userMessage: 'Access denied. Please check that you have permission to access this file.',
+        developerMessage: `Permission denied accessing file: ${absolutePath}`,
+        cause: nodeError,
+      });
+    }
+    throw new MCPError({
+      code: ErrorCode.FILE_NOT_FOUND,
+      userMessage: 'Failed to access the file.',
+      developerMessage: `Failed to stat file ${absolutePath}: ${nodeError.message}`,
+      cause: nodeError,
+    });
+  }
+
+  // Use streaming for large files
+  if (stats.size > MAX_IN_MEMORY_SIZE) {
+    logger.warn('Chunking', 'Large file detected, using streaming', {
+      path: relativePath,
+      size: stats.size,
+      threshold: MAX_IN_MEMORY_SIZE,
+    });
+    return chunkLargeFile(absolutePath, relativePath, stats.size, options);
+  }
+
+  // Read file content for smaller files
   let content: string;
   try {
     content = await fs.promises.readFile(absolutePath, 'utf8');

@@ -119,8 +119,10 @@ export class EmbeddingEngine {
     try {
       await this.initializationPromise;
     } catch (error) {
-      // Reset so we can try again
+      // Reset completely on failure to allow retry
+      // This prevents partial initialization state (Bug #14)
       this.initializationPromise = null;
+      this.pipeline = null;
       throw error;
     }
   }
@@ -212,15 +214,16 @@ export class EmbeddingEngine {
       textLength: text.length,
     });
 
+    let output: { data: unknown; dispose?: () => void } | null = null;
     try {
       // Run the embedding
-      const output = await this.pipeline(text, {
+      output = await this.pipeline(text, {
         pooling: 'mean',
         normalize: true,
       });
 
       // Extract the vector from the output tensor
-      const vector = Array.from(output.data as Float32Array);
+      const vector = Array.from(output!.data as Float32Array);
 
       // Validate dimension
       if (vector.length !== EMBEDDING_DIMENSION) {
@@ -238,6 +241,15 @@ export class EmbeddingEngine {
         textLength: text.length,
       });
       throw err;
+    } finally {
+      // Dispose tensor to free memory (Bug #10)
+      if (output && typeof output.dispose === 'function') {
+        try {
+          output.dispose();
+        } catch {
+          // Ignore disposal errors
+        }
+      }
     }
   }
 
@@ -285,12 +297,13 @@ export class EmbeddingEngine {
 
       // Process each text in the batch
       for (const text of batch) {
+        let output: { data: unknown; dispose?: () => void } | null = null;
         try {
-          const output = await this.pipeline(text, {
+          output = await this.pipeline(text, {
             pooling: 'mean',
             normalize: true,
           });
-          const vector = Array.from(output.data as Float32Array);
+          const vector = Array.from(output!.data as Float32Array);
           vectors.push(vector);
         } catch (error) {
           const err = error instanceof Error ? error : new Error(String(error));
@@ -300,6 +313,15 @@ export class EmbeddingEngine {
           });
           // Push zero vector for failed embeddings to maintain order
           vectors.push(new Array(EMBEDDING_DIMENSION).fill(0));
+        } finally {
+          // Dispose tensor to free memory (Bug #10)
+          if (output && typeof output.dispose === 'function') {
+            try {
+              output.dispose();
+            } catch {
+              // Ignore disposal errors
+            }
+          }
         }
 
         // Report progress

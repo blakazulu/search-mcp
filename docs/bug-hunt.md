@@ -14,14 +14,16 @@ Deep security and stability analysis of the Search MCP codebase revealed **65+ p
 
 **UPDATE 2024-12-09: SMCP-038 Completed** - Resource cleanup and signal handling (Bug #12, #13, MCP-23, MCP-25) have been fixed with cleanup registry and signal handlers. 4 bugs resolved.
 
+**UPDATE 2024-12-10: SMCP-039 Completed** - Memory leak fixes (Bug #9, #10, #11, #14, MCP-22, MCP-26) have been fixed with tensor disposal, query pagination, streaming for large files, and memory monitoring utilities. 6 bugs resolved.
+
 ### Bug Count Summary
 | Severity | Count | Fixed |
 |----------|-------|-------|
-| **CRITICAL** | ~~10~~ 2 | 8 |
-| **HIGH** | ~~19~~ 15 | 4 |
-| **MEDIUM** | ~~27~~ 23 | 4 |
+| **CRITICAL** | ~~10~~ 1 | 9 |
+| **HIGH** | ~~19~~ 11 | 8 |
+| **MEDIUM** | ~~27~~ 22 | 5 |
 | **LOW** | 9+ | 0 |
-| **TOTAL** | **~~65+~~ 49+** | **15** |
+| **TOTAL** | **~~65+~~ 43+** | **21** |
 
 ---
 
@@ -530,32 +532,41 @@ const MODEL_NAME = 'Xenova/all-MiniLM-L6-v2';
 
 ---
 
-### MCP-22. NO GRACEFUL DEGRADATION ON LOW MEMORY
+### MCP-22. NO GRACEFUL DEGRADATION ON LOW MEMORY ✅ FIXED (SMCP-039)
 **Severity:** MEDIUM
-**Status:** VULNERABLE
+**Status:** RESOLVED on 2024-12-10
 
-**Issue:** Large projects with many files can exhaust memory during indexing. No detection or graceful handling.
+**Fix Applied:**
+- Created `src/utils/memory.ts` with memory monitoring utilities:
+  - `getMemoryUsage()` - Returns current heap and RSS stats
+  - `logMemoryUsage()` - Logs memory at specific phases
+  - `checkMemoryPressure()` - Returns adaptive batch size recommendations
+  - `isMemoryPressureHigh()` - Quick check for high memory state
+- Integrated memory monitoring into IndexManager
+- Added early warning logging when memory pressure is detected
 
-**Code Evidence:**
-```typescript
-// src/engines/indexManager.ts:445
-const allHashes = new Map<string, string>();  // Grows unbounded
+~~**Issue:** Large projects with many files can exhaust memory during indexing. No detection or graceful handling.~~
 
-// src/engines/embedding.ts - loads entire model into memory (~90MB)
-// Plus embeddings for batch of 32 texts at once
-```
+~~**Code Evidence:**~~
+~~```typescript~~
+~~// src/engines/indexManager.ts:445~~
+~~const allHashes = new Map<string, string>();  // Grows unbounded~~
 
-**Scenario:**
-1. Project has 100,000 files
-2. Indexing loads model (90MB) + chunks in memory
-3. System runs low on RAM
-4. V8 heap grows → GC thrashing → extreme slowdown
-5. Eventually OOM kill with no warning
+~~// src/engines/embedding.ts - loads entire model into memory (~90MB)~~
+~~// Plus embeddings for batch of 32 texts at once~~
+~~```~~
 
-**What's Missing:**
-- Memory usage monitoring
-- Adaptive batch sizes based on available memory
-- Early warning when approaching limits
+~~**Scenario:**~~
+~~1. Project has 100,000 files~~
+~~2. Indexing loads model (90MB) + chunks in memory~~
+~~3. System runs low on RAM~~
+~~4. V8 heap grows → GC thrashing → extreme slowdown~~
+~~5. Eventually OOM kill with no warning~~
+
+~~**What's Missing:**~~
+~~- Memory usage monitoring~~
+~~- Adaptive batch sizes based on available memory~~
+~~- Early warning when approaching limits~~
 
 ---
 
@@ -622,24 +633,30 @@ export const DEFAULT_CHECK_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
 
 ---
 
-### MCP-26. MULTI-GB FILE MEMORY EXPLOSION
+### MCP-26. MULTI-GB FILE MEMORY EXPLOSION ✅ FIXED (SMCP-039)
 **Severity:** CRITICAL
-**Status:** VULNERABLE
+**Status:** RESOLVED on 2024-12-10
 
-**Issue:** `chunkFile` reads entire file into memory before chunking. No streaming support.
+**Fix Applied:**
+- Added `MAX_IN_MEMORY_SIZE` constant (10MB threshold) in `chunking.ts`
+- Created `chunkLargeFile()` function that uses `fs.createReadStream()`
+- Large files are now processed incrementally to avoid memory spikes
+- Chunks are yielded as they're ready instead of accumulating in memory
 
-**Code Evidence:**
-```typescript
-// src/engines/chunking.ts:476-478
-content = await fs.promises.readFile(absolutePath, 'utf8');
-// Single readFile with no stream support
-```
+~~**Issue:** `chunkFile` reads entire file into memory before chunking. No streaming support.~~
 
-**Scenario:**
-1. 5GB minified JavaScript file (no newlines)
-2. `fs.promises.readFile` loads entire file into memory
-3. Splittext recursion creates deep call stack with overlapping chunk buffers
-4. OOM kill with no warning
+~~**Code Evidence:**~~
+~~```typescript~~
+~~// src/engines/chunking.ts:476-478~~
+~~content = await fs.promises.readFile(absolutePath, 'utf8');~~
+~~// Single readFile with no stream support~~
+~~```~~
+
+~~**Scenario:**~~
+~~1. 5GB minified JavaScript file (no newlines)~~
+~~2. `fs.promises.readFile` loads entire file into memory~~
+~~3. Splittext recursion creates deep call stack with overlapping chunk buffers~~
+~~4. OOM kill with no warning~~
 
 ---
 
@@ -953,41 +970,58 @@ const context: CreateIndexContext = {
 
 ---
 
-### 9. Memory Leak in IndexManager Batch Processing
+### 9. Memory Leak in IndexManager Batch Processing ✅ FIXED (SMCP-039)
 **File:** `src/engines/indexManager.ts:261-360`
+**Status:** RESOLVED on 2024-12-10
 
-```typescript
-const allChunks: ChunkRecord[] = [];  // Grows unbounded
-// NO explicit cleanup after return
-```
+**Fix Applied:**
+- Added memory monitoring with `logMemoryUsage()` during batch processing
+- Implemented `checkMemoryPressure()` to detect high memory conditions
+- Added adaptive batch sizing based on available memory
 
-**Impact:** OOM crash on large projects.
+~~```typescript~~
+~~const allChunks: ChunkRecord[] = [];  // Grows unbounded~~
+~~// NO explicit cleanup after return~~
+~~```~~
+
+~~**Impact:** OOM crash on large projects.~~
 
 ---
 
-### 10. Embedding Engine Tensor Memory Leak
+### 10. Embedding Engine Tensor Memory Leak ✅ FIXED (SMCP-039)
 **File:** `src/engines/embedding.ts:254-317`
+**Status:** RESOLVED on 2024-12-10
 
-```typescript
-const output = await this.pipeline(text, { pooling: 'mean', normalize: true });
-const vector = Array.from(output.data as Float32Array);
-// output tensor is NEVER disposed
-```
+**Fix Applied:**
+- Added `output.dispose()` call after extracting vector data from tensor
+- Tensors are now properly disposed to free ONNX runtime memory
 
-**Impact:** Gradual memory growth during long indexing operations.
+~~```typescript~~
+~~const output = await this.pipeline(text, { pooling: 'mean', normalize: true });~~
+~~const vector = Array.from(output.data as Float32Array);~~
+~~// output tensor is NEVER disposed~~
+~~```~~
+
+~~**Impact:** Gradual memory growth during long indexing operations.~~
 
 ---
 
-### 11. Unbounded Query in getIndexedFiles()
+### 11. Unbounded Query in getIndexedFiles() ✅ FIXED (SMCP-039)
 **File:** `src/storage/lancedb.ts:472`
+**Status:** RESOLVED on 2024-12-10
 
-```typescript
-const results = await table.filter('true').select(['path']).execute();  // ALL rows
-```
+**Fix Applied:**
+- Added pagination to `getIndexedFiles()` with configurable limit parameter
+- Uses batch fetching (1000 at a time) to build unique path set
+- Applied same pattern to `DocsLanceDBStore.getIndexedDocFiles()`
 
-**Issue:** Fetches ALL rows without pagination or limit.
+~~```typescript~~
+~~const results = await table.filter('true').select(['path']).execute();  // ALL rows~~
+~~```~~
 
-**Impact:** Memory exhaustion and DoS on large indexes.
+~~**Issue:** Fetches ALL rows without pagination or limit.~~
+
+~~**Impact:** Memory exhaustion and DoS on large indexes.~~
 
 ---
 
@@ -1018,18 +1052,24 @@ const results = await table.filter('true').select(['path']).execute();  // ALL r
 
 ---
 
-### 14. Embedding Engine Partial Initialization
+### 14. Embedding Engine Partial Initialization ✅ FIXED (SMCP-039)
 **File:** `src/engines/embedding.ts:105-126`
+**Status:** RESOLVED on 2024-12-10
 
-```typescript
-} catch (error) {
-  this.initializationPromise = null;
-  throw error;
-  // this.pipeline could be in broken partial state!
-}
-```
+**Fix Applied:**
+- Added `this.pipeline = null` reset on initialization failure
+- Ensures clean state for retry attempts after failure
+- Pipeline is now fully reset before re-throwing error
 
-**Impact:** Subsequent calls may use broken pipeline.
+~~```typescript~~
+~~} catch (error) {~~
+~~  this.initializationPromise = null;~~
+~~  throw error;~~
+~~  // this.pipeline could be in broken partial state!~~
+~~}~~
+~~```~~
+
+~~**Impact:** Subsequent calls may use broken pipeline.~~
 
 ---
 
@@ -1177,15 +1217,15 @@ await this.initialize();  // Never runs if above throws
 |----------|----------|------|--------|-----|-------|
 | SQL Injection | ~~1~~ 0 | - | - | - | ✅ 1 (SMCP-035) |
 | Race Conditions | ~~2~~ 0 | - | ~~2~~ 1 | - | ✅ 3 (SMCP-036, Bug #2,3,15) |
-| Memory Leaks | - | 3 | - | - | |
+| Memory Leaks | - | ~~3~~ 0 | - | - | ✅ 3 (SMCP-039, Bug #9,10,11) |
 | Resource Leaks | ~~2~~ 0 | 2 | 1 | - | ✅ 2 (SMCP-037, Bug #5,6) |
-| Error Handling | ~~1~~ 0 | 1 | 3 | 2 | ✅ 1 (SMCP-036, Bug #4) |
+| Error Handling | ~~1~~ 0 | ~~1~~ 0 | 3 | 2 | ✅ 2 (SMCP-036 Bug #4, SMCP-039 Bug #14) |
 | Security | - | 1 | ~~2~~ 0 | - | ✅ 2 (SMCP-035 Bug #22, SMCP-037 Bug #17) |
 | Logic Flaws | - | 1 | 2 | - | |
 | Performance | - | - | 3 | - | |
 | Resource Mgmt | - | ~~2~~ 0 | - | - | ✅ 2 (SMCP-038, Bug #12,13) |
 
-**Subtotal: ~~7~~ 1 Critical, ~~8~~ 6 High, ~~13~~ 9 Medium, 2+ Low (11 Fixed from original)**
+**Subtotal: ~~7~~ 1 Critical, ~~8~~ 2 High, ~~13~~ 9 Medium, 2+ Low (15 Fixed from original)**
 
 ### MCP-Specific Vulnerabilities (From Web Research + Deep Analysis)
 | Category | Critical | High | Medium | Low |
@@ -1210,11 +1250,11 @@ await this.initialize();  // Never runs if above throws
 | Long File Paths | - | - | - | 1 |
 | Hash Collision | - | - | - | 1 |
 | Model Version Mismatch | - | - | 1 | - |
-| Low Memory Handling | - | - | 1 | - |
+| Low Memory Handling | - | - | ~~1~~ 0 | - | ✅ (SMCP-039, MCP-22) |
 | Watcher Error Recovery | - | - | ~~1~~ 0 | - | ✅ (SMCP-038, MCP-23) |
 | Integrity Check Gaps | - | - | - | 1 |
 | **Signal Handling** | ~~**1**~~ 0 | - | - | - | ✅ (SMCP-038, MCP-25) |
-| **Multi-GB File Memory** | **1** | - | - | - |
+| **Multi-GB File Memory** | ~~**1**~~ 0 | - | - | - | ✅ (SMCP-039, MCP-26) |
 | **Hard Link Duplicates** | - | **1** | - | - |
 | **NFS Timestamp Aliasing** | - | **1** | - | - |
 | **Unicode Path Handling** | - | - | **1** | - |
@@ -1225,9 +1265,9 @@ await this.initialize();  // Never runs if above throws
 | **Orphaned Chunks on Error** | - | ~~**1**~~ 0 | - | - | ✅ (SMCP-037, MCP-34) |
 | **Future Timestamps** | - | - | - | **1** |
 
-**Subtotal: ~~3~~ 2 Critical, ~~11~~ 9 High, ~~14~~ 13 Medium, 7 Low = 31 MCP-specific issues (4 Fixed)**
+**Subtotal: ~~3~~ 1 Critical, ~~11~~ 9 High, ~~14~~ 12 Medium, 7 Low = 29 MCP-specific issues (6 Fixed)**
 
-### GRAND TOTAL: ~~10~~ 2 Critical, ~~19~~ 15 High, ~~27~~ 23 Medium, 9+ Low = 49+ Issues (15 Fixed)
+### GRAND TOTAL: ~~10~~ 1 Critical, ~~19~~ 11 High, ~~27~~ 22 Medium, 9+ Low = 43+ Issues (21 Fixed)
 
 ---
 

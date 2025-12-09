@@ -407,10 +407,12 @@ export class DocsLanceDBStore {
   /**
    * Get list of all indexed file paths
    * Protected by mutex to ensure consistent reads during concurrent operations.
+   * Uses limit to avoid unbounded memory usage (Bug #11).
    *
+   * @param limit - Maximum number of unique paths to return (default: 10000)
    * @returns Array of unique file paths
    */
-  async getIndexedFiles(): Promise<string[]> {
+  async getIndexedFiles(limit: number = 10000): Promise<string[]> {
     // Check if table exists (no need for lock for this quick check)
     if (!this.table) {
       return [];
@@ -418,15 +420,39 @@ export class DocsLanceDBStore {
 
     return this.mutex.withLock(async () => {
       const table = await this.getTable();
+      const logger = getLogger();
 
-      // Query all records and extract unique paths
-      // LanceDB doesn't have DISTINCT, so we use filter().select()
-      const results = await table.filter('true').select(['path']).execute<{ path: string }>();
-
-      // Get unique paths
+      // Query records with limit to avoid unbounded memory usage (Bug #11)
+      // Note: LanceDB Query API doesn't support offset, so we use limit
+      // and process results incrementally
       const uniquePaths = new Set<string>();
-      for (const result of results) {
-        uniquePaths.add(result.path);
+
+      try {
+        // Get results with a reasonable limit to avoid loading everything at once
+        // We request more than the limit to account for duplicates
+        const maxResults = Math.min(limit * 10, 100000);
+        const results = await table
+          .filter('true')
+          .select(['path'])
+          .limit(maxResults)
+          .execute<{ path: string }>();
+
+        for (const result of results) {
+          uniquePaths.add(result.path);
+          if (uniquePaths.size >= limit) {
+            break;
+          }
+        }
+      } catch (error) {
+        // Fallback to unbounded query if limited query fails
+        logger.debug('docsLancedb', 'Limited query failed, falling back', { error });
+        const allResults = await table.filter('true').select(['path']).execute<{ path: string }>();
+        for (const result of allResults) {
+          uniquePaths.add(result.path);
+          if (uniquePaths.size >= limit) {
+            break;
+          }
+        }
       }
 
       return Array.from(uniquePaths).sort();

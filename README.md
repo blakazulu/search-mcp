@@ -630,6 +630,25 @@ Auto-generated at `~/.mcp/search/indexes/<hash>/config.json`:
 | `maxFiles` | `number` | `50000` | Warn if project exceeds this count |
 | `docPatterns` | `string[]` | `["**/*.md", "**/*.txt"]` | Glob patterns for documentation files |
 | `indexDocs` | `boolean` | `true` | Enable documentation indexing |
+| `enhancedToolDescriptions` | `boolean` | `false` | Add AI hints to tool descriptions (see below) |
+
+### Enhanced Tool Descriptions
+
+When `enhancedToolDescriptions: true`, tool descriptions include hints that guide AI behavior:
+
+**Standard (default):**
+```
+search_docs: "Search documentation files (.md, .txt)"
+```
+
+**Enhanced:**
+```
+search_docs: "Search documentation files (.md, .txt). TIP: For follow-up
+questions about a doc already in context, use this tool instead of
+re-reading the entire file - more precise results, less context usage."
+```
+
+This helps the AI make smarter decisions about when to use search vs. reading from context, especially for the [hybrid approach](#hybrid-approach-when-you-already-dragged-a-doc) described above.
 
 ## Hardcoded Deny List
 

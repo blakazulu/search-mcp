@@ -524,6 +524,24 @@ Scenario: User drags large-spec.md into chat
 - Use full context read only when user needs to see entire doc (e.g., "summarize this")
 - For specific lookups ("find X", "where does it mention Y"), use search
 
+**Enhanced Tool Descriptions (`enhancedToolDescriptions: true`):**
+
+When enabled, tool descriptions include hints that guide AI behavior:
+
+| Tool | Standard Description | Enhanced Description |
+|------|---------------------|---------------------|
+| `search_docs` | "Search documentation files (.md, .txt)" | "Search documentation files (.md, .txt). **TIP:** For follow-up questions about a doc already in context, use this tool instead of re-reading the entire file - more precise results, less context usage." |
+| `search_code` | "Search your codebase for relevant code" | "Search your codebase for relevant code using natural language. **TIP:** Prefer this over reading full files when looking for specific functions, patterns, or implementations." |
+
+**Implementation:**
+```typescript
+function getToolDescription(tool: string, enhanced: boolean): string {
+  const base = TOOL_DESCRIPTIONS[tool];
+  if (!enhanced) return base;
+  return base + ENHANCED_HINTS[tool];
+}
+```
+
 **Confirmation Required:** No
 
 ---
@@ -756,6 +774,8 @@ Created at `~/.mcp/search/indexes/<hash>/config.json` on first index:
   "docPatterns": ["**/*.md", "**/*.txt"],
   "indexDocs": true,
 
+  "enhancedToolDescriptions": false,
+
   "_hardcodedExcludes": [
     "// These patterns are ALWAYS excluded and cannot be overridden:",
     "// - node_modules/, jspm_packages/, bower_components/  (dependencies)",
@@ -775,7 +795,8 @@ Created at `~/.mcp/search/indexes/<hash>/config.json` on first index:
     "maxFileSize": "Skip files larger than this. Supports: '500KB', '1MB', '2MB'.",
     "maxFiles": "Warn if project exceeds this many files.",
     "docPatterns": "Glob patterns for documentation files. Default: ['**/*.md', '**/*.txt'].",
-    "indexDocs": "If true, index documentation files with prose-optimized chunking. Default: true."
+    "indexDocs": "If true, index documentation files with prose-optimized chunking. Default: true.",
+    "enhancedToolDescriptions": "If true, tool descriptions include AI hints. Default: false."
   }
 }
 ```
@@ -790,6 +811,7 @@ On load, validate:
 - `maxFiles` is positive integer
 - `docPatterns` is array of strings (glob patterns)
 - `indexDocs` is boolean
+- `enhancedToolDescriptions` is boolean
 
 Invalid config → Use defaults + log warning
 

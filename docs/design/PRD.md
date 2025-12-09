@@ -185,6 +185,8 @@ Priority chain for detecting project root:
   "docPatterns": ["**/*.md", "**/*.txt"],
   "indexDocs": true,
 
+  "enhancedToolDescriptions": false,
+
   "_hardcodedExcludes": [
     "// These patterns are ALWAYS excluded and cannot be overridden:",
     "// - node_modules/, jspm_packages/, bower_components/  (dependencies)",
@@ -204,7 +206,8 @@ Priority chain for detecting project root:
     "maxFileSize": "Skip files larger than this. Supports: '500KB', '1MB', '2MB'.",
     "maxFiles": "Warn if project exceeds this many files.",
     "docPatterns": "Glob patterns for documentation files. Default: ['**/*.md', '**/*.txt'].",
-    "indexDocs": "If true, index documentation files separately with prose-optimized chunking."
+    "indexDocs": "If true, index documentation files separately with prose-optimized chunking.",
+    "enhancedToolDescriptions": "If true, tool descriptions include hints for AI to prefer search over re-reading context. Default: false."
   }
 }
 ```

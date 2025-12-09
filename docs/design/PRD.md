@@ -71,6 +71,8 @@ A **local-first Model Context Protocol (MCP) Server** that enables Claude Code (
 
 - **As a Developer**, I want to search my project's documentation files (README, guides, docs/) separately from code, so I can find relevant explanations without filling up context with entire documents.
 - **As a Developer**, I want documentation search to be optimized for prose content, with larger chunks that preserve context better than code chunks.
+- **As a Developer**, I want to ask questions about docs instead of dragging them into chat, so I don't fill up the AI's context window with entire files.
+- **As a Developer**, I want the AI to use indexed search for follow-up questions even if I already dragged a doc into chat (hybrid approach).
 
 ### Index Management
 
@@ -114,7 +116,34 @@ A **local-first Model Context Protocol (MCP) Server** that enables Claude Code (
 | **File Watching** | Real-time filesystem monitoring for incremental updates |
 | **Auto-Configuration** | Generate config file with sensible defaults |
 
-### 5.3 Project Root Detection
+### 5.3 Hybrid Search Behavior
+
+When users work with documentation, there are two scenarios:
+
+**Scenario 1: User asks about a doc (Recommended)**
+```
+User: "What does the PRD say about authentication?"
+AI: → Uses search_docs to retrieve only relevant chunks
+    → Context stays clean, focused results
+```
+
+**Scenario 2: User drags a doc into chat**
+```
+User: *drags large-spec.md into chat*
+User: "Summarize this document"
+AI: → Reads the full doc from chat context (unavoidable)
+
+User: "Now find where it mentions error handling"
+AI: → Uses search_docs instead of re-reading entire doc
+    → Hybrid approach kicks in for follow-up questions
+```
+
+**Why this matters:**
+- Dragging docs fills the AI's context window with entire files
+- Large docs degrade AI response quality
+- The hybrid approach allows recovery: initial read from chat, follow-ups via search
+
+### 5.4 Project Root Detection
 
 Priority chain for detecting project root:
 
@@ -138,7 +167,7 @@ Priority chain for detecting project root:
    Choice:
    ```
 
-### 5.4 Configuration
+### 5.5 Configuration
 
 **Auto-generated on first index** at `~/.mcp/search/indexes/<hash>/config.json`:
 

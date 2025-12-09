@@ -3,7 +3,7 @@
  *
  * Exports all MCP tools:
  * - create_index: Create index for current project
- * - search_now: Semantic search
+ * - search_code: Semantic search (also exported as search_now)
  * - search_by_path: Find files by glob pattern
  * - get_index_status: Show index statistics
  * - reindex_project: Rebuild entire index
@@ -11,5 +11,16 @@
  * - delete_index: Remove project index
  */
 
-// Tool exports will be added as they are implemented
-export {};
+// search_code tool - primary semantic search
+export {
+  searchCode,
+  searchNow,
+  searchCodeTool,
+  searchNowTool,
+  SearchCodeInputSchema,
+  SearchNowInputSchema,
+  type SearchCodeInput,
+  type SearchCodeOutput,
+  type SearchCodeResult,
+  type ToolContext,
+} from './searchCode.js';

@@ -14,6 +14,7 @@ A local-first Model Context Protocol (MCP) server that provides semantic search 
   - [Installation](#installation)
   - [Configure: Claude Desktop](#claude-desktop) | [Claude Code](#claude-code-cli) | [Cursor](#cursor) | [Windsurf](#windsurf) | [Antigravity](#antigravity)
   - [Example Use Cases](#example-use-cases)
+  - [Best Practices](#best-practices)
 - [For Developers (Technical Details)](#for-developers-technical-details)
 - [Troubleshooting](#troubleshooting)
 
@@ -427,6 +428,72 @@ AI: "API endpoints follow a consistent pattern:
      3. Global error handler in src/middleware/error.ts formats response
      Example from src/api/users.ts:45..."
 ```
+
+## Best Practices
+
+### Don't Drag Docs — Ask Instead
+
+**The Problem:**
+When you drag a document into the chat, the AI reads the **entire file** into its context window. For large docs (PRDs, specs, guides), this:
+- Fills up the AI's memory quickly
+- Degrades response quality as context grows
+- Wastes tokens on irrelevant sections
+
+**The Solution:**
+Instead of dragging, just **ask about the doc**:
+
+| ❌ Don't Do This | ✅ Do This Instead |
+|-----------------|-------------------|
+| *Drags PRD.md into chat* | "What does the PRD say about authentication?" |
+| *Drags API-guide.md into chat* | "Search the docs for rate limiting" |
+| *Drags multiple docs* | "Find documentation about the payment flow" |
+
+The AI will use `search_docs` to retrieve only the relevant chunks, keeping your context clean.
+
+---
+
+### Hybrid Approach: When You Already Dragged a Doc
+
+If you've already dragged a document into the chat, you can still benefit from Search MCP for **follow-up questions**:
+
+```
+You: *drags large-spec.md into chat*
+You: "Summarize this document"
+AI: *reads the full doc you dragged*
+AI: "Here's a summary..."
+
+You: "Now find where it mentions error handling"
+AI: *uses search_docs instead of re-reading the whole file*
+AI: "Based on section 4.2 of the spec, error handling should..."
+```
+
+**How it works:**
+- The AI recognizes the doc is already indexed
+- For follow-up searches, it uses `search_docs` for precision
+- Avoids re-reading the entire document for each question
+
+---
+
+### When TO Drag Files
+
+Dragging is still useful for:
+- **Small files** (< 100 lines) - Quick to read entirely
+- **Files outside your project** - External docs not in the index
+- **One-time references** - Files you won't ask about again
+- **Showing exact content** - When you need the AI to see specific formatting
+
+---
+
+### Quick Reference
+
+| Scenario | Best Approach |
+|----------|---------------|
+| Large project doc (PRD, RFC, guide) | Ask: "Search docs for X" |
+| Code file you're editing | AI auto-searches with `search_code` |
+| External doc (not in project) | Drag into chat |
+| Small config file | Either works |
+| Multiple related questions about a doc | Ask (uses search) |
+| Need AI to see exact formatting | Drag |
 
 ## Privacy Promise
 

@@ -497,6 +497,33 @@ Performs semantic similarity search on documentation files only (.md, .txt).
 - Uses prose-optimized chunking (larger chunks, more overlap)
 - Stored in separate LanceDB table (`docs.lancedb/`)
 
+**Hybrid Search Behavior:**
+
+When a user drags a document into the chat, the AI reads the entire file into its context window. This is unavoidable for the initial interaction. However, for **follow-up questions** about that document, the AI should use `search_docs` instead of re-reading the full doc from context:
+
+```
+Scenario: User drags large-spec.md into chat
+
+1. User: "Summarize this document"
+   AI: Reads full doc from chat context (necessary for summary)
+
+2. User: "Find the section about error handling"
+   AI: Uses search_docs("error handling") instead of re-reading
+   → Returns only relevant chunks
+   → Avoids context bloat on follow-ups
+```
+
+**Why hybrid matters:**
+- Initial read from chat is unavoidable when user drags file
+- Follow-up queries benefit from indexed search (precision + speed)
+- Prevents context window from filling with repeated full-doc reads
+- Better response quality as context stays focused
+
+**AI Guidance (for MCP clients):**
+- If a doc is in chat AND indexed, prefer `search_docs` for follow-up questions
+- Use full context read only when user needs to see entire doc (e.g., "summarize this")
+- For specific lookups ("find X", "where does it mention Y"), use search
+
 **Confirmation Required:** No
 
 ---

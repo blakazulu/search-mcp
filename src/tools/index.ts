@@ -63,3 +63,18 @@ export {
   type GetIndexStatusOutput,
   type IndexStatus,
 } from './getIndexStatus.js';
+
+// reindex_project tool - rebuild entire index
+export {
+  reindexProject,
+  reindexProjectTool,
+  ReindexProjectInputSchema,
+  checkIndexExists,
+  loadExistingConfig,
+  deleteIndexData,
+  getReindexConfirmationMessage,
+  type ReindexProjectInput,
+  type ReindexProjectOutput,
+  type ReindexProjectStatus,
+  type ReindexProjectContext,
+} from './reindexProject.js';

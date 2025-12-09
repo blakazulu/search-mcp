@@ -3,11 +3,11 @@ task_id: "SMCP-012"
 title: "Chunking Engine"
 category: "Technical"
 priority: "P1"
-status: "not-started"
+status: "done"
 created_date: "2025-12-09"
 due_date: ""
 estimated_hours: 3
-actual_hours: 0
+actual_hours: 2
 assigned_to: "blakazulu"
 tags: ["engines", "chunking", "text-processing"]
 ---
@@ -20,10 +20,10 @@ Implement text chunking for splitting source files into indexable segments. Uses
 
 ## Goals
 
-- [ ] Split files into ~1000 token chunks
-- [ ] Maintain ~200 token overlap between chunks
-- [ ] Track start/end line numbers for each chunk
-- [ ] Use natural break points (paragraphs, lines)
+- [x] Split files into ~1000 token chunks
+- [x] Maintain ~200 token overlap between chunks
+- [x] Track start/end line numbers for each chunk
+- [x] Use natural break points (paragraphs, lines)
 
 ## Success Criteria
 
@@ -51,7 +51,7 @@ Implement text chunking for splitting source files into indexable segments. Uses
 
 ### Phase 1: Chunk Structure (0.25 hours)
 
-- [ ] 1.1 Define chunk interface
+- [x] 1.1 Define chunk interface
     ```typescript
     interface Chunk {
       id: string;          // UUIDv4
@@ -65,7 +65,7 @@ Implement text chunking for splitting source files into indexable segments. Uses
 
 ### Phase 2: Text Splitter (1.5 hours)
 
-- [ ] 2.1 Implement recursive text splitter
+- [x] 2.1 Implement recursive text splitter
     ```typescript
     interface SplitOptions {
       chunkSize: number;      // Target size in characters (~4000)
@@ -80,7 +80,7 @@ Implement text chunking for splitting source files into indexable segments. Uses
     };
     ```
 
-- [ ] 2.2 Implement split algorithm
+- [x] 2.2 Implement split algorithm
     ```typescript
     function splitText(text: string, options?: Partial<SplitOptions>): string[]
     // Recursively splits using separators in priority order
@@ -88,14 +88,14 @@ Implement text chunking for splitting source files into indexable segments. Uses
     // Falls back to character split if needed
     ```
 
-- [ ] 2.3 Handle edge cases
+- [x] 2.3 Handle edge cases
     - Empty files → return empty array
     - Single line files → single chunk if under size
     - Very long lines → split at character boundary
 
 ### Phase 3: Line Number Tracking (0.75 hours)
 
-- [ ] 3.1 Implement line number calculation
+- [x] 3.1 Implement line number calculation
     ```typescript
     interface ChunkWithLines {
       text: string;
@@ -110,13 +110,13 @@ Implement text chunking for splitting source files into indexable segments. Uses
     // Tracks which lines each chunk covers
     ```
 
-- [ ] 3.2 Handle overlap line counting
+- [x] 3.2 Handle overlap line counting
     - Overlapping text belongs to multiple chunks
     - Each chunk should have accurate start/end lines
 
 ### Phase 4: File Chunking Function (0.25 hours)
 
-- [ ] 4.1 Implement file chunking
+- [x] 4.1 Implement file chunking
     ```typescript
     async function chunkFile(
       absolutePath: string,
@@ -127,14 +127,14 @@ Implement text chunking for splitting source files into indexable segments. Uses
     // Includes file content hash
     ```
 
-- [ ] 4.2 Generate UUIDs for chunks
+- [x] 4.2 Generate UUIDs for chunks
     - Use uuid v4 for unique chunk IDs
 
 ### Phase 5: Export & Tests (0.25 hours)
 
-- [ ] 5.1 Export from `src/engines/chunking.ts`
+- [x] 5.1 Export from `src/engines/chunking.ts`
 
-- [ ] 5.2 Write unit tests
+- [x] 5.2 Write unit tests
     - Test chunk size bounds
     - Test overlap presence
     - Test line number accuracy
@@ -150,13 +150,13 @@ Implement text chunking for splitting source files into indexable segments. Uses
 
 Before marking this task complete:
 
-- [ ] All subtasks completed
-- [ ] Chunks are within size bounds
-- [ ] Overlap works correctly
-- [ ] Line numbers are accurate
-- [ ] All separators are tried in order
-- [ ] Unit tests pass
-- [ ] Changes committed to Git
+- [x] All subtasks completed
+- [x] Chunks are within size bounds
+- [x] Overlap works correctly
+- [x] Line numbers are accurate
+- [x] All separators are tried in order
+- [x] Unit tests pass
+- [x] Changes committed to Git
 
 ## Progress Log
 
@@ -164,6 +164,20 @@ Before marking this task complete:
 
 - Task created
 - Subtasks defined
+
+### 2025-12-09 - 2 hours
+
+- Implemented Chunk interface with id, text, path, startLine, endLine, contentHash
+- Implemented SplitOptions with DEFAULT_SPLIT_OPTIONS (4000 chars, 800 overlap)
+- Implemented splitText() with recursive separator-based splitting
+- Implemented splitWithLineNumbers() with accurate 1-based line tracking
+- Implemented chunkFile() async and chunkFileSync() for file processing
+- Uses UUID v4 for chunk IDs, SHA256 for content hash
+- Edge cases handled: empty files, single lines, very long lines, Unicode
+- Updated vitest.config.ts for memory optimization
+- Exported from src/engines/index.ts
+- Wrote comprehensive unit tests (33 tests passing)
+- Full test suite passes (270+ tests)
 
 ## Notes
 
@@ -174,7 +188,7 @@ Before marking this task complete:
 
 ## Blockers
 
-_None yet_
+_None_
 
 ## Related Tasks
 

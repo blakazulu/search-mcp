@@ -38,4 +38,16 @@ export {
   IndexingPolicy,
 } from './indexPolicy.js';
 
+// Chunking Engine
+export {
+  type Chunk,
+  type SplitOptions,
+  type ChunkWithLines,
+  DEFAULT_SPLIT_OPTIONS,
+  splitText,
+  splitWithLineNumbers,
+  chunkFile,
+  chunkFileSync,
+} from './chunking.js';
+
 // Additional engine exports will be added as they are implemented

@@ -35,3 +35,15 @@ export {
   type SearchByPathInput,
   type SearchByPathOutput,
 } from './searchByPath.js';
+
+// get_index_status tool - index statistics and diagnostics
+export {
+  getIndexStatus,
+  getIndexStatusTool,
+  GetIndexStatusInputSchema,
+  formatStorageSize,
+  collectStatus,
+  type GetIndexStatusInput,
+  type GetIndexStatusOutput,
+  type IndexStatus,
+} from './getIndexStatus.js';

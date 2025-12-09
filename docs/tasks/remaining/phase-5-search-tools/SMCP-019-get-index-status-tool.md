@@ -3,11 +3,11 @@ task_id: "SMCP-019"
 title: "get_index_status Tool"
 category: "Technical"
 priority: "P1"
-status: "not-started"
+status: "done"
 created_date: "2025-12-09"
 due_date: ""
 estimated_hours: 2
-actual_hours: 0
+actual_hours: 1.5
 assigned_to: "blakazulu"
 tags: ["tools", "status", "mcp"]
 ---
@@ -20,10 +20,10 @@ Implement the index status MCP tool. Returns diagnostic information about the cu
 
 ## Goals
 
-- [ ] Report index statistics
-- [ ] Show last update timestamps
-- [ ] Report watcher status
-- [ ] Handle missing index gracefully
+- [x] Report index statistics
+- [x] Show last update timestamps
+- [x] Report watcher status
+- [x] Handle missing index gracefully
 
 ## Success Criteria
 
@@ -52,14 +52,14 @@ Implement the index status MCP tool. Returns diagnostic information about the cu
 
 ### Phase 1: Tool Schema (0.25 hours)
 
-- [ ] 1.1 Define input schema
+- [x] 1.1 Define input schema
     ```typescript
     const GetIndexStatusInputSchema = z.object({
       // No required inputs - uses current project context
     });
     ```
 
-- [ ] 1.2 Define output schema
+- [x] 1.2 Define output schema
     ```typescript
     interface GetIndexStatusOutput {
       status: 'ready' | 'indexing' | 'not_found';
@@ -74,20 +74,20 @@ Implement the index status MCP tool. Returns diagnostic information about the cu
 
 ### Phase 2: Status Collection (1 hour)
 
-- [ ] 2.1 Implement status collector
+- [x] 2.1 Implement status collector
     ```typescript
     async function collectStatus(
       context: ToolContext
     ): Promise<GetIndexStatusOutput>
     ```
 
-- [ ] 2.2 Check index existence
+- [x] 2.2 Check index existence
     ```typescript
     // Check if index exists at expected path
     // Return status: 'not_found' if missing
     ```
 
-- [ ] 2.3 Gather statistics
+- [x] 2.3 Gather statistics
     ```typescript
     // From MetadataManager:
     - totalFiles
@@ -101,7 +101,7 @@ Implement the index status MCP tool. Returns diagnostic information about the cu
     - watcherActive (is watching running?)
     ```
 
-- [ ] 2.4 Format human-readable values
+- [x] 2.4 Format human-readable values
     ```typescript
     function formatStorageSize(bytes: number): string
     // Returns "45MB", "1.2GB", etc.
@@ -109,7 +109,7 @@ Implement the index status MCP tool. Returns diagnostic information about the cu
 
 ### Phase 3: Tool Implementation (0.5 hours)
 
-- [ ] 3.1 Implement status handler
+- [x] 3.1 Implement status handler
     ```typescript
     async function getIndexStatus(
       input: GetIndexStatusInput,
@@ -117,32 +117,32 @@ Implement the index status MCP tool. Returns diagnostic information about the cu
     ): Promise<GetIndexStatusOutput>
     ```
 
-- [ ] 3.2 Handle edge cases
+- [x] 3.2 Handle edge cases
     - Index exists but is empty
     - Index is currently being built
     - Metadata file is missing/corrupt
 
 ### Phase 4: MCP Tool Registration (0.25 hours)
 
-- [ ] 4.1 Create tool definition
+- [x] 4.1 Create tool definition
     ```typescript
-    const getIndexStatusTool: Tool = {
+    const getIndexStatusTool = {
       name: 'get_index_status',
       description: 'Show statistics about the current project index',
       inputSchema: GetIndexStatusInputSchema,
-      handler: getIndexStatus,
+      requiresConfirmation: false,
     };
     ```
 
-- [ ] 4.2 Register with MCP server
+- [x] 4.2 Register with MCP server
     - Tool does NOT require confirmation
     - Read-only operation
 
 ### Phase 5: Export & Tests (0.25 hours)
 
-- [ ] 5.1 Export from `src/tools/getIndexStatus.ts`
+- [x] 5.1 Export from `src/tools/getIndexStatus.ts`
 
-- [ ] 5.2 Write tests
+- [x] 5.2 Write tests
     - Test with valid index
     - Test with missing index
     - Test storage size formatting
@@ -157,12 +157,12 @@ Implement the index status MCP tool. Returns diagnostic information about the cu
 
 Before marking this task complete:
 
-- [ ] All subtasks completed
-- [ ] Statistics are accurate
-- [ ] Storage size is human-readable
-- [ ] Missing index handled gracefully
-- [ ] Tests pass
-- [ ] Changes committed to Git
+- [x] All subtasks completed
+- [x] Statistics are accurate
+- [x] Storage size is human-readable
+- [x] Missing index handled gracefully
+- [x] Tests pass
+- [x] Changes committed to Git
 
 ## Progress Log
 
@@ -170,6 +170,19 @@ Before marking this task complete:
 
 - Task created
 - Subtasks defined
+
+### 2025-12-09 - 1.5 hours
+
+- Implemented GetIndexStatusInputSchema (empty input)
+- Implemented GetIndexStatusOutput interface with status, projectPath, totalFiles, totalChunks, lastUpdated, storageSize, watcherActive
+- Implemented formatStorageSize() for human-readable sizes (B, KB, MB, GB, TB)
+- Implemented calculateDirectorySize() for LanceDB directory size
+- Implemented collectStatus() gathering stats from MetadataManager
+- Implemented getIndexStatus() handler with edge case handling
+- Created MCP tool definition (requiresConfirmation: false)
+- Exported from src/tools/index.ts
+- Wrote comprehensive unit tests (35 tests)
+- All tests passing, build successful
 
 ## Notes
 
@@ -180,7 +193,7 @@ Before marking this task complete:
 
 ## Blockers
 
-_None yet_
+_None_
 
 ## Related Tasks
 

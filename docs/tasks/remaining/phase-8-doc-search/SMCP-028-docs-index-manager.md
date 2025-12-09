@@ -3,11 +3,11 @@ task_id: "SMCP-028"
 title: "Docs Index Manager"
 category: "Technical"
 priority: "P1"
-status: "not-started"
+status: "done"
 created_date: "2025-12-09"
 due_date: ""
 estimated_hours: 3
-actual_hours: 0
+actual_hours: 3
 assigned_to: "blakazulu"
 tags: ["engines", "indexing", "docs", "orchestration"]
 ---
@@ -20,12 +20,12 @@ Create an orchestrator for documentation indexing operations. Coordinates scanni
 
 ## Goals
 
-- [ ] Create DocsIndexManager class
-- [ ] Scan for doc files using docPatterns config
-- [ ] Use prose-optimized chunking
-- [ ] Store in DocsLanceDBStore
-- [ ] Track in DocsFingerprintsManager
-- [ ] Support incremental updates
+- [x] Create DocsIndexManager class
+- [x] Scan for doc files using docPatterns config
+- [x] Use prose-optimized chunking
+- [x] Store in DocsLanceDBStore
+- [x] Track in DocsFingerprintsManager
+- [x] Support incremental updates
 
 ## Success Criteria
 
@@ -57,9 +57,9 @@ Create an orchestrator for documentation indexing operations. Coordinates scanni
 
 ### Phase 1: Create DocsIndexManager Class (1.5 hours)
 
-- [ ] 1.1 Create `src/engines/docsIndexManager.ts`
+- [x] 1.1 Create `src/engines/docsIndexManager.ts`
 
-- [ ] 1.2 Define class structure
+- [x] 1.2 Define class structure
     ```typescript
     export class DocsIndexManager {
       private readonly projectPath: string;
@@ -73,7 +73,7 @@ Create an orchestrator for documentation indexing operations. Coordinates scanni
     }
     ```
 
-- [ ] 1.3 Implement scanDocFiles()
+- [x] 1.3 Implement scanDocFiles()
     ```typescript
     async scanDocFiles(
       config: Config,
@@ -84,7 +84,7 @@ Create an orchestrator for documentation indexing operations. Coordinates scanni
     - Apply same deny list as code
     - Filter to only doc extensions
 
-- [ ] 1.4 Implement createDocsIndex()
+- [x] 1.4 Implement createDocsIndex()
     ```typescript
     async createDocsIndex(
       onProgress?: ProgressCallback
@@ -98,7 +98,7 @@ Create an orchestrator for documentation indexing operations. Coordinates scanni
 
 ### Phase 2: Incremental Updates (1 hour)
 
-- [ ] 2.1 Implement updateDocFile()
+- [x] 2.1 Implement updateDocFile()
     ```typescript
     async updateDocFile(relativePath: string): Promise<void>
     ```
@@ -106,14 +106,14 @@ Create an orchestrator for documentation indexing operations. Coordinates scanni
     - Re-chunk if changed
     - Update store
 
-- [ ] 2.2 Implement removeDocFile()
+- [x] 2.2 Implement removeDocFile()
     ```typescript
     async removeDocFile(relativePath: string): Promise<void>
     ```
     - Delete chunks from store
     - Remove from fingerprints
 
-- [ ] 2.3 Implement getDocsStats()
+- [x] 2.3 Implement getDocsStats()
     ```typescript
     async getDocsStats(): Promise<DocsStats>
     ```
@@ -121,7 +121,7 @@ Create an orchestrator for documentation indexing operations. Coordinates scanni
 
 ### Phase 3: Tests (0.5 hours)
 
-- [ ] 3.1 Create `src/engines/__tests__/docsIndexManager.test.ts`
+- [x] 3.1 Create `tests/unit/engines/docsIndexManager.test.ts`
     - Test full indexing flow
     - Test incremental updates
     - Test doc file detection
@@ -135,13 +135,13 @@ Create an orchestrator for documentation indexing operations. Coordinates scanni
 
 Before marking this task complete:
 
-- [ ] All subtasks completed
-- [ ] Full docs indexing works
-- [ ] Uses prose-optimized chunking
-- [ ] Incremental updates work
-- [ ] Stats reporting works
-- [ ] Tests pass
-- [ ] Exported from `src/engines/index.ts`
+- [x] All subtasks completed
+- [x] Full docs indexing works
+- [x] Uses prose-optimized chunking
+- [x] Incremental updates work
+- [x] Stats reporting works
+- [x] Tests pass (47 tests)
+- [x] Exported from `src/engines/index.ts`
 
 ## Progress Log
 
@@ -149,6 +149,17 @@ Before marking this task complete:
 
 - Task created
 - Subtasks defined
+
+### 2025-12-09 - 3 hours
+
+- Created `src/engines/docsIndexManager.ts` with DocsIndexManager class
+- Implemented scanDocFiles(), createDocsIndex(), updateDocFile(), removeDocFile()
+- Implemented applyDocsDelta() for batch operations
+- Implemented getDocsStats() for statistics
+- Progress reporting with DocsProgressCallback
+- Uses prose-optimized chunking via DOC_SPLIT_OPTIONS
+- Created comprehensive test suite with 47 tests
+- All 1161 tests passing
 
 ## Notes
 
@@ -159,7 +170,7 @@ Before marking this task complete:
 
 ## Blockers
 
-_None yet_
+_None_
 
 ## Related Tasks
 

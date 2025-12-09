@@ -120,3 +120,20 @@ export {
   runStartupCheckBackground,
   createIntegrityEngine,
 } from './integrity.js';
+
+// Docs Index Manager
+export {
+  DOC_FILE_BATCH_SIZE,
+  type DocsIndexPhase,
+  type DocsIndexProgress,
+  type DocsProgressCallback,
+  type DocsIndexResult,
+  type DocsStats,
+  scanDocFiles,
+  createDocsIndex,
+  updateDocFile,
+  removeDocFile,
+  applyDocsDelta,
+  DocsIndexManager,
+  type DocsDeltaResult,
+} from './docsIndexManager.js';

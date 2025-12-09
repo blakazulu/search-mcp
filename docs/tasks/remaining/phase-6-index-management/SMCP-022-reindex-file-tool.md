@@ -3,11 +3,11 @@ task_id: "SMCP-022"
 title: "reindex_file Tool"
 category: "Technical"
 priority: "P2"
-status: "not-started"
+status: "done"
 created_date: "2025-12-09"
 due_date: ""
 estimated_hours: 2
-actual_hours: 0
+actual_hours: 1.5
 assigned_to: "blakazulu"
 tags: ["tools", "indexing", "mcp"]
 ---
@@ -20,10 +20,10 @@ Implement the single file reindex MCP tool. Re-indexes a specific file, useful w
 
 ## Goals
 
-- [ ] Accept file path as input
-- [ ] Validate file exists and is indexable
-- [ ] Re-chunk and re-embed single file
-- [ ] Update index with new chunks
+- [x] Accept file path as input
+- [x] Validate file exists and is indexable
+- [x] Re-chunk and re-embed single file
+- [x] Update index with new chunks
 
 ## Success Criteria
 
@@ -52,7 +52,7 @@ Implement the single file reindex MCP tool. Re-indexes a specific file, useful w
 
 ### Phase 1: Tool Schema (0.25 hours)
 
-- [ ] 1.1 Define input schema
+- [x] 1.1 Define input schema
     ```typescript
     const ReindexFileInputSchema = z.object({
       path: z.string()
@@ -60,7 +60,7 @@ Implement the single file reindex MCP tool. Re-indexes a specific file, useful w
     });
     ```
 
-- [ ] 1.2 Define output schema
+- [x] 1.2 Define output schema
     ```typescript
     interface ReindexFileOutput {
       status: 'success' | 'error';
@@ -72,7 +72,7 @@ Implement the single file reindex MCP tool. Re-indexes a specific file, useful w
 
 ### Phase 2: File Validation (0.5 hours)
 
-- [ ] 2.1 Implement path validation
+- [x] 2.1 Implement path validation
     ```typescript
     async function validateFilePath(
       relativePath: string,
@@ -84,14 +84,14 @@ Implement the single file reindex MCP tool. Re-indexes a specific file, useful w
     // Check file is in index
     ```
 
-- [ ] 2.2 Error handling
+- [x] 2.2 Error handling
     - FILE_NOT_FOUND if file doesn't exist
     - Error if file is in deny list
     - Error if file not in index (suggest create_index)
 
 ### Phase 3: Reindex Implementation (0.75 hours)
 
-- [ ] 3.1 Implement main handler
+- [x] 3.1 Implement main handler
     ```typescript
     async function reindexFile(
       input: ReindexFileInput,
@@ -99,7 +99,7 @@ Implement the single file reindex MCP tool. Re-indexes a specific file, useful w
     ): Promise<ReindexFileOutput>
     ```
 
-- [ ] 3.2 Reindex flow
+- [x] 3.2 Reindex flow
     ```
     1. Validate file path
     2. Delete existing chunks for file
@@ -112,22 +112,21 @@ Implement the single file reindex MCP tool. Re-indexes a specific file, useful w
 
 ### Phase 4: MCP Tool Registration (0.25 hours)
 
-- [ ] 4.1 Create tool definition
+- [x] 4.1 Create tool definition
     ```typescript
-    const reindexFileTool: Tool = {
+    const reindexFileTool = {
       name: 'reindex_file',
       description: 'Re-index a single specific file',
       inputSchema: ReindexFileInputSchema,
-      handler: reindexFile,
       requiresConfirmation: false,  // Fast, low-impact
     };
     ```
 
 ### Phase 5: Export & Tests (0.25 hours)
 
-- [ ] 5.1 Export from `src/tools/reindexFile.ts`
+- [x] 5.1 Export from `src/tools/reindexFile.ts`
 
-- [ ] 5.2 Write tests
+- [x] 5.2 Write tests
     - Test valid file reindex
     - Test file not found
     - Test file in deny list
@@ -141,13 +140,13 @@ Implement the single file reindex MCP tool. Re-indexes a specific file, useful w
 
 Before marking this task complete:
 
-- [ ] All subtasks completed
-- [ ] Path validation works correctly
-- [ ] Old chunks removed before adding new
-- [ ] Fingerprint updated
-- [ ] No confirmation required
-- [ ] Tests pass
-- [ ] Changes committed to Git
+- [x] All subtasks completed
+- [x] Path validation works correctly
+- [x] Old chunks removed before adding new
+- [x] Fingerprint updated
+- [x] No confirmation required
+- [x] Tests pass
+- [x] Changes committed to Git
 
 ## Progress Log
 
@@ -155,6 +154,21 @@ Before marking this task complete:
 
 - Task created
 - Subtasks defined
+
+### 2025-12-09 - 1.5 hours
+
+- Implemented ReindexFileInputSchema with path parameter
+- Implemented ReindexFileOutput interface with status, path, chunksCreated, message
+- Implemented validateFilePath() with file existence, deny list, and policy checks
+- Added path traversal prevention (security)
+- Path normalization (handles forward and backslashes)
+- Implemented reindexFile() main handler with full reindex flow
+- Delete existing chunks, re-chunk, re-embed, insert, update fingerprint
+- Created MCP tool definition with requiresConfirmation: false
+- Handles new files not previously in index
+- Exported from src/tools/index.ts
+- Wrote comprehensive unit tests (32 tests)
+- All 912 tests passing, build successful
 
 ## Notes
 
@@ -165,7 +179,7 @@ Before marking this task complete:
 
 ## Blockers
 
-_None yet_
+_None_
 
 ## Related Tasks
 

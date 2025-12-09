@@ -78,3 +78,15 @@ export {
   type ReindexProjectStatus,
   type ReindexProjectContext,
 } from './reindexProject.js';
+
+// reindex_file tool - re-index single file
+export {
+  reindexFile,
+  reindexFileTool,
+  ReindexFileInputSchema,
+  validateFilePath,
+  type ReindexFileInput,
+  type ReindexFileOutput,
+  type ReindexFileStatus,
+  type ValidationResult,
+} from './reindexFile.js';

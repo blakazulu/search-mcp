@@ -61,6 +61,21 @@ export {
   FingerprintsManager,
 } from './fingerprints.js';
 
+// Docs Fingerprints Management
+export {
+  // Types
+  type DocsFingerprints,
+  type DocsDeltaResult,
+  // Constants
+  DOCS_FINGERPRINTS_VERSION,
+  // Functions
+  loadDocsFingerprints,
+  saveDocsFingerprints,
+  calculateDocsDelta,
+  // Class
+  DocsFingerprintsManager,
+} from './docsFingerprints.js';
+
 // LanceDB Vector Store
 export {
   // Types

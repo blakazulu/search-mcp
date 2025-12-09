@@ -371,6 +371,16 @@ export function getLanceDbPath(indexPath: string): string {
 }
 
 /**
+ * Get the docs fingerprints file path for an index
+ *
+ * @param indexPath - Absolute path to the index directory
+ * @returns Absolute path to docs-fingerprints.json
+ */
+export function getDocsFingerprintsPath(indexPath: string): string {
+  return path.join(indexPath, 'docs-fingerprints.json');
+}
+
+/**
  * Get the Docs LanceDB directory path for an index
  *
  * @param indexPath - Absolute path to the index directory

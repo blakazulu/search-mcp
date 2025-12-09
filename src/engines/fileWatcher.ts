@@ -23,6 +23,7 @@ import { DocsFingerprintsManager } from '../storage/docsFingerprints.js';
 import { toRelativePath, toAbsolutePath, normalizePath } from '../utils/paths.js';
 import { hashFile } from '../utils/hash.js';
 import { getLogger } from '../utils/logger.js';
+import { registerCleanup, unregisterCleanup, isShutdownInProgress, CleanupHandler } from '../utils/cleanup.js';
 
 // ============================================================================
 // Types
@@ -79,6 +80,16 @@ export const STABILITY_THRESHOLD = 500;
  * Poll interval for awaitWriteFinish
  */
 export const POLL_INTERVAL = 100;
+
+/**
+ * Maximum restart attempts on error
+ */
+export const MAX_RESTART_ATTEMPTS = 3;
+
+/**
+ * Delay before restart attempt in milliseconds
+ */
+export const RESTART_DELAY_MS = 5000;
 
 /**
  * Convert hardcoded deny patterns to chokidar-compatible patterns
@@ -177,6 +188,21 @@ export class FileWatcher {
   private processingQueue = new Set<string>();
 
   /**
+   * Reference to cleanup handler for unregistration
+   */
+  private cleanupHandler: CleanupHandler | null = null;
+
+  /**
+   * Number of restart attempts after errors
+   */
+  private restartAttempts = 0;
+
+  /**
+   * Timer for scheduled restart
+   */
+  private restartTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
    * Create a new FileWatcher instance
    *
    * @param projectPath - Absolute path to the project root
@@ -263,6 +289,13 @@ export class FileWatcher {
 
     this.isRunning = true;
     this.stats.startedAt = Date.now();
+    this.restartAttempts = 0; // Reset restart counter on successful start
+
+    // Register cleanup handler for graceful shutdown
+    this.cleanupHandler = async () => {
+      await this.stop();
+    };
+    registerCleanup(this.cleanupHandler, 'FileWatcher');
   }
 
   /**
@@ -277,6 +310,18 @@ export class FileWatcher {
     }
 
     logger.info('FileWatcher', 'Stopping file watcher');
+
+    // Unregister cleanup handler (avoid double cleanup)
+    if (this.cleanupHandler) {
+      unregisterCleanup(this.cleanupHandler);
+      this.cleanupHandler = null;
+    }
+
+    // Clear restart timer if pending
+    if (this.restartTimer) {
+      clearTimeout(this.restartTimer);
+      this.restartTimer = null;
+    }
 
     // Clear all pending events
     for (const timeout of this.pendingEvents.values()) {
@@ -365,6 +410,9 @@ export class FileWatcher {
 
   /**
    * Handle watcher error
+   *
+   * Implements error recovery by attempting to restart the watcher
+   * after a delay, up to MAX_RESTART_ATTEMPTS times.
    */
   private onError(error: Error): void {
     const logger = getLogger();
@@ -373,10 +421,116 @@ export class FileWatcher {
     logger.error('FileWatcher', 'Watcher error', {
       error: error.message,
       stack: error.stack,
+      restartAttempts: this.restartAttempts,
     });
 
-    // Don't crash - just log and continue
-    // The watcher may still work for other files
+    // Don't attempt restart if shutdown is in progress
+    if (isShutdownInProgress()) {
+      logger.info('FileWatcher', 'Shutdown in progress, not attempting restart');
+      return;
+    }
+
+    // Attempt restart if under the limit
+    if (this.restartAttempts < MAX_RESTART_ATTEMPTS) {
+      this.restartAttempts++;
+      logger.info('FileWatcher', `Scheduling restart attempt ${this.restartAttempts}/${MAX_RESTART_ATTEMPTS}`, {
+        delayMs: RESTART_DELAY_MS,
+      });
+
+      // Clear any existing restart timer
+      if (this.restartTimer) {
+        clearTimeout(this.restartTimer);
+      }
+
+      this.restartTimer = setTimeout(() => {
+        this.restartTimer = null;
+        this.restart().catch((err) => {
+          logger.error('FileWatcher', 'Restart failed', {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+      }, RESTART_DELAY_MS);
+    } else {
+      logger.error('FileWatcher', 'Max restart attempts reached, watcher disabled', {
+        maxAttempts: MAX_RESTART_ATTEMPTS,
+      });
+    }
+  }
+
+  /**
+   * Restart the file watcher
+   *
+   * Stops the current watcher and starts a new one.
+   * Used for error recovery.
+   */
+  async restart(): Promise<void> {
+    const logger = getLogger();
+
+    // Don't restart if shutdown is in progress
+    if (isShutdownInProgress()) {
+      logger.info('FileWatcher', 'Shutdown in progress, not restarting');
+      return;
+    }
+
+    logger.info('FileWatcher', 'Restarting file watcher', {
+      attempt: this.restartAttempts,
+    });
+
+    // Stop the current watcher (but preserve restart state)
+    const currentRestartAttempts = this.restartAttempts;
+
+    if (this.watcher) {
+      // Clear all pending events
+      for (const timeout of this.pendingEvents.values()) {
+        clearTimeout(timeout);
+      }
+      this.pendingEvents.clear();
+
+      // Unregister cleanup handler temporarily
+      if (this.cleanupHandler) {
+        unregisterCleanup(this.cleanupHandler);
+        this.cleanupHandler = null;
+      }
+
+      try {
+        await this.watcher.close();
+      } catch (error) {
+        logger.warn('FileWatcher', 'Error closing watcher during restart', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      this.watcher = null;
+      this.isRunning = false;
+    }
+
+    // Restore restart attempt count (don't reset on restart)
+    this.restartAttempts = currentRestartAttempts;
+
+    // Attempt to start the watcher again
+    try {
+      await this.start();
+      logger.info('FileWatcher', 'File watcher restarted successfully');
+    } catch (error) {
+      logger.error('FileWatcher', 'Failed to restart watcher', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get the current restart attempt count
+   */
+  getRestartAttempts(): number {
+    return this.restartAttempts;
+  }
+
+  /**
+   * Reset the restart attempt counter
+   * Useful after manual intervention or successful long-running operation
+   */
+  resetRestartAttempts(): void {
+    this.restartAttempts = 0;
   }
 
   // ==========================================================================

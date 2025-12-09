@@ -17,6 +17,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { glob } from 'glob';
 import { getLogger } from '../utils/logger.js';
+import { registerCleanup, unregisterCleanup, CleanupHandler } from '../utils/cleanup.js';
 import { MCPError, ErrorCode, indexNotFound, indexCorrupt } from '../errors/index.js';
 import { getLanceDbPath } from '../utils/paths.js';
 import { escapeSqlString, globToSafeLikePattern } from '../utils/sql.js';
@@ -208,6 +209,9 @@ export class LanceDBStore {
   /** Mutex for protecting concurrent database operations */
   private readonly mutex = new AsyncMutex('LanceDBStore');
 
+  /** Reference to cleanup handler for unregistration */
+  private cleanupHandler: CleanupHandler | null = null;
+
   /**
    * Create a new LanceDBStore instance
    *
@@ -266,6 +270,13 @@ export class LanceDBStore {
       }
 
       this.isOpen = true;
+
+      // Register cleanup handler for graceful shutdown
+      this.cleanupHandler = async () => {
+        await this.close();
+      };
+      registerCleanup(this.cleanupHandler, 'LanceDBStore');
+
       logger.info('lancedb', 'Database opened successfully');
     } catch (error) {
       const err = error as Error;
@@ -290,6 +301,12 @@ export class LanceDBStore {
 
     if (!this.isOpen) {
       return;
+    }
+
+    // Unregister cleanup handler (avoid double cleanup)
+    if (this.cleanupHandler) {
+      unregisterCleanup(this.cleanupHandler);
+      this.cleanupHandler = null;
     }
 
     // LanceDB doesn't have an explicit close method for local connections

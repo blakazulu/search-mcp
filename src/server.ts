@@ -25,6 +25,7 @@ import {
 import { z } from 'zod';
 
 import { getLogger } from './utils/logger.js';
+import { runCleanup, isShutdownInProgress } from './utils/cleanup.js';
 import { detectProjectRoot } from './engines/projectRoot.js';
 import { MCPError, isMCPError } from './errors/index.js';
 
@@ -363,11 +364,34 @@ let serverInstance: Server | null = null;
 
 /**
  * Graceful shutdown handler
+ *
+ * Runs all registered cleanup handlers (FileWatcher, LanceDB, IntegrityEngine, etc.)
+ * before closing the MCP server connection.
+ *
+ * @param signal - Optional signal name that triggered shutdown (SIGTERM, SIGINT, etc.)
  */
-async function shutdown(): Promise<void> {
+async function shutdown(signal?: string): Promise<void> {
   const logger = getLogger();
-  logger.info('server', 'Shutting down...');
 
+  // Prevent multiple shutdown attempts
+  if (isShutdownInProgress()) {
+    logger.debug('server', 'Shutdown already in progress, skipping');
+    return;
+  }
+
+  logger.info('server', `Shutting down...${signal ? ` (${signal})` : ''}`);
+
+  // Run all registered cleanup handlers first (FileWatcher, LanceDB, etc.)
+  try {
+    await runCleanup();
+    logger.info('server', 'All cleanup handlers completed');
+  } catch (error) {
+    logger.error('server', 'Error during cleanup', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  // Close the MCP server connection
   if (serverInstance) {
     try {
       await serverInstance.close();
@@ -393,32 +417,39 @@ export async function startServer(): Promise<void> {
   const { server } = createServer();
   serverInstance = server;
 
-  // Setup graceful shutdown handlers
-  process.on('SIGINT', async () => {
-    await shutdown();
-    process.exit(0);
+  // Setup graceful shutdown handlers with proper signal handling
+  // Note: On Windows, SIGTERM is not fully supported, but we handle both for cross-platform compatibility
+  process.on('SIGINT', () => {
+    shutdown('SIGINT').finally(() => {
+      process.exit(0);
+    });
   });
 
-  process.on('SIGTERM', async () => {
-    await shutdown();
-    process.exit(0);
+  process.on('SIGTERM', () => {
+    shutdown('SIGTERM').finally(() => {
+      process.exit(0);
+    });
   });
 
-  // Handle uncaught exceptions - log but don't crash
+  // Handle uncaught exceptions - log and attempt graceful shutdown
   process.on('uncaughtException', (error) => {
     logger.error('server', 'Uncaught exception', {
       error: error.message,
       stack: error.stack,
     });
-    // Continue running - don't crash the MCP server
+    // Attempt graceful shutdown on fatal errors
+    shutdown('uncaughtException').finally(() => {
+      process.exit(1);
+    });
   });
 
-  // Handle unhandled promise rejections
+  // Handle unhandled promise rejections - log but don't crash
   process.on('unhandledRejection', (reason, promise) => {
     logger.error('server', 'Unhandled rejection', {
       reason: reason instanceof Error ? reason.message : String(reason),
     });
-    // Continue running - don't crash the MCP server
+    // Continue running for non-fatal promise rejections
+    // This prevents crashes from unhandled rejections in async code
   });
 
   // Create and connect stdio transport

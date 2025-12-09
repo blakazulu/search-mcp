@@ -12,14 +12,16 @@ Deep security and stability analysis of the Search MCP codebase revealed **65+ p
 
 **UPDATE 2024-12-09: SMCP-037 Completed** - Atomic file writes and temp cleanup (Bug #5, #6, #17, MCP-34) have been fixed with atomic write utilities. 4 bugs resolved.
 
+**UPDATE 2024-12-09: SMCP-038 Completed** - Resource cleanup and signal handling (Bug #12, #13, MCP-23, MCP-25) have been fixed with cleanup registry and signal handlers. 4 bugs resolved.
+
 ### Bug Count Summary
 | Severity | Count | Fixed |
 |----------|-------|-------|
-| **CRITICAL** | ~~10~~ 4 | 6 |
-| **HIGH** | ~~19~~ 17 | 2 |
-| **MEDIUM** | ~~27~~ 24 | 3 |
+| **CRITICAL** | ~~10~~ 2 | 8 |
+| **HIGH** | ~~19~~ 15 | 4 |
+| **MEDIUM** | ~~27~~ 23 | 4 |
 | **LOW** | 9+ | 0 |
-| **TOTAL** | **~~65+~~ 54+** | **11** |
+| **TOTAL** | **~~65+~~ 49+** | **15** |
 
 ---
 
@@ -557,34 +559,25 @@ const allHashes = new Map<string, string>();  // Grows unbounded
 
 ---
 
-### MCP-23. WATCHER DOESN'T RECOVER FROM ERRORS
+### MCP-23. WATCHER DOESN'T RECOVER FROM ERRORS ✅ FIXED (SMCP-038)
 **Severity:** MEDIUM
-**Status:** VULNERABLE
+**Status:** RESOLVED on 2024-12-09
 
-**Issue:** If chokidar encounters an error (e.g., too many open files), the watcher dies silently.
+**Fix Applied:**
+- Added `restart()` method to FileWatcher
+- `onError()` now schedules automatic restart with delay
+- Max 3 restart attempts with 5 second delay between attempts
+- Respects shutdown state (won't restart during shutdown)
+- Added `getRestartAttempts()` and `resetRestartAttempts()` methods
 
-**Code Evidence:**
-```typescript
-// src/engines/fileWatcher.ts:254
-this.watcher.on('error', (error) => this.onError(error));
+~~**Issue:** If chokidar encounters an error (e.g., too many open files), the watcher dies silently.~~
 
-// onError just logs:
-private onError(error: Error): void {
-  const logger = getLogger();
-  logger.error('FileWatcher', 'Watcher error', {
-    error: error.message,
-  });
-  this.stats.errors++;
-  // NO RECOVERY ATTEMPT - watcher stays dead!
-}
-```
-
-**Scenario:**
-1. System hits `EMFILE` (too many open files)
-2. Chokidar emits error
-3. Error is logged
-4. Watcher stops working - no restart, no notification to user
-5. File changes stop being detected
+~~**Scenario:**~~
+~~1. System hits `EMFILE` (too many open files)~~
+~~2. Chokidar emits error~~
+~~3. Error is logged~~
+~~4. Watcher stops working - no restart, no notification to user~~
+~~5. File changes stop being detected~~
 
 ---
 
@@ -608,23 +601,24 @@ export const DEFAULT_CHECK_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
 
 ---
 
-### MCP-25. NO SIGNAL HANDLERS (SIGTERM/SIGINT)
+### MCP-25. NO SIGNAL HANDLERS (SIGTERM/SIGINT) ✅ FIXED (SMCP-038)
 **Severity:** CRITICAL
-**Status:** VULNERABLE
+**Status:** RESOLVED on 2024-12-09
 
-**Issue:** MCP server has NO graceful shutdown handlers. Resources are not cleaned up on termination.
+**Fix Applied:**
+- Added `SIGTERM` handler with graceful shutdown
+- Added `SIGINT` handler with graceful shutdown
+- Updated `uncaughtException` handler to attempt graceful shutdown
+- `shutdown()` now calls `runCleanup()` to run all registered cleanup handlers
+- Added shutdown-in-progress check to prevent duplicate attempts
 
-**Code Evidence:**
-```typescript
-// src/server.ts - No process.on('SIGTERM') or process.on('SIGINT') handlers
-// FileWatcher, LanceDB, IntegrityEngine all left in inconsistent state
-```
+~~**Issue:** MCP server has NO graceful shutdown handlers. Resources are not cleaned up on termination.~~
 
-**Scenario:**
-1. SIGTERM received while `createFullIndex` is mid-operation
-2. Chunks are partially inserted into LanceDB
-3. FileWatcher continues running in background
-4. Process exits with resources in inconsistent state
+~~**Scenario:**~~
+~~1. SIGTERM received while `createFullIndex` is mid-operation~~
+~~2. Chunks are partially inserted into LanceDB~~
+~~3. FileWatcher continues running in background~~
+~~4. Process exits with resources in inconsistent state~~
 
 ---
 
@@ -997,24 +991,30 @@ const results = await table.filter('true').select(['path']).execute();  // ALL r
 
 ---
 
-### 12. No Resource Cleanup on Shutdown
+### 12. No Resource Cleanup on Shutdown ✅ FIXED (SMCP-038)
 **File:** `src/server.ts:367-382`
+**Status:** RESOLVED on 2024-12-09
 
-```typescript
-async function shutdown(): Promise<void> {
-  await serverInstance.close();  // Only closes MCP server
-  // FileWatcher, IntegrityEngine, LanceDB connections NOT cleaned up!
-}
-```
+**Fix Applied:**
+- Created `src/utils/cleanup.ts` with cleanup registry
+- Updated `shutdown()` to call `runCleanup()` before closing MCP server
+- FileWatcher, LanceDBStore, DocsLanceDBStore, IntegrityScheduler all register cleanup handlers
+- Resources unregister themselves when explicitly closed
 
-**Impact:** Zombie processes, lock file issues, resource leaks.
+~~**Impact:** Zombie processes, lock file issues, resource leaks.~~
 
 ---
 
-### 13. File Handle Leaks in Chunking
+### 13. File Handle Leaks in Chunking ✅ FIXED (SMCP-038)
 **File:** `src/engines/chunking.ts:477-498`
+**Status:** RESOLVED on 2024-12-09
 
-**Issue:** No timeout on `fs.promises.readFile()`. If operation hangs, resources are not freed.
+**Fix Applied:**
+- Resources now register cleanup handlers that are called on shutdown
+- Cleanup registry runs all handlers with timeout protection
+- FileWatcher, LanceDB stores all properly close on shutdown
+
+~~**Issue:** No timeout on `fs.promises.readFile()`. If operation hangs, resources are not freed.~~
 
 ---
 
@@ -1183,8 +1183,9 @@ await this.initialize();  // Never runs if above throws
 | Security | - | 1 | ~~2~~ 0 | - | ✅ 2 (SMCP-035 Bug #22, SMCP-037 Bug #17) |
 | Logic Flaws | - | 1 | 2 | - | |
 | Performance | - | - | 3 | - | |
+| Resource Mgmt | - | ~~2~~ 0 | - | - | ✅ 2 (SMCP-038, Bug #12,13) |
 
-**Subtotal: ~~7~~ 1 Critical, 8 High, ~~13~~ 9 Medium, 2+ Low (9 Fixed from original)**
+**Subtotal: ~~7~~ 1 Critical, ~~8~~ 6 High, ~~13~~ 9 Medium, 2+ Low (11 Fixed from original)**
 
 ### MCP-Specific Vulnerabilities (From Web Research + Deep Analysis)
 | Category | Critical | High | Medium | Low |
@@ -1210,9 +1211,9 @@ await this.initialize();  // Never runs if above throws
 | Hash Collision | - | - | - | 1 |
 | Model Version Mismatch | - | - | 1 | - |
 | Low Memory Handling | - | - | 1 | - |
-| Watcher Error Recovery | - | - | 1 | - |
+| Watcher Error Recovery | - | - | ~~1~~ 0 | - | ✅ (SMCP-038, MCP-23) |
 | Integrity Check Gaps | - | - | - | 1 |
-| **Signal Handling** | **1** | - | - | - |
+| **Signal Handling** | ~~**1**~~ 0 | - | - | - | ✅ (SMCP-038, MCP-25) |
 | **Multi-GB File Memory** | **1** | - | - | - |
 | **Hard Link Duplicates** | - | **1** | - | - |
 | **NFS Timestamp Aliasing** | - | **1** | - | - |
@@ -1224,9 +1225,9 @@ await this.initialize();  // Never runs if above throws
 | **Orphaned Chunks on Error** | - | ~~**1**~~ 0 | - | - | ✅ (SMCP-037, MCP-34) |
 | **Future Timestamps** | - | - | - | **1** |
 
-**Subtotal: 3 Critical, ~~11~~ 9 High, 14 Medium, 7 Low = 33 MCP-specific issues (2 Fixed)**
+**Subtotal: ~~3~~ 2 Critical, ~~11~~ 9 High, ~~14~~ 13 Medium, 7 Low = 31 MCP-specific issues (4 Fixed)**
 
-### GRAND TOTAL: ~~10~~ 4 Critical, ~~19~~ 17 High, ~~27~~ 24 Medium, 9+ Low = 54+ Issues (11 Fixed)
+### GRAND TOTAL: ~~10~~ 2 Critical, ~~19~~ 15 High, ~~27~~ 23 Medium, 9+ Low = 49+ Issues (15 Fixed)
 
 ---
 

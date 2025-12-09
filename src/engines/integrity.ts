@@ -21,6 +21,7 @@ import { FingerprintsManager, DeltaResult } from '../storage/fingerprints.js';
 import { toRelativePath, toAbsolutePath, normalizePath } from '../utils/paths.js';
 import { hashFile } from '../utils/hash.js';
 import { getLogger } from '../utils/logger.js';
+import { registerCleanup, unregisterCleanup, CleanupHandler } from '../utils/cleanup.js';
 
 // ============================================================================
 // Types
@@ -430,6 +431,9 @@ export class IntegrityScheduler {
   private isRunning = false;
   private lastCheckTime: Date | null = null;
 
+  /** Reference to cleanup handler for unregistration */
+  private cleanupHandler: CleanupHandler | null = null;
+
   /**
    * Create a new IntegrityScheduler
    *
@@ -464,6 +468,12 @@ export class IntegrityScheduler {
     }, this.checkInterval);
 
     this.isRunning = true;
+
+    // Register cleanup handler for graceful shutdown
+    this.cleanupHandler = async () => {
+      this.stop();
+    };
+    registerCleanup(this.cleanupHandler, 'IntegrityScheduler');
   }
 
   /**
@@ -475,6 +485,12 @@ export class IntegrityScheduler {
     if (!this.isRunning || !this.timer) {
       logger.debug('IntegrityScheduler', 'Scheduler not running, ignoring stop');
       return;
+    }
+
+    // Unregister cleanup handler (avoid double cleanup)
+    if (this.cleanupHandler) {
+      unregisterCleanup(this.cleanupHandler);
+      this.cleanupHandler = null;
     }
 
     clearInterval(this.timer);

@@ -105,3 +105,15 @@ export {
   type DeleteIndexStatus,
   type DeleteIndexContext,
 } from './deleteIndex.js';
+
+// search_docs tool - documentation semantic search
+export {
+  searchDocs,
+  searchDocsTool,
+  SearchDocsInputSchema,
+  docsIndexNotFound,
+  type SearchDocsInput,
+  type SearchDocsOutput,
+  type SearchDocsResult,
+  type DocsToolContext,
+} from './searchDocs.js';

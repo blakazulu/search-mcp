@@ -3,11 +3,11 @@ task_id: "SMCP-029"
 title: "search_docs Tool"
 category: "Technical"
 priority: "P1"
-status: "not-started"
+status: "done"
 created_date: "2025-12-09"
 due_date: ""
 estimated_hours: 2
-actual_hours: 0
+actual_hours: 2
 assigned_to: "blakazulu"
 tags: ["tools", "search", "docs", "mcp"]
 ---
@@ -20,10 +20,10 @@ Implement the documentation-specific semantic search MCP tool. Takes a natural l
 
 ## Goals
 
-- [ ] Accept query string and optional top_k parameter
-- [ ] Generate query embedding
-- [ ] Search DocsLanceDBStore for similar chunks
-- [ ] Return formatted results with scores
+- [x] Accept query string and optional top_k parameter
+- [x] Generate query embedding
+- [x] Search DocsLanceDBStore for similar chunks
+- [x] Return formatted results with scores
 
 ## Success Criteria
 
@@ -52,7 +52,7 @@ Implement the documentation-specific semantic search MCP tool. Takes a natural l
 
 ### Phase 1: Tool Schema (0.5 hours)
 
-- [ ] 1.1 Define input schema
+- [x] 1.1 Define input schema
     ```typescript
     const SearchDocsInputSchema = z.object({
       query: z.string()
@@ -62,7 +62,7 @@ Implement the documentation-specific semantic search MCP tool. Takes a natural l
     });
     ```
 
-- [ ] 1.2 Define output schema
+- [x] 1.2 Define output schema
     ```typescript
     interface SearchDocsOutput {
       results: Array<{
@@ -79,7 +79,7 @@ Implement the documentation-specific semantic search MCP tool. Takes a natural l
 
 ### Phase 2: Search Implementation (1 hour)
 
-- [ ] 2.1 Implement search handler
+- [x] 2.1 Implement search handler
     ```typescript
     async function searchDocs(
       input: SearchDocsInput,
@@ -87,28 +87,28 @@ Implement the documentation-specific semantic search MCP tool. Takes a natural l
     ): Promise<SearchDocsOutput>
     ```
 
-- [ ] 2.2 Check docs index exists
+- [x] 2.2 Check docs index exists
     - If no index, return DOCS_INDEX_NOT_FOUND error
     - Suggest running create_index
 
-- [ ] 2.3 Generate query embedding
+- [x] 2.3 Generate query embedding
     ```typescript
     const queryVector = await embeddingEngine.embed(input.query);
     ```
 
-- [ ] 2.4 Execute vector search
+- [x] 2.4 Execute vector search
     ```typescript
     const results = await docsStore.search(queryVector, input.top_k);
     ```
 
-- [ ] 2.5 Format response
+- [x] 2.5 Format response
     - Map database results to output format
     - Normalize scores to 0.0-1.0 range
     - Include timing information
 
 ### Phase 3: MCP Tool Registration (0.25 hours)
 
-- [ ] 3.1 Create tool definition
+- [x] 3.1 Create tool definition
     ```typescript
     const searchDocsTool: Tool = {
       name: 'search_docs',
@@ -118,15 +118,15 @@ Implement the documentation-specific semantic search MCP tool. Takes a natural l
     };
     ```
 
-- [ ] 3.2 Register with MCP server
+- [x] 3.2 Register with MCP server
     - Tool does NOT require confirmation
     - Read-only operation
 
 ### Phase 4: Export & Tests (0.25 hours)
 
-- [ ] 4.1 Export from `src/tools/searchDocs.ts`
+- [x] 4.1 Export from `src/tools/searchDocs.ts`
 
-- [ ] 4.2 Write tests
+- [x] 4.2 Write tests
     - Test query embedding generation
     - Test result formatting
     - Test top_k limiting
@@ -143,13 +143,13 @@ Implement the documentation-specific semantic search MCP tool. Takes a natural l
 
 Before marking this task complete:
 
-- [ ] All subtasks completed
-- [ ] Tool registered with MCP server
-- [ ] Query embedding works correctly
-- [ ] Results are sorted by relevance
-- [ ] Response format matches RFC
-- [ ] Tests pass
-- [ ] Changes committed to Git
+- [x] All subtasks completed
+- [x] Tool registered with MCP server
+- [x] Query embedding works correctly
+- [x] Results are sorted by relevance
+- [x] Response format matches RFC
+- [x] Tests pass (28 tests)
+- [x] Changes committed to Git
 
 ## Progress Log
 
@@ -157,6 +157,17 @@ Before marking this task complete:
 
 - Task created
 - Subtasks defined
+
+### 2025-12-09 - 2 hours
+
+- Created `src/tools/searchDocs.ts` with search_docs MCP tool
+- SearchDocsInputSchema with query and optional top_k (1-50, default 10)
+- searchDocs() handler with vector similarity search
+- docsIndexNotFound() error factory for user-friendly errors
+- searchDocsTool MCP definition (requiresConfirmation: false)
+- Exported from tools/index.ts
+- Created comprehensive test suite with 28 tests
+- All 1189 tests passing
 
 ## Notes
 
@@ -167,7 +178,7 @@ Before marking this task complete:
 
 ## Blockers
 
-_None yet_
+_None_
 
 ## Related Tasks
 

@@ -60,3 +60,19 @@ export {
   // Class
   FingerprintsManager,
 } from './fingerprints.js';
+
+// LanceDB Vector Store
+export {
+  // Types
+  type ChunkRecord,
+  type SearchResult,
+  // Constants
+  TABLE_NAME,
+  VECTOR_DIMENSION,
+  // Functions
+  distanceToScore,
+  globToLikePattern,
+  cleanupStaleLockfiles,
+  // Class
+  LanceDBStore,
+} from './lancedb.js';

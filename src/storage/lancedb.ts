@@ -1,0 +1,675 @@
+/**
+ * LanceDB Store Module
+ *
+ * Vector database wrapper using LanceDB for storing and searching code chunk embeddings.
+ * This is the core storage component that enables semantic search capabilities.
+ *
+ * Features:
+ * - Vector similarity search with configurable top-k results
+ * - Batch insert for efficient indexing
+ * - Delete by file path for incremental updates
+ * - Path pattern matching for file-based queries
+ * - Stale lockfile detection and cleanup
+ */
+
+import * as lancedb from 'vectordb';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { glob } from 'glob';
+import { getLogger } from '../utils/logger.js';
+import { MCPError, ErrorCode, indexNotFound, indexCorrupt } from '../errors/index.js';
+import { getLanceDbPath } from '../utils/paths.js';
+
+// ============================================================================
+// Types and Interfaces
+// ============================================================================
+
+/**
+ * Record structure for chunks stored in LanceDB
+ *
+ * This matches the RFC specification for the database schema.
+ * The index signature is required for LanceDB compatibility.
+ */
+export interface ChunkRecord {
+  /** UUIDv4 unique identifier for the chunk */
+  id: string;
+  /** Relative file path (forward-slash separated) */
+  path: string;
+  /** Chunk content text */
+  text: string;
+  /** Float32[384] embedding vector */
+  vector: number[];
+  /** Start line in source file (1-indexed) */
+  start_line: number;
+  /** End line in source file (1-indexed) */
+  end_line: number;
+  /** SHA256 hash of the source file content */
+  content_hash: string;
+  /** Index signature for LanceDB compatibility */
+  [key: string]: string | number | number[];
+}
+
+/**
+ * Search result structure returned from vector search
+ */
+export interface SearchResult {
+  /** Relative file path */
+  path: string;
+  /** Chunk content text */
+  text: string;
+  /** Similarity score (0.0 - 1.0, higher is more similar) */
+  score: number;
+  /** Start line in source file */
+  startLine: number;
+  /** End line in source file */
+  endLine: number;
+}
+
+/**
+ * Internal structure for raw search results from LanceDB
+ */
+interface RawSearchResult {
+  id: string;
+  path: string;
+  text: string;
+  vector: number[];
+  start_line: number;
+  end_line: number;
+  content_hash: string;
+  _distance: number;
+}
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+/** Name of the table storing project chunks */
+const TABLE_NAME = 'project_docs';
+
+/** Embedding vector dimension (MiniLM model) */
+const VECTOR_DIMENSION = 384;
+
+/** Batch size for insert operations */
+const INSERT_BATCH_SIZE = 500;
+
+/** Lock file pattern for detection */
+const LOCK_FILE_PATTERN = '*.lock';
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Detect and remove stale lockfiles in the database directory
+ *
+ * @param dbPath - Path to the LanceDB directory
+ */
+async function cleanupStaleLockfiles(dbPath: string): Promise<void> {
+  const logger = getLogger();
+
+  if (!fs.existsSync(dbPath)) {
+    return;
+  }
+
+  try {
+    const lockFiles = await glob('**/*.lock', {
+      cwd: dbPath,
+      absolute: true,
+      nodir: true,
+    });
+
+    for (const lockFile of lockFiles) {
+      try {
+        // Check if lockfile is stale (older than 5 minutes)
+        const stats = fs.statSync(lockFile);
+        const ageMs = Date.now() - stats.mtimeMs;
+        const fiveMinutesMs = 5 * 60 * 1000;
+
+        if (ageMs > fiveMinutesMs) {
+          fs.unlinkSync(lockFile);
+          logger.warn('lancedb', `Removed stale lockfile: ${lockFile}`, {
+            ageMinutes: Math.round(ageMs / 60000),
+          });
+        }
+      } catch (error) {
+        // Ignore individual lockfile removal errors
+        logger.debug('lancedb', `Could not remove lockfile: ${lockFile}`);
+      }
+    }
+  } catch (error) {
+    // Ignore glob errors
+    logger.debug('lancedb', 'Error scanning for lockfiles', { error });
+  }
+}
+
+/**
+ * Normalize distance to similarity score (0.0 - 1.0)
+ *
+ * LanceDB returns L2 distance where smaller is better.
+ * We convert to similarity score where larger is better.
+ *
+ * @param distance - L2 distance from LanceDB
+ * @returns Similarity score (0.0 - 1.0)
+ */
+function distanceToScore(distance: number): number {
+  // For L2 distance, use formula: score = 1 / (1 + distance)
+  // This maps distance 0 -> score 1, distance infinity -> score 0
+  return 1 / (1 + distance);
+}
+
+/**
+ * Convert a glob pattern to SQL LIKE pattern
+ *
+ * @param globPattern - Glob pattern (e.g., "*.ts", "src/*.ts")
+ * @returns SQL LIKE pattern
+ */
+function globToLikePattern(globPattern: string): string {
+  // Escape SQL special characters first
+  let pattern = globPattern.replace(/'/g, "''");
+
+  // Convert glob wildcards to SQL LIKE wildcards
+  // * matches any sequence -> %
+  // ? matches single char -> _
+  pattern = pattern.replace(/\*\*/g, '%'); // ** first (greedy match)
+  pattern = pattern.replace(/\*/g, '%');
+  pattern = pattern.replace(/\?/g, '_');
+
+  return pattern;
+}
+
+// ============================================================================
+// LanceDBStore Class
+// ============================================================================
+
+/**
+ * LanceDB Store wrapper for vector search operations
+ *
+ * Provides a high-level interface for storing and searching code chunk embeddings.
+ * Handles database lifecycle, CRUD operations, and vector similarity search.
+ *
+ * @example
+ * ```typescript
+ * const store = new LanceDBStore('/path/to/index');
+ * await store.open();
+ *
+ * // Insert chunks
+ * await store.insertChunks(chunks);
+ *
+ * // Search
+ * const results = await store.search(queryVector, 10);
+ *
+ * await store.close();
+ * ```
+ */
+export class LanceDBStore {
+  private indexPath: string;
+  private dbPath: string;
+  private db: lancedb.Connection | null = null;
+  private table: lancedb.Table | null = null;
+  private isOpen: boolean = false;
+
+  /**
+   * Create a new LanceDBStore instance
+   *
+   * @param indexPath - Path to the index directory (e.g., ~/.mcp/search/indexes/<hash>)
+   */
+  constructor(indexPath: string) {
+    this.indexPath = indexPath;
+    this.dbPath = getLanceDbPath(indexPath);
+  }
+
+  // --------------------------------------------------------------------------
+  // Lifecycle Methods
+  // --------------------------------------------------------------------------
+
+  /**
+   * Open the database connection
+   *
+   * Creates the database directory if it doesn't exist.
+   * Cleans up any stale lockfiles before connecting.
+   * Creates the table with correct schema if it doesn't exist.
+   */
+  async open(): Promise<void> {
+    const logger = getLogger();
+
+    if (this.isOpen) {
+      logger.debug('lancedb', 'Database already open');
+      return;
+    }
+
+    try {
+      // Ensure database directory exists
+      if (!fs.existsSync(this.dbPath)) {
+        fs.mkdirSync(this.dbPath, { recursive: true });
+        logger.info('lancedb', `Created database directory: ${this.dbPath}`);
+      }
+
+      // Clean up stale lockfiles
+      await cleanupStaleLockfiles(this.dbPath);
+
+      // Connect to database
+      this.db = await lancedb.connect(this.dbPath);
+      logger.debug('lancedb', `Connected to database: ${this.dbPath}`);
+
+      // Check if table exists and open/create it
+      const tableNames = await this.db.tableNames();
+
+      if (tableNames.includes(TABLE_NAME)) {
+        this.table = await this.db.openTable(TABLE_NAME);
+        logger.debug('lancedb', `Opened existing table: ${TABLE_NAME}`);
+      } else {
+        // Create table with empty initial data and schema
+        // LanceDB requires at least one record or schema to create a table
+        // We'll create it lazily on first insert
+        this.table = null;
+        logger.debug('lancedb', 'Table will be created on first insert');
+      }
+
+      this.isOpen = true;
+      logger.info('lancedb', 'Database opened successfully');
+    } catch (error) {
+      const err = error as Error;
+      logger.error('lancedb', `Failed to open database: ${err.message}`);
+      throw new MCPError({
+        code: ErrorCode.INDEX_CORRUPT,
+        userMessage:
+          'Failed to open the search index. It may be corrupted. Try rebuilding it with reindex_project.',
+        developerMessage: `Failed to open LanceDB at ${this.dbPath}: ${err.message}`,
+        cause: err,
+      });
+    }
+  }
+
+  /**
+   * Close the database connection
+   *
+   * Safe to call multiple times - will be a no-op if already closed.
+   */
+  async close(): Promise<void> {
+    const logger = getLogger();
+
+    if (!this.isOpen) {
+      return;
+    }
+
+    // LanceDB doesn't have an explicit close method for local connections
+    // We just clear our references
+    this.db = null;
+    this.table = null;
+    this.isOpen = false;
+
+    logger.debug('lancedb', 'Database connection closed');
+  }
+
+  /**
+   * Delete the entire database
+   *
+   * Removes all data and the database directory.
+   * The store will be closed after this operation.
+   */
+  async delete(): Promise<void> {
+    const logger = getLogger();
+
+    await this.close();
+
+    if (fs.existsSync(this.dbPath)) {
+      fs.rmSync(this.dbPath, { recursive: true, force: true });
+      logger.info('lancedb', `Deleted database: ${this.dbPath}`);
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // Private Helpers
+  // --------------------------------------------------------------------------
+
+  /**
+   * Ensure the database is open
+   */
+  private ensureOpen(): void {
+    if (!this.isOpen || !this.db) {
+      throw indexNotFound(this.indexPath);
+    }
+  }
+
+  /**
+   * Ensure the table exists, creating it if necessary with initial data
+   */
+  private async ensureTable(initialData?: ChunkRecord[]): Promise<lancedb.Table> {
+    this.ensureOpen();
+
+    if (this.table) {
+      return this.table;
+    }
+
+    if (!this.db) {
+      throw indexNotFound(this.indexPath);
+    }
+
+    const logger = getLogger();
+
+    if (!initialData || initialData.length === 0) {
+      throw new MCPError({
+        code: ErrorCode.INDEX_NOT_FOUND,
+        userMessage: 'No data to initialize the search index.',
+        developerMessage: 'Cannot create table without initial data',
+      });
+    }
+
+    // Create table with initial data
+    this.table = await this.db.createTable(TABLE_NAME, initialData);
+    logger.info('lancedb', `Created table: ${TABLE_NAME}`);
+
+    return this.table;
+  }
+
+  /**
+   * Get the table, throwing if it doesn't exist
+   */
+  private async getTable(): Promise<lancedb.Table> {
+    this.ensureOpen();
+
+    if (!this.table) {
+      throw indexNotFound(this.indexPath);
+    }
+
+    return this.table;
+  }
+
+  // --------------------------------------------------------------------------
+  // CRUD Operations
+  // --------------------------------------------------------------------------
+
+  /**
+   * Insert chunks into the database
+   *
+   * Handles large batches efficiently by splitting into smaller batches.
+   * Creates the table on first insert if it doesn't exist.
+   *
+   * @param chunks - Array of chunk records to insert
+   */
+  async insertChunks(chunks: ChunkRecord[]): Promise<void> {
+    if (chunks.length === 0) {
+      return;
+    }
+
+    const logger = getLogger();
+    logger.info('lancedb', `Inserting ${chunks.length} chunks`);
+
+    // If table doesn't exist, create it with first batch
+    if (!this.table) {
+      const firstBatch = chunks.slice(0, INSERT_BATCH_SIZE);
+      await this.ensureTable(firstBatch);
+
+      // If there's more data, add the rest
+      if (chunks.length > INSERT_BATCH_SIZE) {
+        const remaining = chunks.slice(INSERT_BATCH_SIZE);
+        await this.insertChunksInternal(remaining);
+      }
+    } else {
+      await this.insertChunksInternal(chunks);
+    }
+
+    logger.debug('lancedb', `Inserted ${chunks.length} chunks successfully`);
+  }
+
+  /**
+   * Internal method to insert chunks in batches
+   */
+  private async insertChunksInternal(chunks: ChunkRecord[]): Promise<void> {
+    const table = await this.getTable();
+    const logger = getLogger();
+
+    // Insert in batches
+    for (let i = 0; i < chunks.length; i += INSERT_BATCH_SIZE) {
+      const batch = chunks.slice(i, i + INSERT_BATCH_SIZE);
+      await table.add(batch);
+
+      if (i + INSERT_BATCH_SIZE < chunks.length) {
+        logger.debug('lancedb', `Inserted batch ${Math.floor(i / INSERT_BATCH_SIZE) + 1}`);
+      }
+    }
+  }
+
+  /**
+   * Delete all chunks for a given file path
+   *
+   * @param relativePath - Relative path of the file (forward-slash separated)
+   * @returns Number of chunks deleted
+   */
+  async deleteByPath(relativePath: string): Promise<number> {
+    const table = await this.getTable();
+    const logger = getLogger();
+
+    // Get count before delete
+    const beforeCount = await table.countRows(`path = '${relativePath.replace(/'/g, "''")}'`);
+
+    if (beforeCount === 0) {
+      return 0;
+    }
+
+    // Delete chunks
+    await table.delete(`path = '${relativePath.replace(/'/g, "''")}'`);
+
+    logger.debug('lancedb', `Deleted ${beforeCount} chunks for path: ${relativePath}`);
+    return beforeCount;
+  }
+
+  /**
+   * Get list of all indexed file paths
+   *
+   * @returns Array of unique file paths
+   */
+  async getIndexedFiles(): Promise<string[]> {
+    // Check if table exists
+    if (!this.table) {
+      return [];
+    }
+
+    const table = await this.getTable();
+
+    // Query all records and extract unique paths
+    // LanceDB doesn't have DISTINCT, so we use filter().select()
+    const results = await table.filter('true').select(['path']).execute<{ path: string }>();
+
+    // Get unique paths
+    const uniquePaths = new Set<string>();
+    for (const result of results) {
+      uniquePaths.add(result.path);
+    }
+
+    return Array.from(uniquePaths).sort();
+  }
+
+  /**
+   * Count total number of chunks in the database
+   *
+   * @returns Total chunk count
+   */
+  async countChunks(): Promise<number> {
+    if (!this.table) {
+      return 0;
+    }
+
+    const table = await this.getTable();
+    return table.countRows();
+  }
+
+  /**
+   * Count number of unique indexed files
+   *
+   * @returns Number of unique files
+   */
+  async countFiles(): Promise<number> {
+    const files = await this.getIndexedFiles();
+    return files.length;
+  }
+
+  // --------------------------------------------------------------------------
+  // Search Operations
+  // --------------------------------------------------------------------------
+
+  /**
+   * Perform vector similarity search
+   *
+   * @param queryVector - Query embedding vector (384 dimensions)
+   * @param topK - Maximum number of results to return (default: 10)
+   * @returns Search results sorted by similarity score (descending)
+   */
+  async search(queryVector: number[], topK: number = 10): Promise<SearchResult[]> {
+    if (!this.table) {
+      return [];
+    }
+
+    const table = await this.getTable();
+    const logger = getLogger();
+
+    // Validate vector dimension
+    if (queryVector.length !== VECTOR_DIMENSION) {
+      throw new MCPError({
+        code: ErrorCode.INVALID_PATTERN,
+        userMessage: 'Invalid search query.',
+        developerMessage: `Query vector dimension mismatch. Expected ${VECTOR_DIMENSION}, got ${queryVector.length}`,
+      });
+    }
+
+    logger.debug('lancedb', `Searching with topK=${topK}`);
+
+    // Perform vector search
+    const rawResults = await table
+      .search(queryVector)
+      .limit(topK)
+      .execute<RawSearchResult>();
+
+    // Convert to SearchResult format
+    const results: SearchResult[] = rawResults.map((row) => ({
+      path: row.path,
+      text: row.text,
+      score: distanceToScore(row._distance),
+      startLine: row.start_line,
+      endLine: row.end_line,
+    }));
+
+    logger.debug('lancedb', `Search returned ${results.length} results`);
+    return results;
+  }
+
+  /**
+   * Search for files matching a glob pattern
+   *
+   * @param pattern - Glob pattern (e.g., "*.ts", "src/*.ts")
+   * @param limit - Maximum number of results (default: 20)
+   * @returns Array of matching file paths
+   */
+  async searchByPath(pattern: string, limit: number = 20): Promise<string[]> {
+    if (!this.table) {
+      return [];
+    }
+
+    const table = await this.getTable();
+    const logger = getLogger();
+
+    // Convert glob pattern to SQL LIKE pattern
+    const likePattern = globToLikePattern(pattern);
+    logger.debug('lancedb', `Searching paths with pattern: ${pattern} -> ${likePattern}`);
+
+    try {
+      // Query with path filter
+      const results = await table
+        .filter(`path LIKE '${likePattern}'`)
+        .select(['path'])
+        .execute<{ path: string }>();
+
+      // Get unique paths
+      const uniquePaths = new Set<string>();
+      for (const result of results) {
+        uniquePaths.add(result.path);
+        if (uniquePaths.size >= limit) {
+          break;
+        }
+      }
+
+      const paths = Array.from(uniquePaths).sort().slice(0, limit);
+      logger.debug('lancedb', `Path search returned ${paths.length} files`);
+      return paths;
+    } catch (error) {
+      const err = error as Error;
+      logger.error('lancedb', `Path search failed: ${err.message}`);
+      throw new MCPError({
+        code: ErrorCode.INVALID_PATTERN,
+        userMessage: 'Invalid path pattern.',
+        developerMessage: `Path search failed for pattern "${pattern}": ${err.message}`,
+        cause: err,
+      });
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // Statistics
+  // --------------------------------------------------------------------------
+
+  /**
+   * Get the storage size of the database in bytes
+   *
+   * @returns Size in bytes
+   */
+  async getStorageSize(): Promise<number> {
+    if (!fs.existsSync(this.dbPath)) {
+      return 0;
+    }
+
+    let totalSize = 0;
+
+    const calculateSize = (dirPath: string): void => {
+      const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+
+      for (const entry of entries) {
+        const fullPath = path.join(dirPath, entry.name);
+
+        if (entry.isDirectory()) {
+          calculateSize(fullPath);
+        } else {
+          const stats = fs.statSync(fullPath);
+          totalSize += stats.size;
+        }
+      }
+    };
+
+    calculateSize(this.dbPath);
+    return totalSize;
+  }
+
+  /**
+   * Check if the store has been opened
+   */
+  get opened(): boolean {
+    return this.isOpen;
+  }
+
+  /**
+   * Check if the table exists and has data
+   */
+  async hasData(): Promise<boolean> {
+    if (!this.table) {
+      return false;
+    }
+
+    try {
+      const count = await this.countChunks();
+      return count > 0;
+    } catch {
+      return false;
+    }
+  }
+}
+
+// ============================================================================
+// Module Exports
+// ============================================================================
+
+export {
+  TABLE_NAME,
+  VECTOR_DIMENSION,
+  distanceToScore,
+  globToLikePattern,
+  cleanupStaleLockfiles,
+};

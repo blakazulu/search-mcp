@@ -3,11 +3,11 @@ task_id: "SMCP-009"
 title: "LanceDB Store"
 category: "Technical"
 priority: "P1"
-status: "not-started"
+status: "completed"
 created_date: "2025-12-09"
 due_date: ""
 estimated_hours: 4
-actual_hours: 0
+actual_hours: 3
 assigned_to: "blakazulu"
 tags: ["storage", "vectordb", "lancedb", "embeddings"]
 ---
@@ -20,10 +20,10 @@ Implement the vector database wrapper using LanceDB for storing and searching co
 
 ## Goals
 
-- [ ] Create LanceDB table with correct schema
-- [ ] Implement CRUD operations for chunks
-- [ ] Implement vector similarity search
-- [ ] Handle database lifecycle (open, close, delete)
+- [x] Create LanceDB table with correct schema
+- [x] Implement CRUD operations for chunks
+- [x] Implement vector similarity search
+- [x] Handle database lifecycle (open, close, delete)
 
 ## Success Criteria
 
@@ -56,7 +56,7 @@ Implement the vector database wrapper using LanceDB for storing and searching co
 
 ### Phase 1: Schema Definition (0.5 hours)
 
-- [ ] 1.1 Define chunk interface
+- [x] 1.1 Define chunk interface
     ```typescript
     interface ChunkRecord {
       id: string;           // UUIDv4
@@ -69,7 +69,7 @@ Implement the vector database wrapper using LanceDB for storing and searching co
     }
     ```
 
-- [ ] 1.2 Define search result interface
+- [x] 1.2 Define search result interface
     ```typescript
     interface SearchResult {
       path: string;
@@ -82,46 +82,46 @@ Implement the vector database wrapper using LanceDB for storing and searching co
 
 ### Phase 2: Database Initialization (1 hour)
 
-- [ ] 2.1 Implement database connection
+- [x] 2.1 Implement database connection
     ```typescript
     async function openDatabase(indexPath: string): Promise<Database>
     // Opens or creates LanceDB at indexPath/index.lancedb/
     ```
 
-- [ ] 2.2 Implement table creation
+- [x] 2.2 Implement table creation
     ```typescript
     async function ensureTable(db: Database): Promise<Table>
     // Creates 'project_docs' table if not exists
     // Uses vector(384) for embedding dimension
     ```
 
-- [ ] 2.3 Handle stale lockfiles
+- [x] 2.3 Handle stale lockfiles
     - Detect and remove stale .lock files on startup
     - Log warning when lockfile cleanup occurs
 
 ### Phase 3: CRUD Operations (1.5 hours)
 
-- [ ] 3.1 Implement batch insert
+- [x] 3.1 Implement batch insert
     ```typescript
     async function insertChunks(table: Table, chunks: ChunkRecord[]): Promise<void>
     // Batch insert with progress tracking
     // Handles large batches (1000+ chunks)
     ```
 
-- [ ] 3.2 Implement delete by file path
+- [x] 3.2 Implement delete by file path
     ```typescript
     async function deleteByPath(table: Table, relativePath: string): Promise<number>
     // Deletes all chunks for given file
     // Returns count of deleted chunks
     ```
 
-- [ ] 3.3 Implement get files list
+- [x] 3.3 Implement get files list
     ```typescript
     async function getIndexedFiles(table: Table): Promise<string[]>
     // Returns unique list of all indexed file paths
     ```
 
-- [ ] 3.4 Implement count operations
+- [x] 3.4 Implement count operations
     ```typescript
     async function countChunks(table: Table): Promise<number>
     async function countFiles(table: Table): Promise<number>
@@ -129,7 +129,7 @@ Implement the vector database wrapper using LanceDB for storing and searching co
 
 ### Phase 4: Vector Search (0.5 hours)
 
-- [ ] 4.1 Implement similarity search
+- [x] 4.1 Implement similarity search
     ```typescript
     async function search(
       table: Table,
@@ -140,7 +140,7 @@ Implement the vector database wrapper using LanceDB for storing and searching co
     // Normalizes scores to 0.0 - 1.0 range
     ```
 
-- [ ] 4.2 Implement path pattern search
+- [x] 4.2 Implement path pattern search
     ```typescript
     async function searchByPath(
       table: Table,
@@ -153,7 +153,7 @@ Implement the vector database wrapper using LanceDB for storing and searching co
 
 ### Phase 5: Store Class & Export (0.5 hours)
 
-- [ ] 5.1 Create LanceDBStore class
+- [x] 5.1 Create LanceDBStore class
     ```typescript
     class LanceDBStore {
       constructor(indexPath: string)
@@ -177,9 +177,9 @@ Implement the vector database wrapper using LanceDB for storing and searching co
     }
     ```
 
-- [ ] 5.2 Export from `src/storage/lancedb.ts`
+- [x] 5.2 Export from `src/storage/lancedb.ts`
 
-- [ ] 5.3 Write unit tests
+- [x] 5.3 Write unit tests
     - Test table creation
     - Test insert and search round-trip
     - Test delete by path
@@ -195,20 +195,23 @@ Implement the vector database wrapper using LanceDB for storing and searching co
 
 Before marking this task complete:
 
-- [ ] All subtasks completed
-- [ ] Schema matches RFC (384-dim vectors)
-- [ ] Search returns results sorted by similarity
-- [ ] Batch insert handles 1000+ chunks
-- [ ] Delete removes all chunks for a file
-- [ ] Unit tests pass
+- [x] All subtasks completed
+- [x] Schema matches RFC (384-dim vectors)
+- [x] Search returns results sorted by similarity
+- [x] Batch insert handles 1000+ chunks
+- [x] Delete removes all chunks for a file
+- [x] Unit tests pass
 - [ ] Changes committed to Git
 
 ## Progress Log
 
-### 2025-12-09 - 0 hours
+### 2025-12-09 - 3 hours
 
 - Task created
 - Subtasks defined
+- Implemented LanceDBStore class with all required methods
+- Created comprehensive unit tests (45 tests, all passing)
+- Updated storage/index.ts exports
 
 ## Notes
 

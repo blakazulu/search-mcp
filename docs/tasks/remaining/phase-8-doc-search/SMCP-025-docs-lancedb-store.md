@@ -3,11 +3,11 @@ task_id: "SMCP-025"
 title: "Docs LanceDB Store"
 category: "Technical"
 priority: "P1"
-status: "not-started"
+status: "done"
 created_date: "2025-12-09"
 due_date: ""
 estimated_hours: 2
-actual_hours: 0
+actual_hours: 2
 assigned_to: "blakazulu"
 tags: ["storage", "lancedb", "docs"]
 ---
@@ -20,10 +20,10 @@ Create a LanceDB store specifically for documentation files. This store uses a s
 
 ## Goals
 
-- [ ] Create DocsLanceDBStore class based on existing LanceDBStore
-- [ ] Use separate database path (`docs.lancedb/`)
-- [ ] Use table name `project_docs_prose`
-- [ ] Reuse existing schema and methods
+- [x] Create DocsLanceDBStore class based on existing LanceDBStore
+- [x] Use separate database path (`docs.lancedb/`)
+- [x] Use table name `project_docs_prose`
+- [x] Reuse existing schema and methods
 
 ## Success Criteria
 
@@ -51,32 +51,32 @@ Create a LanceDB store specifically for documentation files. This store uses a s
 
 ### Phase 1: Create DocsLanceDBStore Class (1 hour)
 
-- [ ] 1.1 Create `src/storage/docsLancedb.ts`
+- [x] 1.1 Create `src/storage/docsLancedb.ts`
     - Copy structure from `lancedb.ts`
     - Change `TABLE_NAME` to `'project_docs_prose'`
     - Create `getDocsLanceDbPath()` helper
 
-- [ ] 1.2 Update path constants
+- [x] 1.2 Update path constants
     ```typescript
     export function getDocsLanceDbPath(indexPath: string): string {
       return path.join(indexPath, 'docs.lancedb');
     }
     ```
 
-- [ ] 1.3 Create DocsLanceDBStore class
+- [x] 1.3 Create DocsLanceDBStore class
     - Extend or copy LanceDBStore pattern
     - Override constructor to use docs path
     - Same schema: id, path, text, vector, start_line, end_line, content_hash
 
 ### Phase 2: Tests (1 hour)
 
-- [ ] 2.1 Create `src/storage/__tests__/docsLancedb.test.ts`
+- [x] 2.1 Create `tests/unit/storage/docsLancedb.test.ts`
     - Test database creation
     - Test chunk insertion
     - Test vector search
     - Test deletion by path
 
-- [ ] 2.2 Test isolation
+- [x] 2.2 Test isolation
     - Verify docs.lancedb is separate from index.lancedb
     - Verify no cross-contamination
 
@@ -89,12 +89,12 @@ Create a LanceDB store specifically for documentation files. This store uses a s
 
 Before marking this task complete:
 
-- [ ] All subtasks completed
-- [ ] DocsLanceDBStore class created
-- [ ] Uses separate `docs.lancedb/` path
-- [ ] All CRUD operations work
-- [ ] Tests pass
-- [ ] Exported from `src/storage/index.ts`
+- [x] All subtasks completed
+- [x] DocsLanceDBStore class created
+- [x] Uses separate `docs.lancedb/` path
+- [x] All CRUD operations work
+- [x] Tests pass (41 tests)
+- [x] Exported from `src/storage/index.ts`
 
 ## Progress Log
 
@@ -102,6 +102,14 @@ Before marking this task complete:
 
 - Task created
 - Subtasks defined
+
+### 2025-12-09 - 2 hours
+
+- Created `src/storage/docsLancedb.ts` with DocsLanceDBStore class
+- Added `getDocsLanceDbPath()` helper to `src/utils/paths.ts`
+- Updated `src/storage/index.ts` with exports
+- Created comprehensive test suite with 41 tests
+- All tests passing
 
 ## Notes
 
@@ -111,7 +119,7 @@ Before marking this task complete:
 
 ## Blockers
 
-_None yet_
+_None_
 
 ## Related Tasks
 

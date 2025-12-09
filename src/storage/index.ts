@@ -76,3 +76,13 @@ export {
   // Class
   LanceDBStore,
 } from './lancedb.js';
+
+// Docs LanceDB Vector Store
+export {
+  // Constants
+  DOCS_TABLE_NAME,
+  // Functions
+  getDocsLanceDbPath,
+  // Class
+  DocsLanceDBStore,
+} from './docsLancedb.js';

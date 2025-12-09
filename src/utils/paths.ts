@@ -370,6 +370,16 @@ export function getLanceDbPath(indexPath: string): string {
   return path.join(indexPath, 'index.lancedb');
 }
 
+/**
+ * Get the Docs LanceDB directory path for an index
+ *
+ * @param indexPath - Absolute path to the index directory
+ * @returns Absolute path to the docs.lancedb directory
+ */
+export function getDocsLanceDbPath(indexPath: string): string {
+  return path.join(indexPath, 'docs.lancedb');
+}
+
 // ============================================================================
 // Utility Exports
 // ============================================================================

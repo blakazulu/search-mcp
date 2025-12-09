@@ -19,6 +19,7 @@ import { IndexManager, IndexProgress, IndexResult } from '../engines/indexManage
 import { ConfigManager, Config } from '../storage/config.js';
 import { getIndexPath } from '../utils/paths.js';
 import { getLogger } from '../utils/logger.js';
+import { IndexingLock } from '../utils/asyncMutex.js';
 import { MCPError, ErrorCode, isMCPError, indexNotFound } from '../errors/index.js';
 import { formatDuration, formatProgressMessage, type ProgressCallback } from './createIndex.js';
 import type { ToolContext } from './searchCode.js';
@@ -167,6 +168,8 @@ export async function deleteIndexData(indexPath: string): Promise<void> {
  * Deletes the existing index data (preserving configuration) and creates
  * a fresh index. Useful when the index is corrupted or out of sync.
  *
+ * Uses the IndexingLock to prevent concurrent indexing operations.
+ *
  * @param input - The input (empty object, uses project context)
  * @param context - Tool context containing the project path and optional callbacks
  * @returns Reindex result with statistics
@@ -206,34 +209,54 @@ export async function reindexProject(
     return { status: 'cancelled' };
   }
 
+  const projectPath = context.projectPath;
+  const indexPath = getIndexPath(projectPath);
+
+  // Step 1: Check if index exists (before acquiring lock)
+  const exists = await checkIndexExists(projectPath);
+  if (!exists) {
+    logger.warn('reindexProject', 'No index exists for project', { projectPath });
+    throw new MCPError({
+      code: ErrorCode.INDEX_NOT_FOUND,
+      userMessage:
+        'No search index exists for this project. Please use create_index to create one first.',
+      developerMessage: `Index not found at ${indexPath}`,
+    });
+  }
+
+  // Step 2: Acquire global indexing lock to prevent concurrent indexing
+  const indexingLock = IndexingLock.getInstance();
+
+  // Check if indexing is already in progress
+  if (indexingLock.isIndexing) {
+    const currentProject = indexingLock.indexingProject;
+    logger.warn('reindexProject', 'Indexing already in progress', {
+      currentProject,
+      requestedProject: projectPath,
+    });
+    throw new MCPError({
+      code: ErrorCode.INDEX_CORRUPT,
+      userMessage: `Indexing is already in progress for ${currentProject}. Please wait for it to complete.`,
+      developerMessage: `Concurrent indexing prevented. Current: ${currentProject}, Requested: ${projectPath}`,
+    });
+  }
+
   try {
-    const projectPath = context.projectPath;
-    const indexPath = getIndexPath(projectPath);
+    // Acquire the lock with the project path
+    await indexingLock.acquire(projectPath);
 
-    // Step 1: Check if index exists
-    const exists = await checkIndexExists(projectPath);
-    if (!exists) {
-      logger.warn('reindexProject', 'No index exists for project', { projectPath });
-      throw new MCPError({
-        code: ErrorCode.INDEX_NOT_FOUND,
-        userMessage:
-          'No search index exists for this project. Please use create_index to create one first.',
-        developerMessage: `Index not found at ${indexPath}`,
-      });
-    }
-
-    // Step 2: Load existing configuration (to preserve user settings)
+    // Step 3: Load existing configuration (to preserve user settings)
     const existingConfig = await loadExistingConfig(indexPath);
     logger.info('reindexProject', 'Configuration loaded', {
       hasConfig: existingConfig !== null,
     });
 
-    // Step 3: Delete index data (preserves config.json)
+    // Step 4: Delete index data (preserves config.json)
     // Note: In a full implementation with file watcher, we would stop the watcher here
     // For now, just delete the index data
     await deleteIndexData(indexPath);
 
-    // Step 4: Perform full re-indexing
+    // Step 5: Perform full re-indexing
     const indexManager = new IndexManager(projectPath);
 
     logger.info('reindexProject', 'Rebuilding index', {
@@ -244,7 +267,7 @@ export async function reindexProject(
     // Execute indexing with progress callback
     const result: IndexResult = await indexManager.createIndex(context.onProgress);
 
-    // Step 5: Format the result
+    // Step 6: Format the result
     const output: ReindexProjectOutput = {
       status: 'success',
       filesIndexed: result.filesIndexed,
@@ -278,6 +301,11 @@ export async function reindexProject(
       developerMessage: `Unexpected error during reindex: ${message}`,
       cause: error instanceof Error ? error : undefined,
     });
+  } finally {
+    // Always release the lock
+    if (indexingLock.isIndexing) {
+      indexingLock.release();
+    }
   }
 }
 

@@ -18,6 +18,7 @@ import { detectProjectRoot } from '../engines/projectRoot.js';
 import { IndexManager, IndexProgress, IndexResult } from '../engines/indexManager.js';
 import { getIndexPath } from '../utils/paths.js';
 import { getLogger } from '../utils/logger.js';
+import { IndexingLock } from '../utils/asyncMutex.js';
 import { MCPError, ErrorCode, isMCPError } from '../errors/index.js';
 import type { ToolContext } from './searchCode.js';
 
@@ -221,6 +222,8 @@ export async function indexExists(projectPath: string): Promise<boolean> {
  * Detects the project root, scans files, chunks content, generates embeddings,
  * and stores in LanceDB. Returns statistics about the created index.
  *
+ * Uses the IndexingLock to prevent concurrent indexing operations.
+ *
  * @param input - The input (empty object, uses project context)
  * @param context - Tool context containing the project path and optional callbacks
  * @returns Index creation result with statistics
@@ -260,18 +263,38 @@ export async function createIndex(
     return { status: 'cancelled' };
   }
 
-  try {
-    // Step 1: Detect project root
-    const projectPath = await detectProject(context);
+  // Step 1: Detect project root (before acquiring lock)
+  const projectPath = await detectProject(context);
 
-    // Step 2: Check if index already exists
+  // Step 2: Acquire global indexing lock to prevent concurrent indexing
+  const indexingLock = IndexingLock.getInstance();
+
+  // Check if indexing is already in progress
+  if (indexingLock.isIndexing) {
+    const currentProject = indexingLock.indexingProject;
+    logger.warn('createIndex', 'Indexing already in progress', {
+      currentProject,
+      requestedProject: projectPath,
+    });
+    throw new MCPError({
+      code: ErrorCode.INDEX_CORRUPT,
+      userMessage: `Indexing is already in progress for ${currentProject}. Please wait for it to complete.`,
+      developerMessage: `Concurrent indexing prevented. Current: ${currentProject}, Requested: ${projectPath}`,
+    });
+  }
+
+  try {
+    // Acquire the lock with the project path
+    await indexingLock.acquire(projectPath);
+
+    // Step 3: Check if index already exists
     const exists = await indexExists(projectPath);
     if (exists) {
       logger.info('createIndex', 'Index already exists, will rebuild', { projectPath });
       // Continue with reindexing - user already confirmed
     }
 
-    // Step 3: Create the index
+    // Step 4: Create the index
     const indexManager = new IndexManager(projectPath);
 
     logger.info('createIndex', 'Creating index', {
@@ -282,7 +305,7 @@ export async function createIndex(
     // Execute indexing with progress callback
     const result: IndexResult = await indexManager.createIndex(context.onProgress);
 
-    // Step 4: Format the result
+    // Step 5: Format the result
     const output: CreateIndexOutput = {
       status: 'success',
       projectPath,
@@ -318,6 +341,11 @@ export async function createIndex(
       developerMessage: `Unexpected error during index creation: ${message}`,
       cause: error instanceof Error ? error : undefined,
     });
+  } finally {
+    // Always release the lock
+    if (indexingLock.isIndexing) {
+      indexingLock.release();
+    }
   }
 }
 

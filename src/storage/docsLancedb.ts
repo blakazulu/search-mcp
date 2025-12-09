@@ -24,6 +24,7 @@ import { MCPError, ErrorCode, indexNotFound } from '../errors/index.js';
 import { ChunkRecord, SearchResult, VECTOR_DIMENSION, distanceToScore } from './lancedb.js';
 import { getDocsLanceDbPath } from '../utils/paths.js';
 import { escapeSqlString, globToSafeLikePattern } from '../utils/sql.js';
+import { AsyncMutex } from '../utils/asyncMutex.js';
 
 // ============================================================================
 // Constants
@@ -126,6 +127,9 @@ export class DocsLanceDBStore {
   private db: lancedb.Connection | null = null;
   private table: lancedb.Table | null = null;
   private isOpen: boolean = false;
+
+  /** Mutex for protecting concurrent database operations */
+  private readonly mutex = new AsyncMutex('DocsLanceDBStore');
 
   /**
    * Create a new DocsLanceDBStore instance
@@ -303,6 +307,7 @@ export class DocsLanceDBStore {
    *
    * Handles large batches efficiently by splitting into smaller batches.
    * Creates the table on first insert if it doesn't exist.
+   * Protected by mutex to prevent concurrent write operations.
    *
    * @param chunks - Array of chunk records to insert
    */
@@ -311,24 +316,26 @@ export class DocsLanceDBStore {
       return;
     }
 
-    const logger = getLogger();
-    logger.info('docsLancedb', `Inserting ${chunks.length} chunks`);
+    return this.mutex.withLock(async () => {
+      const logger = getLogger();
+      logger.info('docsLancedb', `Inserting ${chunks.length} chunks`);
 
-    // If table doesn't exist, create it with first batch
-    if (!this.table) {
-      const firstBatch = chunks.slice(0, INSERT_BATCH_SIZE);
-      await this.ensureTable(firstBatch);
+      // If table doesn't exist, create it with first batch
+      if (!this.table) {
+        const firstBatch = chunks.slice(0, INSERT_BATCH_SIZE);
+        await this.ensureTable(firstBatch);
 
-      // If there's more data, add the rest
-      if (chunks.length > INSERT_BATCH_SIZE) {
-        const remaining = chunks.slice(INSERT_BATCH_SIZE);
-        await this.insertChunksInternal(remaining);
+        // If there's more data, add the rest
+        if (chunks.length > INSERT_BATCH_SIZE) {
+          const remaining = chunks.slice(INSERT_BATCH_SIZE);
+          await this.insertChunksInternal(remaining);
+        }
+      } else {
+        await this.insertChunksInternal(chunks);
       }
-    } else {
-      await this.insertChunksInternal(chunks);
-    }
 
-    logger.debug('docsLancedb', `Inserted ${chunks.length} chunks successfully`);
+      logger.debug('docsLancedb', `Inserted ${chunks.length} chunks successfully`);
+    });
   }
 
   /**
@@ -351,56 +358,62 @@ export class DocsLanceDBStore {
 
   /**
    * Delete all chunks for a given file path
+   * Protected by mutex to prevent concurrent write operations.
    *
    * @param relativePath - Relative path of the file (forward-slash separated)
    * @returns Number of chunks deleted
    */
   async deleteByPath(relativePath: string): Promise<number> {
-    const table = await this.getTable();
-    const logger = getLogger();
+    return this.mutex.withLock(async () => {
+      const table = await this.getTable();
+      const logger = getLogger();
 
-    // Escape the path to prevent SQL injection
-    const escapedPath = escapeSqlString(relativePath);
-    const whereClause = `path = '${escapedPath}'`;
+      // Escape the path to prevent SQL injection
+      const escapedPath = escapeSqlString(relativePath);
+      const whereClause = `path = '${escapedPath}'`;
 
-    // Get count before delete
-    const beforeCount = await table.countRows(whereClause);
+      // Get count before delete
+      const beforeCount = await table.countRows(whereClause);
 
-    if (beforeCount === 0) {
-      return 0;
-    }
+      if (beforeCount === 0) {
+        return 0;
+      }
 
-    // Delete chunks
-    await table.delete(whereClause);
+      // Delete chunks
+      await table.delete(whereClause);
 
-    logger.debug('docsLancedb', `Deleted ${beforeCount} chunks for path: ${relativePath}`);
-    return beforeCount;
+      logger.debug('docsLancedb', `Deleted ${beforeCount} chunks for path: ${relativePath}`);
+      return beforeCount;
+    });
   }
 
   /**
    * Get list of all indexed file paths
+   * Protected by mutex to ensure consistent reads during concurrent operations.
    *
    * @returns Array of unique file paths
    */
   async getIndexedFiles(): Promise<string[]> {
-    // Check if table exists
+    // Check if table exists (no need for lock for this quick check)
     if (!this.table) {
       return [];
     }
 
-    const table = await this.getTable();
+    return this.mutex.withLock(async () => {
+      const table = await this.getTable();
 
-    // Query all records and extract unique paths
-    // LanceDB doesn't have DISTINCT, so we use filter().select()
-    const results = await table.filter('true').select(['path']).execute<{ path: string }>();
+      // Query all records and extract unique paths
+      // LanceDB doesn't have DISTINCT, so we use filter().select()
+      const results = await table.filter('true').select(['path']).execute<{ path: string }>();
 
-    // Get unique paths
-    const uniquePaths = new Set<string>();
-    for (const result of results) {
-      uniquePaths.add(result.path);
-    }
+      // Get unique paths
+      const uniquePaths = new Set<string>();
+      for (const result of results) {
+        uniquePaths.add(result.path);
+      }
 
-    return Array.from(uniquePaths).sort();
+      return Array.from(uniquePaths).sort();
+    });
   }
 
   /**
@@ -433,6 +446,7 @@ export class DocsLanceDBStore {
 
   /**
    * Perform vector similarity search
+   * Protected by mutex to prevent reads during concurrent write operations.
    *
    * @param queryVector - Query embedding vector (384 dimensions)
    * @param topK - Maximum number of results to return (default: 10)
@@ -443,10 +457,7 @@ export class DocsLanceDBStore {
       return [];
     }
 
-    const table = await this.getTable();
-    const logger = getLogger();
-
-    // Validate vector dimension
+    // Validate vector dimension before acquiring lock
     if (queryVector.length !== VECTOR_DIMENSION) {
       throw new MCPError({
         code: ErrorCode.INVALID_PATTERN,
@@ -455,26 +466,32 @@ export class DocsLanceDBStore {
       });
     }
 
-    logger.debug('docsLancedb', `Searching with topK=${topK}`);
+    return this.mutex.withLock(async () => {
+      const table = await this.getTable();
+      const logger = getLogger();
 
-    // Perform vector search
-    const rawResults = await table.search(queryVector).limit(topK).execute<RawSearchResult>();
+      logger.debug('docsLancedb', `Searching with topK=${topK}`);
 
-    // Convert to SearchResult format
-    const results: SearchResult[] = rawResults.map((row) => ({
-      path: row.path,
-      text: row.text,
-      score: distanceToScore(row._distance),
-      startLine: row.start_line,
-      endLine: row.end_line,
-    }));
+      // Perform vector search
+      const rawResults = await table.search(queryVector).limit(topK).execute<RawSearchResult>();
 
-    logger.debug('docsLancedb', `Search returned ${results.length} results`);
-    return results;
+      // Convert to SearchResult format
+      const results: SearchResult[] = rawResults.map((row) => ({
+        path: row.path,
+        text: row.text,
+        score: distanceToScore(row._distance),
+        startLine: row.start_line,
+        endLine: row.end_line,
+      }));
+
+      logger.debug('docsLancedb', `Search returned ${results.length} results`);
+      return results;
+    });
   }
 
   /**
    * Search for files matching a glob pattern
+   * Protected by mutex to ensure consistent reads during concurrent operations.
    *
    * @param pattern - Glob pattern (e.g., "*.md", "docs/*.md")
    * @param limit - Maximum number of results (default: 20)
@@ -485,42 +502,44 @@ export class DocsLanceDBStore {
       return [];
     }
 
-    const table = await this.getTable();
-    const logger = getLogger();
+    return this.mutex.withLock(async () => {
+      const table = await this.getTable();
+      const logger = getLogger();
 
-    // Convert glob pattern to SQL LIKE pattern with proper escaping
-    const likePattern = globToSafeLikePattern(pattern);
-    logger.debug('docsLancedb', `Searching paths with pattern: ${pattern} -> ${likePattern}`);
+      // Convert glob pattern to SQL LIKE pattern with proper escaping
+      const likePattern = globToSafeLikePattern(pattern);
+      logger.debug('docsLancedb', `Searching paths with pattern: ${pattern} -> ${likePattern}`);
 
-    try {
-      // Query with path filter
-      const results = await table
-        .filter(`path LIKE '${likePattern}'`)
-        .select(['path'])
-        .execute<{ path: string }>();
+      try {
+        // Query with path filter
+        const results = await table
+          .filter(`path LIKE '${likePattern}'`)
+          .select(['path'])
+          .execute<{ path: string }>();
 
-      // Get unique paths
-      const uniquePaths = new Set<string>();
-      for (const result of results) {
-        uniquePaths.add(result.path);
-        if (uniquePaths.size >= limit) {
-          break;
+        // Get unique paths
+        const uniquePaths = new Set<string>();
+        for (const result of results) {
+          uniquePaths.add(result.path);
+          if (uniquePaths.size >= limit) {
+            break;
+          }
         }
-      }
 
-      const paths = Array.from(uniquePaths).sort().slice(0, limit);
-      logger.debug('docsLancedb', `Path search returned ${paths.length} files`);
-      return paths;
-    } catch (error) {
-      const err = error as Error;
-      logger.error('docsLancedb', `Path search failed: ${err.message}`);
-      throw new MCPError({
-        code: ErrorCode.INVALID_PATTERN,
-        userMessage: 'Invalid path pattern.',
-        developerMessage: `Path search failed for pattern "${pattern}": ${err.message}`,
-        cause: err,
-      });
-    }
+        const paths = Array.from(uniquePaths).sort().slice(0, limit);
+        logger.debug('docsLancedb', `Path search returned ${paths.length} files`);
+        return paths;
+      } catch (error) {
+        const err = error as Error;
+        logger.error('docsLancedb', `Path search failed: ${err.message}`);
+        throw new MCPError({
+          code: ErrorCode.INVALID_PATTERN,
+          userMessage: 'Invalid path pattern.',
+          developerMessage: `Path search failed for pattern "${pattern}": ${err.message}`,
+          cause: err,
+        });
+      }
+    });
   }
 
   // --------------------------------------------------------------------------

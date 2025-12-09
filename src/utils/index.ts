@@ -59,3 +59,10 @@ export {
   getExtension,
   getBaseName,
 } from './paths.js';
+
+// Async Mutex exports
+export {
+  AsyncMutex,
+  ReadWriteLock,
+  IndexingLock,
+} from './asyncMutex.js';

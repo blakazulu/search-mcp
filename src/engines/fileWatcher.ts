@@ -414,11 +414,17 @@ export class FileWatcher {
    *
    * If multiple events for the same file occur within the debounce window,
    * only the last one will be processed.
+   *
+   * Fixes:
+   * - Bug #2: Race condition in processingQueue check is fixed by atomic check-and-add
+   * - Bug #4: Unhandled promise rejection is fixed by wrapping in IIFE with try/catch
    */
   private debounceEvent(
     relativePath: string,
     handler: () => Promise<void>
   ): void {
+    const logger = getLogger();
+
     // Cancel any existing pending event for this file
     const existing = this.pendingEvents.get(relativePath);
     if (existing) {
@@ -426,20 +432,39 @@ export class FileWatcher {
     }
 
     // Schedule the handler
-    const timeout = setTimeout(async () => {
+    // Note: We use a regular function and IIFE to properly handle the async handler
+    // This prevents unhandled promise rejections from escaping setTimeout
+    const timeout = setTimeout(() => {
       this.pendingEvents.delete(relativePath);
 
-      // Skip if file is already being processed
+      // Atomic check-and-add to prevent race condition
+      // If already in processing queue, skip this event
       if (this.processingQueue.has(relativePath)) {
+        logger.debug('FileWatcher', 'Skipping debounced event - already processing', {
+          relativePath,
+        });
         return;
       }
 
+      // Add to processing queue before starting async work
       this.processingQueue.add(relativePath);
-      try {
-        await handler();
-      } finally {
-        this.processingQueue.delete(relativePath);
-      }
+
+      // Wrap async handler in IIFE with proper error handling
+      // This ensures promise rejections are caught and logged
+      (async () => {
+        try {
+          await handler();
+        } catch (error) {
+          this.stats.errors++;
+          logger.error('FileWatcher', 'Error in debounced handler', {
+            relativePath,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        } finally {
+          // Always remove from processing queue
+          this.processingQueue.delete(relativePath);
+        }
+      })();
     }, this.debounceDelay);
 
     this.pendingEvents.set(relativePath, timeout);

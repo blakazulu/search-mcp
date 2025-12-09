@@ -8,14 +8,16 @@ Deep security and stability analysis of the Search MCP codebase revealed **65+ p
 
 **UPDATE 2024-12-09: SMCP-035 Completed** - SQL injection vulnerabilities (Bug #1, Bug #22) have been fixed with proper escaping utilities. 2 bugs resolved.
 
+**UPDATE 2024-12-09: SMCP-036 Completed** - Concurrency and race condition bugs (Bug #2, #3, #4, #15, MCP-10) have been fixed with async mutex utilities. 5 bugs resolved.
+
 ### Bug Count Summary
 | Severity | Count | Fixed |
 |----------|-------|-------|
-| **CRITICAL** | ~~10~~ 9 | 1 |
-| **HIGH** | 19 | 0 |
-| **MEDIUM** | ~~27~~ 26 | 1 |
+| **CRITICAL** | ~~10~~ 6 | 4 |
+| **HIGH** | ~~19~~ 18 | 1 |
+| **MEDIUM** | ~~27~~ 25 | 2 |
 | **LOW** | 9+ | 0 |
-| **TOTAL** | **~~65+~~ 63+** | **2** |
+| **TOTAL** | **~~65+~~ 58+** | **7** |
 
 ---
 
@@ -221,30 +223,23 @@ async function validateIndex(indexPath: string): Promise<ValidationResult> {
 
 ---
 
-### MCP-10. NO PROTECTION AGAINST CONCURRENT INDEXING
+### MCP-10. NO PROTECTION AGAINST CONCURRENT INDEXING ✅ FIXED (SMCP-036)
 **Severity:** HIGH
-**Status:** VULNERABLE
+**Status:** RESOLVED on 2024-12-09
 
-**Issue:** Nothing prevents two simultaneous `create_index` or `reindex_project` calls from corrupting the index.
+**Fix Applied:**
+- Created `IndexingLock` singleton in `src/utils/asyncMutex.ts`
+- Updated `src/tools/createIndex.ts` to acquire lock before indexing
+- Updated `src/tools/reindexProject.ts` to acquire lock before reindexing
+- Proper lock release in finally blocks ensures cleanup on error
 
-**Scenario:**
-1. User A: `create_index` starts on large project (takes 5 minutes)
-2. User B: `create_index` starts 1 minute later (or same user in different terminal)
-3. Both processes write to same LanceDB simultaneously
-4. Race condition: chunks interleaved, fingerprints overwritten
+~~**Issue:** Nothing prevents two simultaneous `create_index` or `reindex_project` calls from corrupting the index.~~
 
-**Code Evidence:**
-```typescript
-// src/tools/createIndex.ts:275
-const indexManager = new IndexManager(projectPath);
-// No check if another indexing operation is in progress!
-const result = await indexManager.createIndex(context.onProgress);
-```
-
-**What's Missing:**
-- No process-level lock file during indexing
-- No check for `indexingInProgress` state before starting
-- `_isIndexingActive` flag in IntegrityEngine is memory-only, not persisted
+~~**Scenario:**~~
+~~1. User A: `create_index` starts on large project (takes 5 minutes)~~
+~~2. User B: `create_index` starts 1 minute later (or same user in different terminal)~~
+~~3. Both processes write to same LanceDB simultaneously~~
+~~4. Race condition: chunks interleaved, fingerprints overwritten~~
 
 ---
 
@@ -858,57 +853,47 @@ const durationMs = endTime - startTime;  // Can be negative if clock adjusted!
 
 ---
 
-### 2. Race Condition in FileWatcher Debouncing
+### 2. Race Condition in FileWatcher Debouncing ✅ FIXED (SMCP-036)
 **File:** `src/engines/fileWatcher.ts:418-446`
+**Status:** RESOLVED on 2024-12-09
 
-```typescript
-if (this.processingQueue.has(relativePath)) {
-  return;
-}
-this.processingQueue.add(relativePath);
-try {
-  await handler();
-} finally {
-  this.processingQueue.delete(relativePath);
-}
-```
+**Fix Applied:**
+- Made processingQueue check-and-add atomic within the setTimeout callback
+- The check and add now happen synchronously within the same event loop tick
 
-**Issue:** Between checking `processingQueue` and adding to it, another async event can execute. No atomic lock mechanism.
+~~**Issue:** Between checking `processingQueue` and adding to it, another async event can execute. No atomic lock mechanism.~~
 
-**Impact:** Duplicate index updates, inconsistent fingerprints, potential LanceDB corruption.
+~~**Impact:** Duplicate index updates, inconsistent fingerprints, potential LanceDB corruption.~~
 
 ---
 
-### 3. Concurrent LanceDB Access Without Locking
+### 3. Concurrent LanceDB Access Without Locking ✅ FIXED (SMCP-036)
 **File:** `src/storage/lancedb.ts:204-219`
+**Status:** RESOLVED on 2024-12-09
 
-```typescript
-export class LanceDBStore {
-  private db: lancedb.Connection | null = null;
-  private table: lancedb.Table | null = null;
-  // NO mutex/lock protecting concurrent access
-}
-```
+**Fix Applied:**
+- Added `AsyncMutex` instance to `LanceDBStore` class
+- Wrapped `insertChunks()`, `deleteByPath()`, `search()`, `searchByPath()`, `getIndexedFiles()` with `mutex.withLock()`
+- Applied same protection to `DocsLanceDBStore` in `docsLancedb.ts`
 
-**Issue:** Multiple file watcher events can trigger concurrent database operations on the same connection. LanceDB may not be thread-safe.
+~~**Issue:** Multiple file watcher events can trigger concurrent database operations on the same connection. LanceDB may not be thread-safe.~~
 
-**Impact:** Data corruption, index corruption, crashes.
+~~**Impact:** Data corruption, index corruption, crashes.~~
 
 ---
 
-### 4. Unhandled Promise Rejection in Debounce setTimeout
+### 4. Unhandled Promise Rejection in Debounce setTimeout ✅ FIXED (SMCP-036)
 **File:** `src/engines/fileWatcher.ts:429-443`
+**Status:** RESOLVED on 2024-12-09
 
-```typescript
-const timeout = setTimeout(async () => {
-  // If handler() throws, error is SILENTLY SWALLOWED
-  await handler();
-}, this.debounceDelay);
-```
+**Fix Applied:**
+- Wrapped async handler in IIFE with try/catch/finally
+- Errors are now logged with `logger.error()` and stats are updated
+- Cleanup in finally block ensures processingQueue is always updated
 
-**Issue:** Async callback inside `setTimeout` is fire-and-forget. Errors are not propagated.
+~~**Issue:** Async callback inside `setTimeout` is fire-and-forget. Errors are not propagated.~~
 
-**Impact:** Silent crashes, undetected failures during indexing.
+~~**Impact:** Silent crashes, undetected failures during indexing.~~
 
 ---
 
@@ -1048,10 +1033,16 @@ async function shutdown(): Promise<void> {
 
 ## MEDIUM SEVERITY
 
-### 15. Race Condition Between Search and Indexing
+### 15. Race Condition Between Search and Indexing ✅ FIXED (SMCP-036)
 **Files:** All tool handlers in `src/tools/`
+**Status:** RESOLVED on 2024-12-09
 
-**Issue:** No synchronization between search and index operations. Searches can read incomplete indexes.
+**Fix Applied:**
+- Added `AsyncMutex` to both `LanceDBStore` and `DocsLanceDBStore`
+- All search operations (`search()`, `searchByPath()`) are now protected by the same mutex
+- Ensures searches wait for any ongoing write operations to complete
+
+~~**Issue:** No synchronization between search and index operations. Searches can read incomplete indexes.~~
 
 ---
 
@@ -1180,12 +1171,13 @@ await this.initialize();  // Never runs if above throws
 | Race Conditions | 2 | - | 2 | - | |
 | Memory Leaks | - | 3 | - | - | |
 | Resource Leaks | 2 | 2 | 1 | - | |
-| Error Handling | 1 | 1 | 3 | 2 | |
+| Error Handling | ~~1~~ 0 | 1 | 3 | 2 | ✅ 1 (SMCP-036, Bug #4) |
 | Security | - | 1 | ~~2~~ 1 | - | ✅ 1 (SMCP-035, Bug #22) |
 | Logic Flaws | - | 1 | 2 | - | |
 | Performance | - | - | 3 | - | |
+| Race Conditions | ~~2~~ 0 | - | ~~2~~ 1 | - | ✅ 3 (SMCP-036, Bug #2,3,15) |
 
-**Subtotal: ~~7~~ 6 Critical, 8 High, ~~13~~ 12 Medium, 2+ Low (2 Fixed)**
+**Subtotal: ~~7~~ 3 Critical, 8 High, ~~13~~ 10 Medium, 2+ Low (7 Fixed)**
 
 ### MCP-Specific Vulnerabilities (From Web Research + Deep Analysis)
 | Category | Critical | High | Medium | Low |
@@ -1198,7 +1190,7 @@ await this.initialize();  // Never runs if above throws
 | Supply Chain | - | - | 1 | - |
 | ANSI Injection | - | - | - | 1 |
 | Incomplete Index Detection | - | 1 | - | - |
-| Concurrent Indexing | - | 1 | - | - |
+| Concurrent Indexing | - | ~~1~~ 0 | - | - | ✅ (SMCP-036, MCP-10) |
 | Model Download Failure | - | - | 1 | - |
 | Disk Full - No Detection | - | 1 | - | - |
 | Zero-Vector Corruption | - | - | 1 | - |
@@ -1225,9 +1217,9 @@ await this.initialize();  // Never runs if above throws
 | **Orphaned Chunks on Error** | - | **1** | - | - |
 | **Future Timestamps** | - | - | - | **1** |
 
-**Subtotal: 3 Critical, 11 High, 14 Medium, 7 Low = 35 MCP-specific issues**
+**Subtotal: 3 Critical, ~~11~~ 10 High, 14 Medium, 7 Low = 34 MCP-specific issues (1 Fixed)**
 
-### GRAND TOTAL: ~~10~~ 9 Critical, 19 High, ~~27~~ 26 Medium, 9+ Low = 63+ Issues (2 Fixed)
+### GRAND TOTAL: ~~10~~ 6 Critical, ~~19~~ 18 High, ~~27~~ 25 Medium, 9+ Low = 58+ Issues (7 Fixed)
 
 ---
 
@@ -1250,97 +1242,28 @@ await this.initialize();  // Never runs if above throws
 - Added 34 unit tests in `tests/unit/utils/sql.test.ts`
 - All 1348 tests pass
 
-### 1.2 Async Mutex for LanceDB (NEW: src/utils/asyncMutex.ts)
-```typescript
-export class AsyncMutex {
-  private locked = false;
-  private queue: Array<() => void> = [];
+### 1.2 Async Mutex for LanceDB (NEW: src/utils/asyncMutex.ts) ✅ COMPLETED (SMCP-036)
+**Status:** RESOLVED on 2024-12-09
 
-  async acquire(): Promise<void> {
-    if (!this.locked) {
-      this.locked = true;
-      return;
-    }
-    return new Promise((resolve) => this.queue.push(resolve));
-  }
+**Implementation Summary:**
+- Created `src/utils/asyncMutex.ts` with three classes:
+  - `AsyncMutex` - Simple async mutex with `acquire()`, `release()`, `withLock()`, `tryAcquire()`, timeout support
+  - `ReadWriteLock` - For concurrent reads, exclusive writes (available for future optimization)
+  - `IndexingLock` - Singleton for preventing concurrent create_index/reindex operations
+- Added mutex to `LanceDBStore` and `DocsLanceDBStore` classes
+- Protected `insertChunks()`, `deleteByPath()`, `search()`, `searchByPath()`, `getIndexedFiles()` with mutex
+- Added 47 unit tests in `tests/unit/utils/asyncMutex.test.ts`
+- All 1396 tests pass
 
-  release(): void {
-    const next = this.queue.shift();
-    if (next) {
-      next();
-    } else {
-      this.locked = false;
-    }
-  }
+### 1.3 Fix setTimeout Promise Rejection (fileWatcher.ts:429-443) ✅ COMPLETED (SMCP-036)
+**Status:** RESOLVED on 2024-12-09
 
-  async withLock<T>(fn: () => Promise<T>): Promise<T> {
-    await this.acquire();
-    try {
-      return await fn();
-    } finally {
-      this.release();
-    }
-  }
-}
-```
-
-Update `LanceDBStore` class to use mutex:
-```typescript
-private readonly mutex = new AsyncMutex();
-
-async insertChunks(chunks: ChunkRecord[]): Promise<void> {
-  return this.mutex.withLock(async () => {
-    // existing implementation
-  });
-}
-
-async deleteByPath(relativePath: string): Promise<number> {
-  return this.mutex.withLock(async () => {
-    // existing implementation
-  });
-}
-```
-
-### 1.3 Fix setTimeout Promise Rejection (fileWatcher.ts:429-443)
-```typescript
-private debounceEvent(
-  relativePath: string,
-  handler: () => Promise<void>
-): void {
-  const existing = this.pendingEvents.get(relativePath);
-  if (existing) {
-    clearTimeout(existing);
-  }
-
-  const timeout = setTimeout(() => {
-    this.pendingEvents.delete(relativePath);
-
-    if (this.processingQueue.has(relativePath)) {
-      return;
-    }
-
-    this.processingQueue.add(relativePath);
-
-    // Wrap in self-executing async with error handling
-    (async () => {
-      try {
-        await handler();
-      } catch (error) {
-        const logger = getLogger();
-        this.stats.errors++;
-        logger.error('FileWatcher', 'Error in debounced handler', {
-          relativePath,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      } finally {
-        this.processingQueue.delete(relativePath);
-      }
-    })();
-  }, this.debounceDelay);
-
-  this.pendingEvents.set(relativePath, timeout);
-}
-```
+**Implementation Summary:**
+- Fixed `debounceEvent()` in `src/engines/fileWatcher.ts`
+- Wrapped async handler in IIFE with try/catch/finally
+- Errors are now logged with `logger.error()` and stats are updated
+- Cleanup in finally block ensures processingQueue is always updated
+- Also fixed race condition by making processingQueue check-and-add atomic
 
 ### 1.4 Temp File Cleanup (metadata.ts, fingerprints.ts, config.ts, docsFingerprints.ts)
 

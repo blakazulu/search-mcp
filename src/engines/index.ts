@@ -65,4 +65,21 @@ export {
   embedBatch,
 } from './embedding.js';
 
+// Index Manager
+export {
+  FILE_BATCH_SIZE,
+  type IndexPhase,
+  type IndexProgress,
+  type ProgressCallback,
+  type IndexResult,
+  type IndexStats,
+  scanFiles,
+  createFullIndex,
+  updateFile,
+  removeFile,
+  applyDelta,
+  IndexManager,
+  type DeltaResult,
+} from './indexManager.js';
+
 // Additional engine exports will be added as they are implemented

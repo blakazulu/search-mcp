@@ -24,4 +24,18 @@ export {
   checkMarker,
 } from './projectRoot.js';
 
+// Indexing Policy Engine
+export {
+  HARDCODED_DENY_PATTERNS,
+  ALL_DENY_PATTERNS,
+  type PolicyResult,
+  loadGitignore,
+  isBinaryFile,
+  checkFileSize,
+  matchesAnyPattern,
+  isHardDenied,
+  shouldIndex,
+  IndexingPolicy,
+} from './indexPolicy.js';
+
 // Additional engine exports will be added as they are implemented

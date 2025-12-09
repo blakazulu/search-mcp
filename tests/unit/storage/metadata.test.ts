@@ -6,12 +6,14 @@ import {
   CURRENT_VERSION,
   MetadataSchema,
   StatsSchema,
+  DocsStatsSchema,
   loadMetadata,
   saveMetadata,
   createMetadata,
   MetadataManager,
   type Metadata,
   type Stats,
+  type DocsStats,
 } from '../../../src/storage/metadata.js';
 import { ErrorCode } from '../../../src/errors/index.js';
 
@@ -126,6 +128,69 @@ describe('Metadata Manager', () => {
   });
 
   // ==========================================================================
+  // DocsStats Schema Tests
+  // ==========================================================================
+
+  describe('DocsStatsSchema', () => {
+    it('should accept valid docs stats', () => {
+      const docsStats: DocsStats = {
+        totalDocs: 50,
+        totalDocChunks: 200,
+        docsStorageSizeBytes: 512000,
+      };
+
+      const result = DocsStatsSchema.safeParse(docsStats);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).toEqual(docsStats);
+      }
+    });
+
+    it('should accept zero values', () => {
+      const docsStats: DocsStats = {
+        totalDocs: 0,
+        totalDocChunks: 0,
+        docsStorageSizeBytes: 0,
+      };
+
+      const result = DocsStatsSchema.safeParse(docsStats);
+      expect(result.success).toBe(true);
+    });
+
+    it('should reject negative values', () => {
+      const docsStats = {
+        totalDocs: -1,
+        totalDocChunks: 200,
+        docsStorageSizeBytes: 512000,
+      };
+
+      const result = DocsStatsSchema.safeParse(docsStats);
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject non-integer values', () => {
+      const docsStats = {
+        totalDocs: 50.5,
+        totalDocChunks: 200,
+        docsStorageSizeBytes: 512000,
+      };
+
+      const result = DocsStatsSchema.safeParse(docsStats);
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject missing fields', () => {
+      const docsStats = {
+        totalDocs: 50,
+        // Missing totalDocChunks and docsStorageSizeBytes
+      };
+
+      const result = DocsStatsSchema.safeParse(docsStats);
+      expect(result.success).toBe(false);
+    });
+  });
+
+  // ==========================================================================
   // Metadata Schema Tests
   // ==========================================================================
 
@@ -203,6 +268,80 @@ describe('Metadata Manager', () => {
           totalChunks: 500,
           storageSizeBytes: 1024000,
         },
+      };
+
+      const result = MetadataSchema.safeParse(metadata);
+      expect(result.success).toBe(false);
+    });
+
+    it('should accept metadata with docsStats', () => {
+      const metadata = {
+        ...validMetadata,
+        docsStats: {
+          totalDocs: 25,
+          totalDocChunks: 100,
+          docsStorageSizeBytes: 256000,
+        },
+      };
+
+      const result = MetadataSchema.safeParse(metadata);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.docsStats).toEqual({
+          totalDocs: 25,
+          totalDocChunks: 100,
+          docsStorageSizeBytes: 256000,
+        });
+      }
+    });
+
+    it('should accept metadata with lastDocsIndex', () => {
+      const metadata = {
+        ...validMetadata,
+        lastDocsIndex: '2025-01-16T14:00:00.000Z',
+      };
+
+      const result = MetadataSchema.safeParse(metadata);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.lastDocsIndex).toBe('2025-01-16T14:00:00.000Z');
+      }
+    });
+
+    it('should allow docsStats to be undefined', () => {
+      const result = MetadataSchema.safeParse(validMetadata);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.docsStats).toBeUndefined();
+      }
+    });
+
+    it('should allow lastDocsIndex to be undefined', () => {
+      const result = MetadataSchema.safeParse(validMetadata);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.lastDocsIndex).toBeUndefined();
+      }
+    });
+
+    it('should reject invalid docsStats', () => {
+      const metadata = {
+        ...validMetadata,
+        docsStats: {
+          totalDocs: -1, // Invalid
+          totalDocChunks: 100,
+          docsStorageSizeBytes: 256000,
+        },
+      };
+
+      const result = MetadataSchema.safeParse(metadata);
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject invalid lastDocsIndex datetime', () => {
+      const metadata = {
+        ...validMetadata,
+        lastDocsIndex: 'not-a-date',
       };
 
       const result = MetadataSchema.safeParse(metadata);
@@ -650,6 +789,97 @@ describe('Metadata Manager', () => {
       });
     });
 
+    describe('updateDocsStats', () => {
+      it('should update docs stats in cached metadata', () => {
+        const manager = new MetadataManager(indexPath);
+        manager.initialize('/test/project');
+        manager.updateDocsStats(50, 200, 512000);
+
+        const docsStats = manager.getDocsStats();
+        expect(docsStats?.totalDocs).toBe(50);
+        expect(docsStats?.totalDocChunks).toBe(200);
+        expect(docsStats?.docsStorageSizeBytes).toBe(512000);
+      });
+
+      it('should throw if metadata not loaded', () => {
+        const manager = new MetadataManager(indexPath);
+        expect(() => manager.updateDocsStats(50, 200, 512000)).toThrow(
+          'Metadata not loaded'
+        );
+      });
+
+      it('should allow updating docs stats multiple times', () => {
+        const manager = new MetadataManager(indexPath);
+        manager.initialize('/test/project');
+
+        manager.updateDocsStats(25, 100, 256000);
+        expect(manager.getDocsStats()?.totalDocs).toBe(25);
+
+        manager.updateDocsStats(50, 200, 512000);
+        expect(manager.getDocsStats()?.totalDocs).toBe(50);
+      });
+    });
+
+    describe('markDocsIndex', () => {
+      it('should set lastDocsIndex timestamp', () => {
+        const manager = new MetadataManager(indexPath);
+        manager.initialize('/test/project');
+
+        expect(manager.getMetadata()?.lastDocsIndex).toBeUndefined();
+
+        manager.markDocsIndex();
+
+        expect(manager.getMetadata()?.lastDocsIndex).toBeDefined();
+      });
+
+      it('should update lastDocsIndex on subsequent calls', async () => {
+        const manager = new MetadataManager(indexPath);
+        manager.initialize('/test/project');
+
+        manager.markDocsIndex();
+        const firstTime = manager.getMetadata()?.lastDocsIndex;
+
+        // Wait a tiny bit to ensure timestamp changes
+        await new Promise((resolve) => setTimeout(resolve, 10));
+
+        manager.markDocsIndex();
+        const secondTime = manager.getMetadata()?.lastDocsIndex;
+
+        expect(new Date(secondTime!).getTime()).toBeGreaterThan(
+          new Date(firstTime!).getTime()
+        );
+      });
+
+      it('should throw if metadata not loaded', () => {
+        const manager = new MetadataManager(indexPath);
+        expect(() => manager.markDocsIndex()).toThrow('Metadata not loaded');
+      });
+    });
+
+    describe('getDocsStats', () => {
+      it('should return null if metadata not loaded', () => {
+        const manager = new MetadataManager(indexPath);
+        expect(manager.getDocsStats()).toBeNull();
+      });
+
+      it('should return null if docs stats not set', () => {
+        const manager = new MetadataManager(indexPath);
+        manager.initialize('/test/project');
+        expect(manager.getDocsStats()).toBeNull();
+      });
+
+      it('should return docs stats from metadata', () => {
+        const manager = new MetadataManager(indexPath);
+        manager.initialize('/test/project');
+        manager.updateDocsStats(50, 200, 512000);
+
+        const docsStats = manager.getDocsStats();
+        expect(docsStats?.totalDocs).toBe(50);
+        expect(docsStats?.totalDocChunks).toBe(200);
+        expect(docsStats?.docsStorageSizeBytes).toBe(512000);
+      });
+    });
+
     describe('getMetadata', () => {
       it('should return null if not loaded', () => {
         const manager = new MetadataManager(indexPath);
@@ -768,6 +998,60 @@ describe('Metadata Manager', () => {
         const loaded = await loadMetadata(indexPath);
         expect(loaded?.stats.totalFiles).toBe(105);
         expect(loaded?.lastIncrementalUpdate).toBeDefined();
+      });
+
+      it('should support documentation index workflow', async () => {
+        // Initialize and set up code index
+        const manager = new MetadataManager(indexPath);
+        manager.initialize('/test/project');
+        manager.updateStats(100, 500, 1024000);
+        manager.markFullIndex();
+
+        // Add documentation index
+        manager.updateDocsStats(25, 100, 256000);
+        manager.markDocsIndex();
+        await manager.save();
+
+        // Load in new manager and verify
+        const manager2 = new MetadataManager(indexPath);
+        await manager2.load();
+
+        // Verify code stats
+        expect(manager2.getStats()?.totalFiles).toBe(100);
+        expect(manager2.getStats()?.totalChunks).toBe(500);
+
+        // Verify docs stats
+        expect(manager2.getDocsStats()?.totalDocs).toBe(25);
+        expect(manager2.getDocsStats()?.totalDocChunks).toBe(100);
+        expect(manager2.getDocsStats()?.docsStorageSizeBytes).toBe(256000);
+        expect(manager2.getMetadata()?.lastDocsIndex).toBeDefined();
+      });
+
+      it('should be backward compatible with existing metadata without docs fields', async () => {
+        // Create metadata without docs fields (simulating old metadata)
+        const oldMetadata = {
+          version: '1.0.0',
+          projectPath: '/test/project',
+          createdAt: '2025-01-15T10:30:00.000Z',
+          lastFullIndex: '2025-01-15T10:30:00.000Z',
+          stats: {
+            totalFiles: 100,
+            totalChunks: 500,
+            storageSizeBytes: 1024000,
+          },
+        };
+
+        const metadataPath = path.join(indexPath, 'metadata.json');
+        await fs.promises.writeFile(metadataPath, JSON.stringify(oldMetadata));
+
+        // Load in manager - should succeed without docs fields
+        const manager = new MetadataManager(indexPath);
+        const loaded = await manager.load();
+
+        expect(loaded).not.toBeNull();
+        expect(manager.getStats()?.totalFiles).toBe(100);
+        expect(manager.getDocsStats()).toBeNull();
+        expect(manager.getMetadata()?.lastDocsIndex).toBeUndefined();
       });
     });
   });

@@ -3,11 +3,11 @@ task_id: "SMCP-030"
 title: "Config & Metadata Updates"
 category: "Technical"
 priority: "P1"
-status: "not-started"
+status: "completed"
 created_date: "2025-12-09"
 due_date: ""
 estimated_hours: 1.5
-actual_hours: 0
+actual_hours: 1
 assigned_to: "blakazulu"
 tags: ["storage", "config", "metadata", "docs"]
 ---
@@ -20,10 +20,10 @@ Update the configuration and metadata schemas to support documentation indexing.
 
 ## Goals
 
-- [ ] Add docPatterns field to Config schema
-- [ ] Add indexDocs field to Config schema
-- [ ] Add docsStats to Metadata schema
-- [ ] Add lastDocsIndex timestamp to Metadata
+- [x] Add docPatterns field to Config schema
+- [x] Add indexDocs field to Config schema
+- [x] Add docsStats to Metadata schema
+- [x] Add lastDocsIndex timestamp to Metadata
 
 ## Success Criteria
 
@@ -53,19 +53,19 @@ Update the configuration and metadata schemas to support documentation indexing.
 
 ### Phase 1: Config Schema Updates (0.75 hours)
 
-- [ ] 1.1 Update `src/storage/config.ts`
+- [x] 1.1 Update `src/storage/config.ts`
 
-- [ ] 1.2 Add docPatterns field
+- [x] 1.2 Add docPatterns field
     ```typescript
     docPatterns: z.array(z.string()).default(['**/*.md', '**/*.txt']),
     ```
 
-- [ ] 1.3 Add indexDocs field
+- [x] 1.3 Add indexDocs field
     ```typescript
     indexDocs: z.boolean().default(true),
     ```
 
-- [ ] 1.4 Update Config interface
+- [x] 1.4 Update Config interface
     ```typescript
     export interface Config {
       include: string[];
@@ -78,7 +78,7 @@ Update the configuration and metadata schemas to support documentation indexing.
     }
     ```
 
-- [ ] 1.5 Update DEFAULT_CONFIG
+- [x] 1.5 Update DEFAULT_CONFIG
     ```typescript
     export const DEFAULT_CONFIG: Config = {
       // ...existing...
@@ -87,15 +87,15 @@ Update the configuration and metadata schemas to support documentation indexing.
     };
     ```
 
-- [ ] 1.6 Update config file template
+- [x] 1.6 Update config file template
     - Add docPatterns and indexDocs to generated config.json
     - Add to _availableOptions documentation
 
 ### Phase 2: Metadata Schema Updates (0.5 hours)
 
-- [ ] 2.1 Update `src/storage/metadata.ts`
+- [x] 2.1 Update `src/storage/metadata.ts`
 
-- [ ] 2.2 Add DocsStats interface
+- [x] 2.2 Add DocsStats interface
     ```typescript
     export interface DocsStats {
       totalDocs: number;
@@ -104,7 +104,7 @@ Update the configuration and metadata schemas to support documentation indexing.
     }
     ```
 
-- [ ] 2.3 Add DocsStats schema
+- [x] 2.3 Add DocsStats schema
     ```typescript
     export const DocsStatsSchema = z.object({
       totalDocs: z.number().int().nonnegative(),
@@ -113,7 +113,7 @@ Update the configuration and metadata schemas to support documentation indexing.
     });
     ```
 
-- [ ] 2.4 Update Metadata interface
+- [x] 2.4 Update Metadata interface
     ```typescript
     export interface Metadata {
       // ...existing...
@@ -122,7 +122,7 @@ Update the configuration and metadata schemas to support documentation indexing.
     }
     ```
 
-- [ ] 2.5 Update MetadataSchema
+- [x] 2.5 Update MetadataSchema
     ```typescript
     docsStats: DocsStatsSchema.optional(),
     lastDocsIndex: z.string().datetime().optional(),
@@ -130,12 +130,12 @@ Update the configuration and metadata schemas to support documentation indexing.
 
 ### Phase 3: Tests (0.25 hours)
 
-- [ ] 3.1 Update config tests
+- [x] 3.1 Update config tests
     - Test new fields have defaults
     - Test validation of docPatterns array
     - Test indexDocs boolean
 
-- [ ] 3.2 Update metadata tests
+- [x] 3.2 Update metadata tests
     - Test docsStats optional field
     - Test lastDocsIndex optional field
 
@@ -149,12 +149,12 @@ Update the configuration and metadata schemas to support documentation indexing.
 
 Before marking this task complete:
 
-- [ ] All subtasks completed
-- [ ] Config schema updated with doc fields
-- [ ] Metadata schema updated with docs stats
-- [ ] Default values correct
-- [ ] Backward compatible
-- [ ] Tests pass
+- [x] All subtasks completed
+- [x] Config schema updated with doc fields
+- [x] Metadata schema updated with docs stats
+- [x] Default values correct
+- [x] Backward compatible
+- [x] Tests pass
 
 ## Progress Log
 
@@ -162,6 +162,20 @@ Before marking this task complete:
 
 - Task created
 - Subtasks defined
+
+### 2025-12-09 - 1 hour
+
+- Added docPatterns and indexDocs fields to ConfigSchema
+- Updated DEFAULT_CONFIG with new fields
+- Updated generateDefaultConfig to include new fields in _availableOptions
+- Added DocsStatsSchema to metadata.ts
+- Updated MetadataSchema with docsStats (optional) and lastDocsIndex (optional)
+- Added DocsStats type export
+- Added updateDocsStats(), markDocsIndex(), and getDocsStats() methods to MetadataManager
+- Updated config tests for new fields (57 tests pass)
+- Updated metadata tests for new fields (88 tests pass)
+- All 1219 tests pass
+- Build succeeds with no errors
 
 ## Notes
 
@@ -171,7 +185,7 @@ Before marking this task complete:
 
 ## Blockers
 
-_None yet_
+_None_
 
 ## Related Tasks
 

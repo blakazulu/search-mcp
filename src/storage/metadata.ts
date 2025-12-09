@@ -47,6 +47,20 @@ export const StatsSchema = z.object({
 });
 
 /**
+ * Schema for documentation index statistics
+ */
+export const DocsStatsSchema = z.object({
+  /** Total number of documentation files indexed */
+  totalDocs: z.number().int().nonnegative(),
+
+  /** Total number of chunks created from documentation files */
+  totalDocChunks: z.number().int().nonnegative(),
+
+  /** Total storage size in bytes for docs index */
+  docsStorageSizeBytes: z.number().int().nonnegative(),
+});
+
+/**
  * Zod schema for metadata validation
  *
  * Validates metadata with required fields for version, project path, and timestamps.
@@ -69,6 +83,12 @@ export const MetadataSchema = z.object({
 
   /** Index statistics */
   stats: StatsSchema,
+
+  /** Documentation index statistics (optional) */
+  docsStats: DocsStatsSchema.optional(),
+
+  /** ISO 8601 timestamp of last documentation index operation (optional) */
+  lastDocsIndex: z.string().datetime().optional(),
 });
 
 /**
@@ -80,6 +100,11 @@ export type Metadata = z.infer<typeof MetadataSchema>;
  * Inferred Stats type from the schema
  */
 export type Stats = z.infer<typeof StatsSchema>;
+
+/**
+ * Inferred DocsStats type from the schema
+ */
+export type DocsStats = z.infer<typeof DocsStatsSchema>;
 
 // ============================================================================
 // Metadata I/O Functions
@@ -453,5 +478,56 @@ export class MetadataManager {
    */
   getVersion(): string | null {
     return this.cachedMetadata?.version ?? null;
+  }
+
+  /**
+   * Update documentation index statistics
+   *
+   * Updates the docsStats in the cached metadata.
+   * Call save() to persist changes.
+   *
+   * @param docs - Total number of indexed documentation files
+   * @param chunks - Total number of documentation chunks
+   * @param sizeBytes - Total storage size in bytes for docs index
+   */
+  updateDocsStats(docs: number, chunks: number, sizeBytes: number): void {
+    if (this.cachedMetadata === null) {
+      throw new Error(
+        'Metadata not loaded. Call load() or initialize() first.'
+      );
+    }
+
+    this.cachedMetadata.docsStats = {
+      totalDocs: docs,
+      totalDocChunks: chunks,
+      docsStorageSizeBytes: sizeBytes,
+    };
+  }
+
+  /**
+   * Mark a documentation index operation
+   *
+   * Updates the lastDocsIndex timestamp to now.
+   * Call save() to persist changes.
+   */
+  markDocsIndex(): void {
+    if (this.cachedMetadata === null) {
+      throw new Error(
+        'Metadata not loaded. Call load() or initialize() first.'
+      );
+    }
+
+    this.cachedMetadata.lastDocsIndex = new Date().toISOString();
+  }
+
+  /**
+   * Get the documentation stats from metadata
+   *
+   * Convenience method to get documentation statistics.
+   *
+   * @returns DocsStats object or null if metadata not loaded or no docs stats
+   */
+  getDocsStats(): DocsStats | null {
+    return this.cachedMetadata?.docsStats ?? null;
   }
 }

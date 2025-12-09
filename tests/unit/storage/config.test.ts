@@ -110,6 +110,8 @@ describe('Config Manager', () => {
         respectGitignore: false,
         maxFileSize: '2MB',
         maxFiles: 10000,
+        docPatterns: ['**/*.md', '**/*.rst'],
+        indexDocs: false,
       };
 
       const result = ConfigSchema.safeParse(config);
@@ -128,7 +130,43 @@ describe('Config Manager', () => {
         expect(result.data.respectGitignore).toBe(true);
         expect(result.data.maxFileSize).toBe('1MB');
         expect(result.data.maxFiles).toBe(50000);
+        expect(result.data.docPatterns).toEqual(['**/*.md', '**/*.txt']);
+        expect(result.data.indexDocs).toBe(true);
       }
+    });
+
+    it('should accept valid docPatterns array', () => {
+      const result = ConfigSchema.safeParse({
+        docPatterns: ['**/*.md', '**/*.rst', 'docs/**/*'],
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.docPatterns).toEqual(['**/*.md', '**/*.rst', 'docs/**/*']);
+      }
+    });
+
+    it('should accept indexDocs boolean', () => {
+      const result = ConfigSchema.safeParse({
+        indexDocs: false,
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.indexDocs).toBe(false);
+      }
+    });
+
+    it('should reject invalid docPatterns type', () => {
+      const result = ConfigSchema.safeParse({
+        docPatterns: 'not-an-array',
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject invalid indexDocs type', () => {
+      const result = ConfigSchema.safeParse({
+        indexDocs: 'yes',
+      });
+      expect(result.success).toBe(false);
     });
 
     it('should reject invalid maxFileSize format', () => {
@@ -178,6 +216,16 @@ describe('Config Manager', () => {
       expect(DEFAULT_CONFIG.respectGitignore).toBeDefined();
       expect(DEFAULT_CONFIG.maxFileSize).toBeDefined();
       expect(DEFAULT_CONFIG.maxFiles).toBeDefined();
+      expect(DEFAULT_CONFIG.docPatterns).toBeDefined();
+      expect(DEFAULT_CONFIG.indexDocs).toBeDefined();
+    });
+
+    it('should have correct docPatterns default', () => {
+      expect(DEFAULT_CONFIG.docPatterns).toEqual(['**/*.md', '**/*.txt']);
+    });
+
+    it('should have correct indexDocs default', () => {
+      expect(DEFAULT_CONFIG.indexDocs).toBe(true);
     });
 
     it('should match schema defaults', () => {
@@ -224,6 +272,8 @@ describe('Config Manager', () => {
         respectGitignore: false,
         maxFileSize: '2MB',
         maxFiles: 20000,
+        docPatterns: ['docs/**/*.md'],
+        indexDocs: false,
       };
 
       const configPath = path.join(indexPath, 'config.json');
@@ -289,6 +339,27 @@ describe('Config Manager', () => {
       expect(loaded.respectGitignore).toBe(true);
       expect(loaded.maxFileSize).toBe('1MB');
       expect(loaded.maxFiles).toBe(50000);
+      expect(loaded.docPatterns).toEqual(['**/*.md', '**/*.txt']);
+      expect(loaded.indexDocs).toBe(true);
+    });
+
+    it('should load custom docPatterns and indexDocs', async () => {
+      const customConfig = {
+        include: ['**/*'],
+        exclude: [],
+        respectGitignore: true,
+        maxFileSize: '1MB',
+        maxFiles: 50000,
+        docPatterns: ['docs/**/*.md', 'README.md'],
+        indexDocs: false,
+      };
+
+      const configPath = path.join(indexPath, 'config.json');
+      await fs.promises.writeFile(configPath, JSON.stringify(customConfig));
+
+      const loaded = await loadConfig(indexPath);
+      expect(loaded.docPatterns).toEqual(['docs/**/*.md', 'README.md']);
+      expect(loaded.indexDocs).toBe(false);
     });
   });
 
@@ -429,6 +500,19 @@ describe('Config Manager', () => {
       expect(config._availableOptions.respectGitignore).toBeDefined();
       expect(config._availableOptions.maxFileSize).toBeDefined();
       expect(config._availableOptions.maxFiles).toBeDefined();
+      expect(config._availableOptions.docPatterns).toBeDefined();
+      expect(config._availableOptions.indexDocs).toBeDefined();
+    });
+
+    it('should include docPatterns and indexDocs fields', async () => {
+      await generateDefaultConfig(indexPath);
+
+      const configPath = path.join(indexPath, 'config.json');
+      const content = await fs.promises.readFile(configPath, 'utf-8');
+      const config = JSON.parse(content);
+
+      expect(config.docPatterns).toEqual(['**/*.md', '**/*.txt']);
+      expect(config.indexDocs).toBe(true);
     });
   });
 
@@ -457,6 +541,8 @@ describe('Config Manager', () => {
           respectGitignore: false,
           maxFileSize: '2MB',
           maxFiles: 10000,
+          docPatterns: ['**/*.md'],
+          indexDocs: false,
         };
 
         const configPath = path.join(indexPath, 'config.json');

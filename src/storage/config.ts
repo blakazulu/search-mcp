@@ -103,6 +103,12 @@ export const ConfigSchema = z
 
     /** Maximum number of files to index */
     maxFiles: z.number().positive().int().default(50000),
+
+    /** Glob patterns for documentation files to index */
+    docPatterns: z.array(z.string()).default(['**/*.md', '**/*.txt']),
+
+    /** Whether to index documentation files separately */
+    indexDocs: z.boolean().default(true),
   })
   .strict()
   .passthrough(); // Allow underscore-prefixed documentation fields
@@ -139,6 +145,8 @@ export const DEFAULT_CONFIG: Config = {
   respectGitignore: true,
   maxFileSize: '1MB',
   maxFiles: 50000,
+  docPatterns: ['**/*.md', '**/*.txt'],
+  indexDocs: true,
 };
 
 /**
@@ -313,6 +321,10 @@ export async function generateDefaultConfig(indexPath: string): Promise<void> {
         'Maximum file size to index, e.g., "1MB" or "500KB" (default: "1MB")',
       maxFiles:
         'Maximum number of files to index (default: 50000). Warning shown if exceeded.',
+      docPatterns:
+        'Array of glob patterns for documentation files (default: ["**/*.md", "**/*.txt"])',
+      indexDocs:
+        'Whether to index documentation files separately (default: true)',
     },
     ...DEFAULT_CONFIG,
   };

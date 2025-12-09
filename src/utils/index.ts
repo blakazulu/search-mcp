@@ -66,3 +66,9 @@ export {
   ReadWriteLock,
   IndexingLock,
 } from './asyncMutex.js';
+
+// Atomic Write exports
+export {
+  atomicWrite,
+  atomicWriteJson,
+} from './atomicWrite.js';

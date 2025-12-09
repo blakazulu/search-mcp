@@ -9,11 +9,10 @@
  */
 
 import * as fs from 'node:fs';
-import * as path from 'node:path';
-import * as os from 'node:os';
 import { z } from 'zod';
 import { getMetadataPath } from '../utils/paths.js';
 import { getLogger } from '../utils/logger.js';
+import { atomicWriteJson } from '../utils/atomicWrite.js';
 import { ErrorCode, MCPError } from '../errors/index.js';
 
 // ============================================================================
@@ -207,13 +206,8 @@ export async function saveMetadata(
     // Validate metadata before saving
     const validatedMetadata = MetadataSchema.parse(metadata);
 
-    // Write with pretty formatting to temp file, then rename (atomic write)
-    const tempPath = `${metadataPath}.tmp.${Date.now()}`;
-    const json = JSON.stringify(validatedMetadata, null, 2);
-    await fs.promises.writeFile(tempPath, json + '\n', 'utf-8');
-
-    // Atomic rename
-    await fs.promises.rename(tempPath, metadataPath);
+    // Use atomic write (handles directory creation and temp file cleanup)
+    await atomicWriteJson(metadataPath, validatedMetadata);
 
     logger.debug('MetadataManager', 'Metadata saved successfully', {
       metadataPath,

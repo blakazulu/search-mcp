@@ -12,6 +12,7 @@ import * as fs from 'node:fs';
 import { z } from 'zod';
 import { getConfigPath } from '../utils/paths.js';
 import { getLogger } from '../utils/logger.js';
+import { atomicWriteJson } from '../utils/atomicWrite.js';
 
 // ============================================================================
 // File Size Parser
@@ -199,15 +200,7 @@ export async function loadConfig(indexPath: string): Promise<Config> {
   const configPath = getConfigPath(indexPath);
 
   try {
-    // Check if config file exists
-    if (!fs.existsSync(configPath)) {
-      logger.debug('ConfigManager', 'No config file found, using defaults', {
-        configPath,
-      });
-      return { ...DEFAULT_CONFIG };
-    }
-
-    // Read and parse the config file
+    // Try to read directly - this avoids TOCTOU by not checking existence first
     const content = await fs.promises.readFile(configPath, 'utf-8');
     const rawConfig = JSON.parse(content);
 
@@ -235,6 +228,14 @@ export async function loadConfig(indexPath: string): Promise<Config> {
     logger.debug('ConfigManager', 'Config loaded successfully', { configPath });
     return result.data;
   } catch (error) {
+    // Handle file not found - use defaults
+    if (error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT') {
+      logger.debug('ConfigManager', 'No config file found, using defaults', {
+        configPath,
+      });
+      return { ...DEFAULT_CONFIG };
+    }
+
     const message = error instanceof Error ? error.message : String(error);
     logger.warn('ConfigManager', 'Failed to load config, using defaults', {
       configPath,
@@ -264,16 +265,14 @@ export async function saveConfig(
     // Validate config before saving
     const validatedConfig = ConfigSchema.parse(config);
 
-    // Try to preserve existing documentation fields
+    // Try to preserve existing documentation fields (avoid TOCTOU by reading directly)
     let existingDocs: Partial<ConfigWithDocs> = {};
-    if (fs.existsSync(configPath)) {
-      try {
-        const content = await fs.promises.readFile(configPath, 'utf-8');
-        const existing = JSON.parse(content);
-        existingDocs = extractDocumentationFields(existing);
-      } catch {
-        // Ignore errors reading existing file
-      }
+    try {
+      const content = await fs.promises.readFile(configPath, 'utf-8');
+      const existing = JSON.parse(content);
+      existingDocs = extractDocumentationFields(existing);
+    } catch {
+      // Ignore errors reading existing file (may not exist)
     }
 
     // Merge config with documentation fields
@@ -282,9 +281,8 @@ export async function saveConfig(
       ...validatedConfig,
     };
 
-    // Write with pretty formatting
-    const json = JSON.stringify(configWithDocs, null, 2);
-    await fs.promises.writeFile(configPath, json + '\n', 'utf-8');
+    // Use atomic write (handles directory creation and temp file cleanup)
+    await atomicWriteJson(configPath, configWithDocs);
 
     logger.debug('ConfigManager', 'Config saved successfully', { configPath });
   } catch (error) {
@@ -335,9 +333,8 @@ export async function generateDefaultConfig(indexPath: string): Promise<void> {
     ...DEFAULT_CONFIG,
   };
 
-  // Write with pretty formatting
-  const json = JSON.stringify(configWithDocs, null, 2);
-  await fs.promises.writeFile(configPath, json + '\n', 'utf-8');
+  // Use atomic write (handles directory creation and temp file cleanup)
+  await atomicWriteJson(configPath, configWithDocs);
 
   logger.info('ConfigManager', 'Generated default config file', { configPath });
 }

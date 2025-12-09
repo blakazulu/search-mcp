@@ -67,6 +67,11 @@ A **local-first Model Context Protocol (MCP) Server** that enables Claude Code (
 - **As a Developer**, I want to search for files by name pattern (e.g., `**/auth*`) when I know what I'm looking for.
 - **As a Developer**, I want search results to include line numbers so I can navigate directly to the relevant code.
 
+### Documentation Search
+
+- **As a Developer**, I want to search my project's documentation files (README, guides, docs/) separately from code, so I can find relevant explanations without filling up context with entire documents.
+- **As a Developer**, I want documentation search to be optimized for prose content, with larger chunks that preserve context better than code chunks.
+
 ### Index Management
 
 - **As a Developer**, I want the index to update automatically in the background when I save a file, so I don't have to run a "reindex" command.
@@ -87,8 +92,9 @@ A **local-first Model Context Protocol (MCP) Server** that enables Claude Code (
 
 | Tool | Purpose | Confirmation Required |
 |------|---------|----------------------|
-| `create_index` | Create index for current project | Yes |
-| `search_now` | Semantic search for relevant code chunks | No |
+| `create_index` | Create index for current project (code + docs) | Yes |
+| `search_code` | Semantic search for relevant code chunks | No |
+| `search_docs` | Semantic search for documentation files (.md, .txt) | No |
 | `search_by_path` | Find files by name/glob pattern | No |
 | `get_index_status` | Show index statistics | No |
 | `reindex_project` | Rebuild entire index from scratch | Yes |
@@ -100,8 +106,10 @@ A **local-first Model Context Protocol (MCP) Server** that enables Claude Code (
 | Capability | Description |
 |------------|-------------|
 | **Indexing** | Recursive text chunking of source files |
+| **Doc Indexing** | Prose-optimized chunking for documentation files (.md, .txt) |
 | **Vector Store** | Embedded local database (LanceDB) |
-| **Semantic Search** | Vector similarity search via `search_now` |
+| **Semantic Search** | Vector similarity search via `search_code` |
+| **Doc Search** | Documentation-specific search via `search_docs` |
 | **Path Search** | Glob pattern matching via `search_by_path` |
 | **File Watching** | Real-time filesystem monitoring for incremental updates |
 | **Auto-Configuration** | Generate config file with sensible defaults |
@@ -145,6 +153,9 @@ Priority chain for detecting project root:
   "maxFileSize": "1MB",
   "maxFiles": 50000,
 
+  "docPatterns": ["**/*.md", "**/*.txt"],
+  "indexDocs": true,
+
   "_hardcodedExcludes": [
     "// These patterns are ALWAYS excluded and cannot be overridden:",
     "// - node_modules/, jspm_packages/, bower_components/  (dependencies)",
@@ -162,7 +173,9 @@ Priority chain for detecting project root:
     "exclude": "Glob patterns to skip (in addition to hardcoded excludes).",
     "respectGitignore": "If true, also excludes files matching .gitignore.",
     "maxFileSize": "Skip files larger than this. Supports: '500KB', '1MB', '2MB'.",
-    "maxFiles": "Warn if project exceeds this many files."
+    "maxFiles": "Warn if project exceeds this many files.",
+    "docPatterns": "Glob patterns for documentation files. Default: ['**/*.md', '**/*.txt'].",
+    "indexDocs": "If true, index documentation files separately with prose-optimized chunking."
   }
 }
 ```
@@ -207,7 +220,7 @@ Priority chain for detecting project root:
 ### 7.1 First-Run Experience
 
 ```
-User runs Claude → Claude calls search_now → Index doesn't exist
+User runs Claude → Claude calls search_code → Index doesn't exist
                            ↓
     "This project hasn't been indexed yet.
      Would you like to index it now? (Y/n)"

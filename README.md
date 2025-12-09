@@ -327,7 +327,7 @@ This section covers architecture, configuration, and advanced usage.
 ┌─────────────────────────────────────────────────────────────┐
 │                  SEARCH MCP SERVER                           │
 │  ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌─────────────┐ │
-│  │create_    │ │search_now │ │search_by_ │ │get_index_   │ │
+│  │create_    │ │search_code │ │search_by_ │ │get_index_   │ │
 │  │index      │ │           │ │path       │ │status       │ │
 │  └───────────┘ └───────────┘ └───────────┘ └─────────────┘ │
 │  ┌───────────┐ ┌───────────┐ ┌───────────┐                 │
@@ -348,8 +348,9 @@ This section covers architecture, configuration, and advanced usage.
 
 | Tool | Description | Confirmation |
 |------|-------------|--------------|
-| `create_index` | Create a search index for the current project | Yes |
-| `search_now` | Semantic search for relevant code chunks | No |
+| `create_index` | Create a search index for the current project (code + docs) | Yes |
+| `search_code` | Semantic search for relevant code chunks | No |
+| `search_docs` | Semantic search for documentation files (.md, .txt) | No |
 | `search_by_path` | Find files by name/glob pattern | No |
 | `get_index_status` | Show index statistics (files, chunks, size) | No |
 | `reindex_project` | Rebuild the entire index from scratch | Yes |
@@ -359,10 +360,19 @@ This section covers architecture, configuration, and advanced usage.
 ## How It Works
 
 1. **Project Detection** - Finds project root by looking for `.git/`, `package.json`, `pyproject.toml`, `Cargo.toml`, or `go.mod`
-2. **Indexing** - Scans files, splits into chunks (~1000 tokens), generates embeddings
-3. **Storage** - Saves vectors to LanceDB at `~/.mcp/search/indexes/<hash>/`
+2. **Indexing** - Scans files, splits into chunks (~1000 tokens for code, ~2000 tokens for docs), generates embeddings
+3. **Storage** - Saves vectors to LanceDB at `~/.mcp/search/indexes/<hash>/` (separate tables for code and docs)
 4. **Watching** - Monitors file changes via chokidar, updates index incrementally
 5. **Searching** - Converts query to vector, finds similar chunks, returns results
+
+### Code vs Documentation Search
+
+| Aspect | `search_code` (Code) | `search_docs` (Docs) |
+|--------|---------------------|----------------------|
+| File types | All non-doc files | `.md`, `.txt` |
+| Chunk size | ~1000 tokens | ~2000 tokens |
+| Chunk overlap | ~200 tokens | ~500 tokens |
+| Use case | Find code implementations | Find explanations, guides, specs |
 
 ## Storage Structure
 
@@ -371,8 +381,10 @@ This section covers architecture, configuration, and advanced usage.
 ├── config.json                    # Global defaults (optional)
 └── indexes/
     └── <SHA256(project_path)>/
-        ├── index.lancedb/         # Vector database
-        ├── fingerprints.json      # File hash tracking
+        ├── index.lancedb/         # Code vector database
+        ├── docs.lancedb/          # Docs vector database
+        ├── fingerprints.json      # Code file hash tracking
+        ├── docs-fingerprints.json # Docs file hash tracking
         ├── config.json            # Project configuration
         ├── metadata.json          # Index metadata
         └── logs/                  # Rolling logs
@@ -424,6 +436,8 @@ Auto-generated at `~/.mcp/search/indexes/<hash>/config.json`:
 | `respectGitignore` | `boolean` | `true` | Honor .gitignore rules |
 | `maxFileSize` | `string` | `"1MB"` | Skip files larger than this |
 | `maxFiles` | `number` | `50000` | Warn if project exceeds this count |
+| `docPatterns` | `string[]` | `["**/*.md", "**/*.txt"]` | Glob patterns for documentation files |
+| `indexDocs` | `boolean` | `true` | Enable documentation indexing |
 
 ## Hardcoded Deny List
 
@@ -452,11 +466,19 @@ These patterns are **ALWAYS** excluded (cannot be overridden):
 
 ## Chunking Strategy
 
+### Code Files
 | Parameter | Value |
 |-----------|-------|
 | Chunk Size | ~1000 tokens (~4000 characters) |
 | Chunk Overlap | ~200 tokens (~800 characters) |
 | Separators | `\n\n`, `\n`, ` `, `` (in priority order) |
+
+### Documentation Files
+| Parameter | Value |
+|-----------|-------|
+| Chunk Size | ~2000 tokens (~8000 characters) |
+| Chunk Overlap | ~500 tokens (~2000 characters) |
+| Separators | `\n\n`, `\n`, `. `, ` `, `` (in priority order) |
 
 ## Performance Targets
 

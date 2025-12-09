@@ -167,6 +167,7 @@ jobs:
 |---------|-------------|------------|
 | `list_projects` | Show all indexed projects with stats | Low |
 | Hybrid Search | Combine vector + keyword search (BM25) | Medium |
+| PDF Doc Support | Add PDF text extraction to `search_docs` (requires pdf-parse) | Medium |
 
 ### 4.2 Medium Priority
 
@@ -175,6 +176,8 @@ jobs:
 | AST Chunking | Language-aware splitting via tree-sitter | High |
 | Multi-Root Support | Index multiple folders as one project | Medium |
 | Query Expansion | Rewrite queries for better retrieval | Medium |
+| RST/AsciiDoc Support | Add .rst and .adoc to doc search | Low |
+| Markdown Header Chunking | Split docs by headers for better context | Medium |
 
 ### 4.3 Low Priority
 

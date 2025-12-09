@@ -86,17 +86,20 @@ src/
 ### Storage Location
 
 Indexes stored at `~/.mcp/search/indexes/<SHA256(project_path)>/` containing:
-- `index.lancedb/` - Vector database
-- `fingerprints.json` - File hash tracking
+- `index.lancedb/` - Code vector database
+- `docs.lancedb/` - Docs vector database (prose-optimized)
+- `fingerprints.json` - Code file hash tracking
+- `docs-fingerprints.json` - Doc file hash tracking
 - `config.json` - Project configuration
-- `metadata.json` - Index metadata
+- `metadata.json` - Index metadata (includes docsStats)
 
 ## MCP Tools
 
 | Tool | Purpose | Confirmation Required |
 |------|---------|----------------------|
-| `create_index` | Create index for current project | Yes |
-| `search_now` | Semantic search (query + top_k) | No |
+| `create_index` | Create index for current project (code + docs) | Yes |
+| `search_code` | Semantic search for code (query + top_k) | No |
+| `search_docs` | Semantic search for docs (.md, .txt) | No |
 | `search_by_path` | Find files by glob pattern | No |
 | `get_index_status` | Show index statistics | No |
 | `reindex_project` | Rebuild entire index | Yes |
@@ -111,9 +114,16 @@ Indexes stored at `~/.mcp/search/indexes/<SHA256(project_path)>/` containing:
 - Size: ~90MB (auto-downloaded to `~/.cache/huggingface/`)
 
 ### Chunking
+
+**Code files:**
 - Chunk size: ~1000 tokens (~4000 chars)
 - Overlap: ~200 tokens (~800 chars)
-- Separators: `\n\n`, `\n`, ` `, `` (priority order)
+- Separators: `\n\n`, `\n`, ` `, ``
+
+**Doc files (.md, .txt):**
+- Chunk size: ~2000 tokens (~8000 chars)
+- Overlap: ~500 tokens (~2000 chars)
+- Separators: `\n\n`, `\n`, `. `, ` `, ``
 
 ### Hardcoded Deny List (Cannot Override)
 Always excluded: `node_modules/`, `.git/`, `dist/`, `build/`, `.env`, `*.pem`, `*.key`, `*.log`, `*.lock`, `.idea/`, `.vscode/`, `coverage/`

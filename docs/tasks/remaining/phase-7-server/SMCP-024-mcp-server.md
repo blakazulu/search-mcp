@@ -37,7 +37,7 @@ Implement the MCP server entry point that ties all components together. Sets up 
 
 **Blocked by:**
 
-- SMCP-017: search_now Tool
+- SMCP-017: search_code Tool
 - SMCP-018: search_by_path Tool
 - SMCP-019: get_index_status Tool
 - SMCP-020: create_index Tool

@@ -42,7 +42,7 @@ Implement the vector database wrapper using LanceDB for storing and searching co
 **Blocks:**
 
 - SMCP-014: Index Manager
-- SMCP-017: search_now Tool
+- SMCP-017: search_code Tool
 - SMCP-018: search_by_path Tool
 - SMCP-019: get_index_status Tool
 - SMCP-023: delete_index Tool
@@ -228,4 +228,4 @@ _None yet_
 
 - SMCP-012: Chunking Engine provides chunks with line numbers
 - SMCP-013: Embedding Engine provides 384-dim vectors
-- SMCP-017: search_now Tool uses similarity search
+- SMCP-017: search_code Tool uses similarity search

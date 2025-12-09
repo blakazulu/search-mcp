@@ -1,6 +1,6 @@
 ---
 task_id: "SMCP-017"
-title: "search_now Tool"
+title: "search_code Tool"
 category: "Technical"
 priority: "P1"
 status: "not-started"
@@ -12,7 +12,7 @@ assigned_to: "blakazulu"
 tags: ["tools", "search", "mcp"]
 ---
 
-# Task: search_now Tool
+# Task: search_code Tool
 
 ## Overview
 
@@ -110,7 +110,7 @@ Implement the primary semantic search MCP tool. Takes a natural language query, 
 - [ ] 3.1 Create tool definition
     ```typescript
     const searchNowTool: Tool = {
-      name: 'search_now',
+      name: 'search_code',
       description: 'Search your codebase for relevant code using natural language',
       inputSchema: SearchNowInputSchema,
       handler: searchNow,
@@ -134,7 +134,7 @@ Implement the primary semantic search MCP tool. Takes a natural language query, 
 
 ## Resources
 
-- `docs/ENGINEERING.RFC.md` Section 4.2: search_now
+- `docs/ENGINEERING.RFC.md` Section 4.2: search_code
 - `docs/PRD.md` Section 5.1: MCP Tools table
 - `docs/PRD.md` Section 7.3: Search Results Format
 

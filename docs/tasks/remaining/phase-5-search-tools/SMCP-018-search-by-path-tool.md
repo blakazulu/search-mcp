@@ -44,7 +44,7 @@ Implement the glob pattern file search MCP tool. Finds indexed files matching a 
 
 **Related:**
 
-- SMCP-017: search_now Tool
+- SMCP-017: search_code Tool
 - SMCP-019: get_index_status Tool
 
 ## Subtasks
@@ -182,4 +182,4 @@ _None yet_
 ## Related Tasks
 
 - SMCP-009: LanceDB Store provides file list
-- SMCP-017: search_now for semantic search
+- SMCP-017: search_code for semantic search

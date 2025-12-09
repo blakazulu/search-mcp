@@ -45,7 +45,7 @@ Implement the index status MCP tool. Returns diagnostic information about the cu
 
 **Related:**
 
-- SMCP-017: search_now Tool
+- SMCP-017: search_code Tool
 - SMCP-018: search_by_path Tool
 
 ## Subtasks

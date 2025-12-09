@@ -42,7 +42,7 @@ Implement the embedding engine using Xenova/transformers for local vector genera
 **Blocks:**
 
 - SMCP-014: Index Manager
-- SMCP-017: search_now Tool
+- SMCP-017: search_code Tool
 
 **Related:**
 
@@ -215,4 +215,4 @@ _None_
 ## Related Tasks
 
 - SMCP-014: Index Manager uses embeddings for indexing
-- SMCP-017: search_now Tool uses embeddings for query
+- SMCP-017: search_code Tool uses embeddings for query

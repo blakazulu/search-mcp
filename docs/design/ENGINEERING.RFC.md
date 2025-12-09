@@ -40,7 +40,7 @@ The system operates autonomously using file watchers and incremental updates to 
 ┌─────────────────────────────────────────────────────────────┐
 │                    MCP SERVER                                │
 │  ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌─────────────┐ │
-│  │create_    │ │search_now │ │search_by_ │ │get_index_   │ │
+│  │create_    │ │search_code │ │search_by_ │ │get_index_   │ │
 │  │index      │ │           │ │path       │ │status       │ │
 │  └───────────┘ └───────────┘ └───────────┘ └─────────────┘ │
 │  ┌───────────┐ ┌───────────┐ ┌───────────┐                 │
@@ -100,17 +100,20 @@ Indices are stored in a global user directory to:
 ├── config.json                    # Global defaults (optional)
 └── indexes/
     ├── <SHA256(project_path_1)>/
-    │   ├── index.lancedb/         # Vector database
-    │   ├── fingerprints.json      # File hash tracking
+    │   ├── index.lancedb/         # Code vector database
+    │   ├── docs.lancedb/          # Docs vector database (prose-optimized)
+    │   ├── fingerprints.json      # Code file hash tracking
+    │   ├── docs-fingerprints.json # Docs file hash tracking
     │   ├── config.json            # Project configuration
-    │   ├── metadata.json          # Index metadata
+    │   ├── metadata.json          # Index metadata (includes docsStats)
     │   └── logs/                  # Rolling logs
     └── <SHA256(project_path_2)>/
         └── ...
 ```
 
-### 3.2 Database Schema
+### 3.2 Database Schema (Code)
 
+**Database:** `index.lancedb/`
 **Table Name:** `project_docs`
 
 | Field | Type | Description |
@@ -122,6 +125,30 @@ Indices are stored in a global user directory to:
 | `start_line` | Int | Start line number in source file |
 | `end_line` | Int | End line number in source file |
 | `content_hash` | String | SHA256 hash of source file (for versioning) |
+
+### 3.2.1 Database Schema (Docs)
+
+**Database:** `docs.lancedb/`
+**Table Name:** `project_docs_prose`
+
+Same schema as code chunks, but with prose-optimized chunking parameters.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | String | Unique UUIDv4 for the chunk |
+| `path` | String | Relative file path (e.g., `docs/README.md`) |
+| `text` | String | The actual text content of the chunk |
+| `vector` | Float32[384] | Embedding vector (384 dimensions for MiniLM) |
+| `start_line` | Int | Start line number in source file |
+| `end_line` | Int | End line number in source file |
+| `content_hash` | String | SHA256 hash of source file (for versioning) |
+
+**Chunking differences:**
+| Parameter | Code | Docs |
+|-----------|------|------|
+| Chunk Size | 4000 chars (~1000 tokens) | 8000 chars (~2000 tokens) |
+| Chunk Overlap | 800 chars (~200 tokens) | 2000 chars (~500 tokens) |
+| Separators | `\n\n`, `\n`, ` `, `` | `\n\n`, `\n`, `. `, ` `, `` |
 
 ### 3.3 Fingerprints Schema
 
@@ -152,7 +179,13 @@ Key-value store mapping relative file paths to SHA256 content hashes. Used for d
     "totalFiles": 450,
     "totalChunks": 1205,
     "storageSizeBytes": 47185920
-  }
+  },
+  "docsStats": {
+    "totalDocs": 12,
+    "totalDocChunks": 45,
+    "docsStorageSizeBytes": 1048576
+  },
+  "lastDocsIndex": "2024-01-15T10:00:00Z"
 }
 ```
 
@@ -195,7 +228,7 @@ Creates a new index for the current project.
 
 ---
 
-### 4.2 `search_now`
+### 4.2 `search_code`
 
 Performs semantic similarity search.
 
@@ -412,6 +445,62 @@ Removes the index for the current project.
 
 ---
 
+### 4.8 `search_docs`
+
+Performs semantic similarity search on documentation files only (.md, .txt).
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "The question or topic to search for in documentation"
+    },
+    "top_k": {
+      "type": "number",
+      "default": 10,
+      "description": "Number of results to return (1-50)"
+    }
+  },
+  "required": ["query"]
+}
+```
+
+**Output:**
+```json
+{
+  "results": [
+    {
+      "path": "docs/authentication.md",
+      "text": "## Authentication\n\nThe authentication system uses JWT tokens...",
+      "score": 0.89,
+      "startLine": 15,
+      "endLine": 45
+    }
+  ],
+  "totalResults": 3,
+  "searchTimeMs": 38
+}
+```
+
+**Behavior:**
+1. Check if docs index exists
+2. If no docs index, return DOCS_INDEX_NOT_FOUND error
+3. Generate query embedding
+4. Search docs LanceDB table for similar chunks
+5. Return formatted results with scores
+
+**Key Differences from `search_code`:**
+- Searches only documentation files (.md, .txt)
+- Uses prose-optimized chunking (larger chunks, more overlap)
+- Stored in separate LanceDB table (`docs.lancedb/`)
+
+**Confirmation Required:** No
+
+---
+
 ## 5. Core Engines
 
 ### 5.1 Project Root Detection Engine
@@ -616,6 +705,7 @@ interface MCPError {
 | `FILE_NOT_FOUND` | "The file '{path}' doesn't exist or isn't indexed." | `FILE_NOT_FOUND: {path} not in index` |
 | `INVALID_PATTERN` | "The search pattern '{pattern}' is invalid. Please check the syntax." | `INVALID_PATTERN: {glob_error}` |
 | `PROJECT_NOT_DETECTED` | "Could not detect project root. Please choose a directory." | `PROJECT_NOT_DETECTED: No markers found in path hierarchy` |
+| `DOCS_INDEX_NOT_FOUND` | "No documentation has been indexed yet. Run create_index to index your project." | `DOCS_INDEX_NOT_FOUND: No docs index at ~/.mcp/search/indexes/{hash}/docs.lancedb/` |
 
 ---
 
@@ -636,6 +726,9 @@ Created at `~/.mcp/search/indexes/<hash>/config.json` on first index:
   "maxFileSize": "1MB",
   "maxFiles": 50000,
 
+  "docPatterns": ["**/*.md", "**/*.txt"],
+  "indexDocs": true,
+
   "_hardcodedExcludes": [
     "// These patterns are ALWAYS excluded and cannot be overridden:",
     "// - node_modules/, jspm_packages/, bower_components/  (dependencies)",
@@ -653,7 +746,9 @@ Created at `~/.mcp/search/indexes/<hash>/config.json` on first index:
     "exclude": "Glob patterns to skip (in addition to hardcoded excludes).",
     "respectGitignore": "If true, also excludes files matching .gitignore.",
     "maxFileSize": "Skip files larger than this. Supports: '500KB', '1MB', '2MB'.",
-    "maxFiles": "Warn if project exceeds this many files."
+    "maxFiles": "Warn if project exceeds this many files.",
+    "docPatterns": "Glob patterns for documentation files. Default: ['**/*.md', '**/*.txt'].",
+    "indexDocs": "If true, index documentation files with prose-optimized chunking. Default: true."
   }
 }
 ```
@@ -666,6 +761,8 @@ On load, validate:
 - `respectGitignore` is boolean
 - `maxFileSize` matches pattern `^\d+(KB|MB)$`
 - `maxFiles` is positive integer
+- `docPatterns` is array of strings (glob patterns)
+- `indexDocs` is boolean
 
 Invalid config → Use defaults + log warning
 
@@ -711,7 +808,7 @@ This project follows **Semantic Versioning (SemVer)**.
 
 ### Breaking Change Examples (MAJOR)
 
-- Changing `search_now` input/output schema
+- Changing `search_code` input/output schema
 - Changing LanceDB table structure
 - Changing storage path format (`~/.mcp/search/`)
 - Removing or renaming a tool

@@ -50,6 +50,15 @@ export {
   chunkFileSync,
 } from './chunking.js';
 
+// Docs Chunking Engine
+export {
+  DOC_FILE_EXTENSIONS,
+  DOC_FILE_PATTERNS,
+  DOC_SPLIT_OPTIONS,
+  isDocFile,
+  chunkDocFile,
+} from './docsChunking.js';
+
 // Embedding Engine
 export {
   MODEL_NAME,

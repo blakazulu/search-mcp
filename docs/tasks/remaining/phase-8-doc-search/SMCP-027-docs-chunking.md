@@ -3,11 +3,11 @@ task_id: "SMCP-027"
 title: "Docs Chunking Config"
 category: "Technical"
 priority: "P1"
-status: "not-started"
+status: "done"
 created_date: "2025-12-09"
 due_date: ""
 estimated_hours: 1
-actual_hours: 0
+actual_hours: 1
 assigned_to: "blakazulu"
 tags: ["engines", "chunking", "docs"]
 ---
@@ -20,10 +20,10 @@ Create prose-optimized chunking configuration and helper functions for documenta
 
 ## Goals
 
-- [ ] Define DOC_SPLIT_OPTIONS with prose-optimized parameters
-- [ ] Create isDocFile() helper function
-- [ ] Create chunkDocFile() convenience function
-- [ ] Export doc file patterns constant
+- [x] Define DOC_SPLIT_OPTIONS with prose-optimized parameters
+- [x] Create isDocFile() helper function
+- [x] Create chunkDocFile() convenience function
+- [x] Export doc file patterns constant
 
 ## Success Criteria
 
@@ -50,9 +50,9 @@ Create prose-optimized chunking configuration and helper functions for documenta
 
 ### Phase 1: Create Docs Chunking Module (0.5 hours)
 
-- [ ] 1.1 Create `src/engines/docsChunking.ts`
+- [x] 1.1 Create `src/engines/docsChunking.ts`
 
-- [ ] 1.2 Define prose-optimized parameters
+- [x] 1.2 Define prose-optimized parameters
     ```typescript
     export const DOC_SPLIT_OPTIONS: SplitOptions = {
       chunkSize: 8000,     // ~2000 tokens (larger for prose)
@@ -61,13 +61,13 @@ Create prose-optimized chunking configuration and helper functions for documenta
     };
     ```
 
-- [ ] 1.3 Define doc file patterns
+- [x] 1.3 Define doc file patterns
     ```typescript
     export const DOC_FILE_EXTENSIONS = ['.md', '.txt'];
     export const DOC_FILE_PATTERNS = ['**/*.md', '**/*.txt'];
     ```
 
-- [ ] 1.4 Create isDocFile() helper
+- [x] 1.4 Create isDocFile() helper
     ```typescript
     export function isDocFile(relativePath: string): boolean {
       const ext = path.extname(relativePath).toLowerCase();
@@ -75,7 +75,7 @@ Create prose-optimized chunking configuration and helper functions for documenta
     }
     ```
 
-- [ ] 1.5 Create chunkDocFile() convenience function
+- [x] 1.5 Create chunkDocFile() convenience function
     ```typescript
     export async function chunkDocFile(
       absolutePath: string,
@@ -87,12 +87,12 @@ Create prose-optimized chunking configuration and helper functions for documenta
 
 ### Phase 2: Tests (0.5 hours)
 
-- [ ] 2.1 Create `src/engines/__tests__/docsChunking.test.ts`
+- [x] 2.1 Create `tests/unit/engines/docsChunking.test.ts`
     - Test isDocFile() with various extensions
     - Test DOC_SPLIT_OPTIONS values
     - Test chunkDocFile() uses correct params
 
-- [ ] 2.2 Test chunk sizes
+- [x] 2.2 Test chunk sizes
     - Verify chunks are larger than code chunks
     - Verify overlap is larger
 
@@ -105,12 +105,12 @@ Create prose-optimized chunking configuration and helper functions for documenta
 
 Before marking this task complete:
 
-- [ ] All subtasks completed
-- [ ] DOC_SPLIT_OPTIONS matches RFC spec
-- [ ] isDocFile() correctly identifies .md and .txt
-- [ ] chunkDocFile() creates larger chunks
-- [ ] Tests pass
-- [ ] Exported from `src/engines/index.ts`
+- [x] All subtasks completed
+- [x] DOC_SPLIT_OPTIONS matches RFC spec
+- [x] isDocFile() correctly identifies .md and .txt
+- [x] chunkDocFile() creates larger chunks
+- [x] Tests pass (39 tests)
+- [x] Exported from `src/engines/index.ts`
 
 ## Progress Log
 
@@ -118,6 +118,16 @@ Before marking this task complete:
 
 - Task created
 - Subtasks defined
+
+### 2025-12-09 - 1 hour
+
+- Created `src/engines/docsChunking.ts` with prose-optimized settings
+- DOC_SPLIT_OPTIONS: 8000 chars chunk size, 2000 overlap, sentence separators
+- DOC_FILE_EXTENSIONS and DOC_FILE_PATTERNS constants
+- isDocFile() helper for file type detection
+- chunkDocFile() convenience function
+- Created comprehensive test suite with 39 tests
+- All tests passing
 
 ## Notes
 
@@ -127,7 +137,7 @@ Before marking this task complete:
 
 ## Blockers
 
-_None yet_
+_None_
 
 ## Related Tasks
 

@@ -90,3 +90,18 @@ export {
   type ReindexFileStatus,
   type ValidationResult,
 } from './reindexFile.js';
+
+// delete_index tool - remove project index
+export {
+  deleteIndex,
+  deleteIndexTool,
+  DeleteIndexInputSchema,
+  safeDeleteIndex,
+  isPathSafeToDelete,
+  checkIndexExistsForDelete,
+  getDeleteConfirmationMessage,
+  type DeleteIndexInput,
+  type DeleteIndexOutput,
+  type DeleteIndexStatus,
+  type DeleteIndexContext,
+} from './deleteIndex.js';

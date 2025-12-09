@@ -1,5 +1,5 @@
 ---
-task_id: "SMCP-024"
+task_id: "SMCP-034"
 title: "MCP Server Setup"
 category: "Technical"
 priority: "P0"
@@ -16,19 +16,19 @@ tags: ["server", "mcp", "integration"]
 
 ## Overview
 
-Implement the MCP server entry point that ties all components together. Sets up the Model Context Protocol server using the official SDK, registers all 7 tools, handles JSON-RPC routing, and manages server lifecycle. This is the final integration task.
+Implement the MCP server entry point that ties all components together. Sets up the Model Context Protocol server using the official SDK, registers all 8 tools, handles JSON-RPC routing, and manages server lifecycle. This is the final integration task.
 
 ## Goals
 
 - [ ] Initialize MCP server with stdio transport
-- [ ] Register all 7 tools with proper schemas
+- [ ] Register all 8 tools with proper schemas
 - [ ] Handle JSON-RPC message routing
 - [ ] Manage server lifecycle (startup, shutdown)
 
 ## Success Criteria
 
 - Server starts and accepts MCP connections
-- All 7 tools are discoverable via list_tools
+- All 8 tools are discoverable via list_tools
 - Tool invocations are routed correctly
 - Server handles errors gracefully
 - Clean shutdown on SIGINT/SIGTERM
@@ -44,6 +44,7 @@ Implement the MCP server entry point that ties all components together. Sets up 
 - SMCP-021: reindex_project Tool
 - SMCP-022: reindex_file Tool
 - SMCP-023: delete_index Tool
+- SMCP-029: search_docs Tool
 
 **Blocks:**
 
@@ -96,7 +97,8 @@ Implement the MCP server entry point that ties all components together. Sets up 
     ```typescript
     // src/server.ts
     import { createIndexTool } from './tools/createIndex.js';
-    import { searchNowTool } from './tools/searchNow.js';
+    import { searchCodeTool } from './tools/searchCode.js';
+    import { searchDocsTool } from './tools/searchDocs.js';
     import { searchByPathTool } from './tools/searchByPath.js';
     import { getIndexStatusTool } from './tools/getIndexStatus.js';
     import { reindexProjectTool } from './tools/reindexProject.js';
@@ -105,7 +107,8 @@ Implement the MCP server entry point that ties all components together. Sets up 
 
     const tools = [
       createIndexTool,
-      searchNowTool,
+      searchCodeTool,
+      searchDocsTool,
       searchByPathTool,
       getIndexStatusTool,
       reindexProjectTool,
@@ -147,7 +150,9 @@ Implement the MCP server entry point that ties all components together. Sets up 
       projectPath?: string;  // Detected project root
       indexPath?: string;    // Index storage path
       store?: LanceDBStore;
+      docsStore?: DocsLanceDBStore;
       indexManager?: IndexManager;
+      docsIndexManager?: DocsIndexManager;
       fileWatcher?: FileWatcher;
     }
 
@@ -175,7 +180,7 @@ Implement the MCP server entry point that ties all components together. Sets up 
 
     async function shutdown(): Promise<void> {
       // Stop file watcher
-      // Close LanceDB connection
+      // Close LanceDB connections (code + docs)
       // Flush logs
     }
     ```
@@ -228,7 +233,7 @@ Implement the MCP server entry point that ties all components together. Sets up 
 - [ ] 6.2 Manual testing with MCP client
     - Test with Claude Desktop
     - Test with Claude Code
-    - Verify all 7 tools work
+    - Verify all 8 tools work
 
 ## Resources
 
@@ -242,7 +247,7 @@ Before marking this task complete:
 
 - [ ] All subtasks completed
 - [ ] Server starts with stdio transport
-- [ ] All 7 tools registered and callable
+- [ ] All 8 tools registered and callable
 - [ ] Error handling works correctly
 - [ ] Graceful shutdown on signals
 - [ ] Works with Claude Desktop
@@ -255,6 +260,7 @@ Before marking this task complete:
 
 - Task created
 - Subtasks defined
+- Moved from SMCP-024 to SMCP-034 to be final task after doc search tools
 
 ## Notes
 
@@ -270,5 +276,5 @@ _None yet_
 
 ## Related Tasks
 
-- All 7 tool tasks (SMCP-017 to SMCP-023)
+- All 8 tool tasks (SMCP-017 to SMCP-023, SMCP-029)
 - SMCP-001: Project Setup (provides base config)

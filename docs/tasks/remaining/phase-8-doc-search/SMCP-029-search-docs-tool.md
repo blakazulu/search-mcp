@@ -42,7 +42,7 @@ Implement the documentation-specific semantic search MCP tool. Takes a natural l
 
 **Blocks:**
 
-- SMCP-024: MCP Server Setup
+- SMCP-034: MCP Server Setup
 
 **Related:**
 

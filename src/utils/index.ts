@@ -27,6 +27,13 @@ export {
   hashProjectPath,
 } from './hash.js';
 
+// SQL escaping exports
+export {
+  escapeSqlString,
+  escapeLikePattern,
+  globToSafeLikePattern,
+} from './sql.js';
+
 // Path exports
 export {
   // Path normalization

@@ -21,8 +21,9 @@ import * as path from 'node:path';
 import { glob } from 'glob';
 import { getLogger } from '../utils/logger.js';
 import { MCPError, ErrorCode, indexNotFound } from '../errors/index.js';
-import { ChunkRecord, SearchResult, VECTOR_DIMENSION, distanceToScore, globToLikePattern } from './lancedb.js';
+import { ChunkRecord, SearchResult, VECTOR_DIMENSION, distanceToScore } from './lancedb.js';
 import { getDocsLanceDbPath } from '../utils/paths.js';
+import { escapeSqlString, globToSafeLikePattern } from '../utils/sql.js';
 
 // ============================================================================
 // Constants
@@ -358,15 +359,19 @@ export class DocsLanceDBStore {
     const table = await this.getTable();
     const logger = getLogger();
 
+    // Escape the path to prevent SQL injection
+    const escapedPath = escapeSqlString(relativePath);
+    const whereClause = `path = '${escapedPath}'`;
+
     // Get count before delete
-    const beforeCount = await table.countRows(`path = '${relativePath.replace(/'/g, "''")}'`);
+    const beforeCount = await table.countRows(whereClause);
 
     if (beforeCount === 0) {
       return 0;
     }
 
     // Delete chunks
-    await table.delete(`path = '${relativePath.replace(/'/g, "''")}'`);
+    await table.delete(whereClause);
 
     logger.debug('docsLancedb', `Deleted ${beforeCount} chunks for path: ${relativePath}`);
     return beforeCount;
@@ -483,8 +488,8 @@ export class DocsLanceDBStore {
     const table = await this.getTable();
     const logger = getLogger();
 
-    // Convert glob pattern to SQL LIKE pattern
-    const likePattern = globToLikePattern(pattern);
+    // Convert glob pattern to SQL LIKE pattern with proper escaping
+    const likePattern = globToSafeLikePattern(pattern);
     logger.debug('docsLancedb', `Searching paths with pattern: ${pattern} -> ${likePattern}`);
 
     try {

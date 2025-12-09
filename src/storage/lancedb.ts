@@ -19,6 +19,7 @@ import { glob } from 'glob';
 import { getLogger } from '../utils/logger.js';
 import { MCPError, ErrorCode, indexNotFound, indexCorrupt } from '../errors/index.js';
 import { getLanceDbPath } from '../utils/paths.js';
+import { escapeSqlString, globToSafeLikePattern } from '../utils/sql.js';
 
 // ============================================================================
 // Types and Interfaces
@@ -160,21 +161,16 @@ function distanceToScore(distance: number): number {
 /**
  * Convert a glob pattern to SQL LIKE pattern
  *
+ * @deprecated Use globToSafeLikePattern from utils/sql.ts for better SQL injection protection.
+ * This function is kept for backward compatibility but does not properly escape
+ * LIKE wildcards (%, _, [) in literal parts of the pattern.
+ *
  * @param globPattern - Glob pattern (e.g., "*.ts", "src/*.ts")
  * @returns SQL LIKE pattern
  */
 function globToLikePattern(globPattern: string): string {
-  // Escape SQL special characters first
-  let pattern = globPattern.replace(/'/g, "''");
-
-  // Convert glob wildcards to SQL LIKE wildcards
-  // * matches any sequence -> %
-  // ? matches single char -> _
-  pattern = pattern.replace(/\*\*/g, '%'); // ** first (greedy match)
-  pattern = pattern.replace(/\*/g, '%');
-  pattern = pattern.replace(/\?/g, '_');
-
-  return pattern;
+  // Use the new safe implementation
+  return globToSafeLikePattern(globPattern);
 }
 
 // ============================================================================
@@ -440,15 +436,19 @@ export class LanceDBStore {
     const table = await this.getTable();
     const logger = getLogger();
 
+    // Escape the path to prevent SQL injection
+    const escapedPath = escapeSqlString(relativePath);
+    const whereClause = `path = '${escapedPath}'`;
+
     // Get count before delete
-    const beforeCount = await table.countRows(`path = '${relativePath.replace(/'/g, "''")}'`);
+    const beforeCount = await table.countRows(whereClause);
 
     if (beforeCount === 0) {
       return 0;
     }
 
     // Delete chunks
-    await table.delete(`path = '${relativePath.replace(/'/g, "''")}'`);
+    await table.delete(whereClause);
 
     logger.debug('lancedb', `Deleted ${beforeCount} chunks for path: ${relativePath}`);
     return beforeCount;
@@ -568,8 +568,8 @@ export class LanceDBStore {
     const table = await this.getTable();
     const logger = getLogger();
 
-    // Convert glob pattern to SQL LIKE pattern
-    const likePattern = globToLikePattern(pattern);
+    // Convert glob pattern to SQL LIKE pattern with proper escaping
+    const likePattern = globToSafeLikePattern(pattern);
     logger.debug('lancedb', `Searching paths with pattern: ${pattern} -> ${likePattern}`);
 
     try {

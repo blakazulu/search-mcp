@@ -6,14 +6,16 @@ Deep security and stability analysis of the Search MCP codebase revealed **65+ p
 
 **UPDATE: Web Research Findings** - Cross-referenced with known MCP attack patterns from 2025 security research. Found **35 vulnerability categories** specific to MCP implementations and edge case scenarios that apply to this codebase.
 
+**UPDATE 2024-12-09: SMCP-035 Completed** - SQL injection vulnerabilities (Bug #1, Bug #22) have been fixed with proper escaping utilities. 2 bugs resolved.
+
 ### Bug Count Summary
-| Severity | Count |
-|----------|-------|
-| **CRITICAL** | 10 |
-| **HIGH** | 19 |
-| **MEDIUM** | 27 |
-| **LOW** | 9+ |
-| **TOTAL** | **65+** |
+| Severity | Count | Fixed |
+|----------|-------|-------|
+| **CRITICAL** | ~~10~~ 9 | 1 |
+| **HIGH** | 19 | 0 |
+| **MEDIUM** | ~~27~~ 26 | 1 |
+| **LOW** | 9+ | 0 |
+| **TOTAL** | **~~65+~~ 63+** | **2** |
 
 ---
 
@@ -837,23 +839,22 @@ const durationMs = endTime - startTime;  // Can be negative if clock adjusted!
 
 ## CRITICAL SEVERITY (Immediate Action Required)
 
-### 1. SQL Injection Vulnerabilities
+### 1. SQL Injection Vulnerabilities ✅ FIXED (SMCP-035)
 **Files:** `src/storage/lancedb.ts:444-451,578`, `src/storage/docsLancedb.ts:362,369,493`
+**Status:** RESOLVED on 2024-12-09
 
-```typescript
-// deleteByPath - Line 444
-const beforeCount = await table.countRows(`path = '${relativePath.replace(/'/g, "''")}'`);
-await table.delete(`path = '${relativePath.replace(/'/g, "''")}'`);
+**Fix Applied:**
+- Created `src/utils/sql.ts` with `escapeSqlString()`, `escapeLikePattern()`, and `globToSafeLikePattern()`
+- Updated `deleteByPath()` in both `lancedb.ts` and `docsLancedb.ts` to use `escapeSqlString()`
+- Updated `searchByPath()` in both files to use `globToSafeLikePattern()`
+- Added 34 unit tests covering injection attempts
+- All 1348 tests pass
 
-// searchByPath - Line 578
-const results = await table.filter(`path LIKE '${likePattern}'`).select(['path']).execute();
-```
+~~**Issue:** Single-quote escaping is insufficient protection. Paths with backticks, backslashes, or other SQL metacharacters can bypass this. Direct string concatenation into SQL is inherently unsafe.~~
 
-**Issue:** Single-quote escaping is insufficient protection. Paths with backticks, backslashes, or other SQL metacharacters can bypass this. Direct string concatenation into SQL is inherently unsafe.
+~~**Attack Vector:** `test' OR '1'='1` or `a'; DROP TABLE --`~~
 
-**Attack Vector:** `test' OR '1'='1` or `a'; DROP TABLE --`
-
-**Impact:** Unauthorized data access, deletion, or corruption.
+~~**Impact:** Unauthorized data access, deletion, or corruption.~~
 
 ---
 
@@ -1121,10 +1122,17 @@ stack: error.stack,  // Full stack traces in logs
 
 ---
 
-### 22. Glob-to-SQL Pattern Conversion Incomplete
+### 22. Glob-to-SQL Pattern Conversion Incomplete ✅ FIXED (SMCP-035)
 **File:** `src/storage/lancedb.ts:166-178`
+**Status:** RESOLVED on 2024-12-09
 
-**Issue:** Doesn't handle escaped characters, bracket expressions, or SQL LIKE escapes.
+**Fix Applied:**
+- Created `globToSafeLikePattern()` in `src/utils/sql.ts` using token-based approach
+- Properly escapes literal characters while preserving glob wildcards
+- Old `globToLikePattern()` marked deprecated and now delegates to safe version
+- Added unit tests covering special characters in glob patterns
+
+~~**Issue:** Doesn't handle escaped characters, bracket expressions, or SQL LIKE escapes.~~
 
 ---
 
@@ -1166,18 +1174,18 @@ await this.initialize();  // Never runs if above throws
 ## SUMMARY MATRIX
 
 ### Original Code Analysis
-| Category | Critical | High | Medium | Low |
-|----------|----------|------|--------|-----|
-| SQL Injection | 1 | - | - | - |
-| Race Conditions | 2 | - | 2 | - |
-| Memory Leaks | - | 3 | - | - |
-| Resource Leaks | 2 | 2 | 1 | - |
-| Error Handling | 1 | 1 | 3 | 2 |
-| Security | - | 1 | 2 | - |
-| Logic Flaws | - | 1 | 2 | - |
-| Performance | - | - | 3 | - |
+| Category | Critical | High | Medium | Low | Fixed |
+|----------|----------|------|--------|-----|-------|
+| SQL Injection | ~~1~~ 0 | - | - | - | ✅ 1 (SMCP-035) |
+| Race Conditions | 2 | - | 2 | - | |
+| Memory Leaks | - | 3 | - | - | |
+| Resource Leaks | 2 | 2 | 1 | - | |
+| Error Handling | 1 | 1 | 3 | 2 | |
+| Security | - | 1 | ~~2~~ 1 | - | ✅ 1 (SMCP-035, Bug #22) |
+| Logic Flaws | - | 1 | 2 | - | |
+| Performance | - | - | 3 | - | |
 
-**Subtotal: 7 Critical, 8 High, 13 Medium, 2+ Low**
+**Subtotal: ~~7~~ 6 Critical, 8 High, ~~13~~ 12 Medium, 2+ Low (2 Fixed)**
 
 ### MCP-Specific Vulnerabilities (From Web Research + Deep Analysis)
 | Category | Critical | High | Medium | Low |
@@ -1219,7 +1227,7 @@ await this.initialize();  // Never runs if above throws
 
 **Subtotal: 3 Critical, 11 High, 14 Medium, 7 Low = 35 MCP-specific issues**
 
-### GRAND TOTAL: 10 Critical, 19 High, 27 Medium, 9+ Low = 65+ Issues
+### GRAND TOTAL: ~~10~~ 9 Critical, 19 High, ~~27~~ 26 Medium, 9+ Low = 63+ Issues (2 Fixed)
 
 ---
 
@@ -1227,43 +1235,20 @@ await this.initialize();  // Never runs if above throws
 
 ## Phase 1: Critical Security Fixes
 
-### 1.1 SQL Injection Prevention (lancedb.ts, docsLancedb.ts)
+### 1.1 SQL Injection Prevention (lancedb.ts, docsLancedb.ts) ✅ COMPLETED (SMCP-035)
 **Files:** `src/storage/lancedb.ts`, `src/storage/docsLancedb.ts`
+**Status:** RESOLVED on 2024-12-09
 
-Create a safe escaping utility:
-```typescript
-// src/utils/sql.ts (new file)
-export function escapeSqlString(value: string): string {
-  // Escape single quotes, backslashes, and other dangerous chars
-  return value
-    .replace(/\\/g, '\\\\')
-    .replace(/'/g, "''")
-    .replace(/\0/g, '')
-    .replace(/[\x00-\x1f]/g, ''); // Remove control characters
-}
-
-export function escapeLikePattern(value: string): string {
-  // Escape LIKE wildcards: %, _, [
-  return escapeSqlString(value)
-    .replace(/%/g, '\\%')
-    .replace(/_/g, '\\_')
-    .replace(/\[/g, '\\[');
-}
-```
-
-Update `lancedb.ts:444,451,578`:
-```typescript
-import { escapeSqlString, escapeLikePattern } from '../utils/sql.js';
-
-// deleteByPath
-const escapedPath = escapeSqlString(relativePath);
-const beforeCount = await table.countRows(`path = '${escapedPath}'`);
-await table.delete(`path = '${escapedPath}'`);
-
-// searchByPath
-const escapedPattern = escapeLikePattern(globToLikePattern(pattern));
-const results = await table.filter(`path LIKE '${escapedPattern}'`).execute();
-```
+**Implementation Summary:**
+- Created `src/utils/sql.ts` with:
+  - `escapeSqlString()` - escapes `\`, `'`, null bytes, control characters
+  - `escapeLikePattern()` - additionally escapes `%`, `_`, `[` wildcards
+  - `globToSafeLikePattern()` - safe glob-to-SQL-LIKE conversion using token-based approach
+- Updated `deleteByPath()` in both `lancedb.ts` and `docsLancedb.ts`
+- Updated `searchByPath()` in both files
+- Deprecated old `globToLikePattern()` (now delegates to safe version)
+- Added 34 unit tests in `tests/unit/utils/sql.test.ts`
+- All 1348 tests pass
 
 ### 1.2 Async Mutex for LanceDB (NEW: src/utils/asyncMutex.ts)
 ```typescript

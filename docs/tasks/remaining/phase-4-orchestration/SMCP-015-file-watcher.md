@@ -3,11 +3,11 @@ task_id: "SMCP-015"
 title: "File Watcher Engine"
 category: "Technical"
 priority: "P1"
-status: "not-started"
+status: "done"
 created_date: "2025-12-09"
 due_date: ""
 estimated_hours: 4
-actual_hours: 0
+actual_hours: 3
 assigned_to: "blakazulu"
 tags: ["orchestration", "watcher", "real-time"]
 ---
@@ -20,10 +20,10 @@ Implement real-time filesystem monitoring using chokidar. Watches for file chang
 
 ## Goals
 
-- [ ] Monitor filesystem for add/change/delete events
-- [ ] Debounce rapid changes (500ms)
-- [ ] Apply indexing policy to filter events
-- [ ] Trigger incremental index updates
+- [x] Monitor filesystem for add/change/delete events
+- [x] Debounce rapid changes (500ms)
+- [x] Apply indexing policy to filter events
+- [x] Trigger incremental index updates
 
 ## Success Criteria
 
@@ -54,7 +54,7 @@ Implement real-time filesystem monitoring using chokidar. Watches for file chang
 
 ### Phase 1: Watcher Configuration (0.5 hours)
 
-- [ ] 1.1 Define watcher options
+- [x] 1.1 Define watcher options
     ```typescript
     import chokidar from 'chokidar';
 
@@ -70,7 +70,7 @@ Implement real-time filesystem monitoring using chokidar. Watches for file chang
     };
     ```
 
-- [ ] 1.2 Define event types
+- [x] 1.2 Define event types
     ```typescript
     type WatchEvent = 'add' | 'change' | 'unlink';
 
@@ -83,7 +83,7 @@ Implement real-time filesystem monitoring using chokidar. Watches for file chang
 
 ### Phase 2: Event Processing (1.5 hours)
 
-- [ ] 2.1 Implement event handler
+- [x] 2.1 Implement event handler
     ```typescript
     async function handleFileEvent(
       event: FileEvent,
@@ -93,7 +93,7 @@ Implement real-time filesystem monitoring using chokidar. Watches for file chang
     ): Promise<void>
     ```
 
-- [ ] 2.2 Handle 'add' and 'change' events
+- [x] 2.2 Handle 'add' and 'change' events
     ```
     1. Check if file matches deny list → Ignore
     2. Check if file passes policy → If not, ignore
@@ -107,7 +107,7 @@ Implement real-time filesystem monitoring using chokidar. Watches for file chang
     6. If hash same → Ignore (content unchanged)
     ```
 
-- [ ] 2.3 Handle 'unlink' (delete) event
+- [x] 2.3 Handle 'unlink' (delete) event
     ```
     1. Delete all chunks for this file from LanceDB
     2. Remove entry from fingerprints.json
@@ -116,7 +116,7 @@ Implement real-time filesystem monitoring using chokidar. Watches for file chang
 
 ### Phase 3: Debouncing (0.5 hours)
 
-- [ ] 3.1 Implement event debouncing
+- [x] 3.1 Implement event debouncing
     ```typescript
     // chokidar's awaitWriteFinish handles basic debouncing
     // Add additional debouncing for rapid multi-file saves
@@ -129,13 +129,13 @@ Implement real-time filesystem monitoring using chokidar. Watches for file chang
     ): void
     ```
 
-- [ ] 3.2 Handle burst of changes
+- [x] 3.2 Handle burst of changes
     - Multiple files changed in rapid succession
     - Queue and batch process when settled
 
 ### Phase 4: Watcher Class (1 hour)
 
-- [ ] 4.1 Create FileWatcher class
+- [x] 4.1 Create FileWatcher class
     ```typescript
     class FileWatcher {
       private watcher: chokidar.FSWatcher | null = null;
@@ -161,21 +161,21 @@ Implement real-time filesystem monitoring using chokidar. Watches for file chang
     }
     ```
 
-- [ ] 4.2 Handle watcher lifecycle
+- [x] 4.2 Handle watcher lifecycle
     - Start watching after index creation
     - Stop watching on index deletion
     - Restart on errors
 
-- [ ] 4.3 Handle edge cases
+- [x] 4.3 Handle edge cases
     - Directory renames
     - Symbolic links
     - Permission changes
 
 ### Phase 5: Export & Tests (0.5 hours)
 
-- [ ] 5.1 Export from `src/engines/fileWatcher.ts`
+- [x] 5.1 Export from `src/engines/fileWatcher.ts`
 
-- [ ] 5.2 Write integration tests
+- [x] 5.2 Write integration tests
     - Test file add detection
     - Test file change detection
     - Test file delete detection
@@ -192,13 +192,13 @@ Implement real-time filesystem monitoring using chokidar. Watches for file chang
 
 Before marking this task complete:
 
-- [ ] All subtasks completed
-- [ ] Add/change/delete events handled correctly
-- [ ] Debouncing works (rapid saves coalesced)
-- [ ] Policy filtering prevents unwanted updates
-- [ ] Watcher handles errors gracefully
-- [ ] Integration tests pass
-- [ ] Changes committed to Git
+- [x] All subtasks completed
+- [x] Add/change/delete events handled correctly
+- [x] Debouncing works (rapid saves coalesced)
+- [x] Policy filtering prevents unwanted updates
+- [x] Watcher handles errors gracefully
+- [x] Integration tests pass
+- [x] Changes committed to Git
 
 ## Progress Log
 
@@ -206,6 +206,24 @@ Before marking this task complete:
 
 - Task created
 - Subtasks defined
+
+### 2025-12-09 - 3 hours
+
+- Implemented WATCHER_OPTIONS with chokidar configuration
+- Added WatchEvent type and FileEvent interface
+- Added WatcherStats interface for statistics tracking
+- Implemented handleFileEvent() with deny pattern check and debouncing
+- Implemented processFileEvent() for debounced event processing
+- Implemented handleAddOrChange() with policy check, hash comparison, index update
+- Implemented handleUnlink() for file deletion handling
+- Implemented debounceEvent() with pendingEvents Map (500ms default)
+- Created FileWatcher class with start(), stop(), isWatching(), getStats()
+- Added createFileWatcher() factory function
+- Windows-specific polling for better reliability
+- Error handling that doesn't crash the server
+- Exported from src/engines/index.ts
+- Wrote comprehensive integration tests (34 tests)
+- All 339 tests passing, build successful
 
 ## Notes
 
@@ -217,7 +235,7 @@ Before marking this task complete:
 
 ## Blockers
 
-_None yet_
+_None_
 
 ## Related Tasks
 

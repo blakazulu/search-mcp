@@ -18,6 +18,8 @@ Solutions for common issues with Search MCP.
   - [FILE_NOT_FOUND](#file_not_found)
   - [INVALID_PATTERN](#invalid_pattern)
   - [PROJECT_NOT_DETECTED](#project_not_detected)
+  - [SYMLINK_NOT_ALLOWED](#symlink_not_allowed)
+  - [Resource Limits](#resource-limits)
 - [Common Issues](#common-issues)
 - [Getting Help](#getting-help)
 
@@ -166,6 +168,46 @@ All errors include two messages:
 **Solution:** You'll be prompted to:
 1. Use the current directory as project root, OR
 2. Enter a custom path
+
+---
+
+### SYMLINK_NOT_ALLOWED
+
+**When:** A file is a symbolic link (symlink) pointing elsewhere.
+
+| | Message |
+|---|---------|
+| **User** | "Symbolic links are not allowed for security reasons." |
+| **Developer** | `SYMLINK_NOT_ALLOWED: Symlink detected at path: {path}` |
+
+**Why:** Symlinks could point to sensitive files outside your project (e.g., `/etc/passwd`). For security, Search MCP skips symlinks during indexing.
+
+**Solution:**
+1. This is expected security behavior - symlinks are skipped with a warning
+2. If you need the file indexed, replace the symlink with the actual file
+3. During indexing, symlinks are silently skipped (no error thrown)
+
+---
+
+### Resource Limits
+
+Search MCP enforces resource limits to prevent denial-of-service attacks:
+
+| Limit | Value | Error When Exceeded |
+|-------|-------|---------------------|
+| Query length | 1,000 chars | Zod validation error |
+| Glob pattern length | 200 chars | Zod validation error |
+| Glob wildcards | 10 max | "Pattern has too many wildcards" |
+| Chunks per file | 1,000 | ResourceLimitError |
+| Directory depth | 20 levels | Traversal stops |
+| JSON config size | 10 MB | ResourceLimitError |
+| Glob results | 100,000 files | ResourceLimitError |
+
+**If you hit a limit:**
+1. **Query too long**: Break your search into smaller queries
+2. **Too many chunks**: Split very large files or exclude them
+3. **Too many files**: Add patterns to `exclude` in config
+4. **Pattern too complex**: Simplify your glob pattern
 
 ---
 

@@ -51,6 +51,7 @@ AI: "Based on src/auth/login.ts, here's how login works..."
 - **Private** - Your code never leaves your computer
 - **Always Current** - Automatically updates when you save files
 - **Safe** - Never indexes passwords, secrets, or junk files
+- **Secure** - Built-in protections against path traversal, symlink attacks, and resource exhaustion
 
 ---
 

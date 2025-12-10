@@ -11,7 +11,7 @@ Add user-configurable indexing strategies to reduce performance overhead from co
 | 1 | SMCP-043 | Config Schema Changes | COMPLETED |
 | 2 | SMCP-044 | Dirty Files Manager | COMPLETED |
 | 3 | SMCP-045 | Strategy Interface | COMPLETED |
-| 4 | SMCP-046 | Realtime Strategy | Not Started |
+| 4 | SMCP-046 | Realtime Strategy | COMPLETED |
 | 5 | SMCP-047 | Lazy Strategy | Not Started |
 | 6 | SMCP-048 | Git Strategy | Not Started |
 | 7 | SMCP-049 | Strategy Orchestrator | Not Started |
@@ -229,11 +229,18 @@ export {
 
 ---
 
-## Phase 4: Realtime Strategy
+## Phase 4: Realtime Strategy (COMPLETED)
 
 ### New File: `src/engines/strategies/realtimeStrategy.ts`
 
 Wraps existing FileWatcher behavior - processes events immediately.
+
+**Implementation completed 2025-12-10**
+
+Key exports:
+- `RealtimeStrategy` - Main class implementing `IndexingStrategy`
+- `createRealtimeStrategy()` - Factory function
+- `RealtimeStrategyOptions` - Configuration interface
 
 ```typescript
 /**
@@ -244,96 +251,70 @@ Wraps existing FileWatcher behavior - processes events immediately.
  */
 
 import chokidar from 'chokidar';
-import { IndexingStrategy, FileEvent, StrategyStats } from '../indexingStrategy.js';
+import { IndexingStrategy, StrategyFileEvent, StrategyStats } from '../indexingStrategy.js';
 import { IndexManager } from '../indexManager.js';
 import { DocsIndexManager } from '../docsIndexManager.js';
-import { IndexingPolicy } from '../indexPolicy.js';
+import { IndexingPolicy, isHardDenied } from '../indexPolicy.js';
+import { isDocFile } from '../docsChunking.js';
 import { FingerprintsManager } from '../../storage/fingerprints.js';
+import { DocsFingerprintsManager } from '../../storage/docsFingerprints.js';
 import { WATCHER_OPTIONS, DEFAULT_DEBOUNCE_DELAY } from '../fileWatcher.js';
+import { toRelativePath, normalizePath } from '../../utils/paths.js';
+import { hashFile } from '../../utils/hash.js';
 import { getLogger } from '../../utils/logger.js';
-import { registerCleanup, unregisterCleanup } from '../../utils/cleanup.js';
+import { registerCleanup, unregisterCleanup, isShutdownInProgress, CleanupHandler } from '../../utils/cleanup.js';
+
+export interface RealtimeStrategyOptions {
+  debounceDelay?: number;  // default: 500ms
+}
 
 export class RealtimeStrategy implements IndexingStrategy {
   readonly name = 'realtime' as const;
 
   private watcher: chokidar.FSWatcher | null = null;
-  private active: boolean = false;
-  private processedCount: number = 0;
+  private active = false;
+  private processedCount = 0;
   private lastActivity: Date | null = null;
 
   // Debouncing
   private pendingEvents = new Map<string, ReturnType<typeof setTimeout>>();
   private processingQueue = new Set<string>();
 
+  // Cleanup
+  private cleanupHandler: CleanupHandler | null = null;
+
   constructor(
-    private readonly projectPath: string,
-    private readonly indexManager: IndexManager,
-    private readonly docsIndexManager: DocsIndexManager | null,
-    private readonly policy: IndexingPolicy,
-    private readonly fingerprints: FingerprintsManager,
-    private readonly docsFingerprints: FingerprintsManager | null,
-  ) {}
+    projectPath: string,
+    indexManager: IndexManager,
+    docsIndexManager: DocsIndexManager | null,
+    policy: IndexingPolicy,
+    fingerprints: FingerprintsManager,
+    docsFingerprints: DocsFingerprintsManager | null,
+    options?: RealtimeStrategyOptions,
+  ) { /* ... */ }
 
   async initialize(): Promise<void> {
-    // Ensure dependencies are loaded
-    if (!this.fingerprints.isLoaded()) {
-      await this.fingerprints.load();
-    }
-    if (this.docsFingerprints && !this.docsFingerprints.isLoaded()) {
-      await this.docsFingerprints.load();
-    }
-    if (!this.policy.isInitialized()) {
-      await this.policy.initialize();
-    }
+    // Ensure fingerprints, docs fingerprints, and policy are loaded
   }
 
   async start(): Promise<void> {
-    const logger = getLogger();
-
-    this.watcher = chokidar.watch(this.projectPath, WATCHER_OPTIONS);
-
-    this.watcher.on('add', (path) => this.handleEvent('add', path));
-    this.watcher.on('change', (path) => this.handleEvent('change', path));
-    this.watcher.on('unlink', (path) => this.handleEvent('unlink', path));
-    this.watcher.on('error', (error) => this.handleError(error));
-
-    await new Promise<void>((resolve) => {
-      this.watcher!.on('ready', () => {
-        logger.info('RealtimeStrategy', 'File watcher ready');
-        resolve();
-      });
-    });
-
-    this.active = true;
+    // Create chokidar watcher, bind events, register cleanup handler
   }
 
   async stop(): Promise<void> {
-    // Clear pending debounce timers
-    for (const timeout of this.pendingEvents.values()) {
-      clearTimeout(timeout);
-    }
-    this.pendingEvents.clear();
-
-    // Close watcher
-    if (this.watcher) {
-      await this.watcher.close();
-      this.watcher = null;
-    }
-
-    this.active = false;
+    // Clear pending timers, close watcher, unregister cleanup
   }
 
   isActive(): boolean {
     return this.active;
   }
 
-  async onFileEvent(event: FileEvent): Promise<void> {
-    // Process immediately (with debounce handled internally)
-    await this.processEvent(event);
+  async onFileEvent(event: StrategyFileEvent): Promise<void> {
+    // Process immediately (with internal debouncing)
   }
 
   async flush(): Promise<void> {
-    // Nothing to flush - events are processed immediately
+    // No-op - events are processed immediately
   }
 
   getStats(): StrategyStats {
@@ -346,27 +327,57 @@ export class RealtimeStrategy implements IndexingStrategy {
     };
   }
 
-  // --- Private methods (extracted from FileWatcher) ---
-
-  private handleEvent(type: 'add' | 'change' | 'unlink', absolutePath: string): void {
-    // Convert to relative, check policy, debounce, then process
-    // (Implementation details from existing FileWatcher)
-  }
-
-  private async processEvent(event: FileEvent): Promise<void> {
-    // Route to indexManager or docsIndexManager based on file type
-    // Update fingerprints
-    // (Implementation details from existing FileWatcher)
-    this.processedCount++;
-    this.lastActivity = new Date();
-  }
-
-  private handleError(error: Error): void {
-    const logger = getLogger();
-    logger.error('RealtimeStrategy', 'Watcher error', { error });
-  }
+  // Private methods handle:
+  // - handleChokidarEvent() - Convert path, check hardcoded deny, create event, debounce
+  // - debounceEvent() - Prevent rapid re-processing of same file
+  // - processEvent() - Route to handleAddOrChange or handleUnlink
+  // - handleAddOrChange() - Check policy, hash file, compare fingerprint, update index
+  // - handleDocAddOrChange() - Route doc files to DocsIndexManager
+  // - handleUnlink() - Remove from index and fingerprints
+  // - handleDocUnlink() - Remove doc files from DocsIndexManager
+  // - handleError() - Log watcher errors
 }
+
+// Factory function
+export function createRealtimeStrategy(
+  projectPath: string,
+  indexManager: IndexManager,
+  docsIndexManager: DocsIndexManager | null,
+  policy: IndexingPolicy,
+  fingerprints: FingerprintsManager,
+  docsFingerprints: DocsFingerprintsManager | null,
+  options?: RealtimeStrategyOptions,
+): RealtimeStrategy;
 ```
+
+### New File: `src/engines/strategies/index.ts`
+
+Module exports for all strategies.
+
+### Updated: `src/engines/index.ts`
+
+Added exports:
+```typescript
+// Indexing Strategies
+export {
+  RealtimeStrategy,
+  createRealtimeStrategy,
+  type RealtimeStrategyOptions,
+} from './strategies/index.js';
+```
+
+### Tests: `tests/unit/engines/strategies/realtimeStrategy.test.ts`
+
+Comprehensive tests covering:
+- Interface compliance
+- Constructor options
+- Lifecycle management (initialize, start, stop, isActive)
+- getStats() return values
+- flush() no-op behavior
+- File event detection (add, change, delete)
+- Debouncing behavior
+- Accessors (getProjectPath, getPendingCount, getProcessingCount)
+- Factory function
 
 ---
 

@@ -147,3 +147,10 @@ export {
   STRATEGY_NAMES,
   isValidStrategyName,
 } from './indexingStrategy.js';
+
+// Indexing Strategies
+export {
+  RealtimeStrategy,
+  createRealtimeStrategy,
+  type RealtimeStrategyOptions,
+} from './strategies/index.js';

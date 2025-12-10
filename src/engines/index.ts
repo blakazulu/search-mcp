@@ -161,3 +161,10 @@ export {
   DEFAULT_GIT_DEBOUNCE_DELAY,
   type GitStrategyOptions,
 } from './strategies/index.js';
+
+// Strategy Orchestrator
+export {
+  StrategyOrchestrator,
+  createStrategyOrchestrator,
+  type StrategyOrchestratorDependencies,
+} from './strategyOrchestrator.js';

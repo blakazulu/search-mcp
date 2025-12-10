@@ -14,7 +14,7 @@ Add user-configurable indexing strategies to reduce performance overhead from co
 | 4 | SMCP-046 | Realtime Strategy | COMPLETED |
 | 5 | SMCP-047 | Lazy Strategy | COMPLETED |
 | 6 | SMCP-048 | Git Strategy | COMPLETED |
-| 7 | SMCP-049 | Strategy Orchestrator | Not Started |
+| 7 | SMCP-049 | Strategy Orchestrator | COMPLETED |
 | 8 | SMCP-050 | Tool Integrations | Not Started |
 | 9 | SMCP-051 | Server Integration | Not Started |
 
@@ -714,167 +714,122 @@ Comprehensive tests covering (40 tests total):
 
 ---
 
-## Phase 7: Strategy Orchestrator
+## Phase 7: Strategy Orchestrator (COMPLETED - SMCP-049)
 
 ### New File: `src/engines/strategyOrchestrator.ts`
+
+**Implementation completed 2025-12-10**
+
+Key exports:
+- `StrategyOrchestrator` - Main class for strategy lifecycle management
+- `createStrategyOrchestrator()` - Factory function
+- `StrategyOrchestratorDependencies` - Configuration interface
 
 ```typescript
 /**
  * Strategy Orchestrator
  *
  * Manages indexing strategy lifecycle:
- * - Creates and configures strategies
- * - Handles strategy switching
- * - Provides unified interface for server
+ * - Creates and configures strategies based on configuration
+ * - Handles strategy switching (flush old before starting new)
+ * - Provides unified interface for server and tools
+ * - Registers cleanup handlers for graceful shutdown
  */
 
-import { IndexingStrategy, StrategyStats } from './indexingStrategy.js';
-import { RealtimeStrategy } from './strategies/realtimeStrategy.js';
-import { LazyStrategy } from './strategies/lazyStrategy.js';
-import { GitStrategy } from './strategies/gitStrategy.js';
-import { IndexManager } from './indexManager.js';
-import { DocsIndexManager } from './docsIndexManager.js';
-import { IntegrityEngine } from './integrity.js';
-import { IndexingPolicy } from './indexPolicy.js';
-import { FingerprintsManager } from '../storage/fingerprints.js';
-import { DirtyFilesManager } from '../storage/dirtyFiles.js';
-import { Config } from '../storage/config.js';
-import { getLogger } from '../utils/logger.js';
-import { registerCleanup, unregisterCleanup, CleanupHandler } from '../utils/cleanup.js';
+export interface StrategyOrchestratorDependencies {
+  projectPath: string;
+  indexPath: string;
+  indexManager: IndexManager;
+  docsIndexManager: DocsIndexManager | null;
+  integrityEngine: IntegrityEngine;
+  policy: IndexingPolicy;
+  fingerprints: FingerprintsManager;
+  docsFingerprints: DocsFingerprintsManager | null;
+}
 
 export class StrategyOrchestrator {
   private currentStrategy: IndexingStrategy | null = null;
   private cleanupHandler: CleanupHandler | null = null;
 
-  constructor(
-    private readonly projectPath: string,
-    private readonly indexPath: string,
-    private readonly indexManager: IndexManager,
-    private readonly docsIndexManager: DocsIndexManager | null,
-    private readonly integrityEngine: IntegrityEngine,
-    private readonly policy: IndexingPolicy,
-    private readonly fingerprints: FingerprintsManager,
-    private readonly docsFingerprints: FingerprintsManager | null,
-  ) {}
+  constructor(deps: StrategyOrchestratorDependencies) { /* ... */ }
 
   /**
-   * Set and start a strategy by name
+   * Set and start a strategy based on configuration
+   * Idempotent - calling with same active strategy is a no-op
    */
   async setStrategy(config: Config): Promise<void> {
-    const logger = getLogger();
-    const strategyName = config.indexingStrategy;
-
     // If same strategy is already running, do nothing
-    if (this.currentStrategy?.name === strategyName && this.currentStrategy.isActive()) {
-      return;
-    }
-
-    // Stop current strategy (flush pending first)
-    if (this.currentStrategy) {
-      logger.info('StrategyOrchestrator', 'Switching strategy', {
-        from: this.currentStrategy.name,
-        to: strategyName,
-      });
-
-      await this.currentStrategy.flush();
-      await this.currentStrategy.stop();
-    }
-
-    // Create new strategy
-    this.currentStrategy = this.createStrategy(strategyName, config);
-
+    // Flush and stop current strategy before switching
+    // Create new strategy via factory
     // Initialize and start
-    await this.currentStrategy.initialize();
-    await this.currentStrategy.start();
-
-    // Register cleanup
-    if (this.cleanupHandler) {
-      unregisterCleanup(this.cleanupHandler);
-    }
-    this.cleanupHandler = async () => {
-      await this.stop();
-    };
-    registerCleanup(this.cleanupHandler, 'StrategyOrchestrator');
-
-    logger.info('StrategyOrchestrator', 'Strategy started', { strategy: strategyName });
+    // Register cleanup handler
   }
 
   /**
-   * Create a strategy instance
+   * Create a strategy instance (private factory)
    */
   private createStrategy(name: string, config: Config): IndexingStrategy {
     switch (name) {
-      case 'realtime':
-        return new RealtimeStrategy(
-          this.projectPath,
-          this.indexManager,
-          this.docsIndexManager,
-          this.policy,
-          this.fingerprints,
-          this.docsFingerprints,
-        );
-
-      case 'lazy':
-        return new LazyStrategy(
-          this.projectPath,
-          this.indexManager,
-          this.docsIndexManager,
-          this.policy,
-          new DirtyFilesManager(this.indexPath),
-          config.lazyIdleThreshold,
-        );
-
-      case 'git':
-        return new GitStrategy(
-          this.projectPath,
-          this.integrityEngine,
-        );
-
-      default:
-        throw new Error(`Unknown indexing strategy: ${name}`);
+      case 'realtime': return new RealtimeStrategy(...);
+      case 'lazy': return new LazyStrategy(...);
+      case 'git': return new GitStrategy(...);
+      default: throw new Error(`Unknown indexing strategy: ${name}`);
     }
   }
 
-  /**
-   * Get current strategy
-   */
-  getCurrentStrategy(): IndexingStrategy | null {
-    return this.currentStrategy;
-  }
+  /** Get current strategy or null */
+  getCurrentStrategy(): IndexingStrategy | null;
 
-  /**
-   * Flush pending changes (for lazy mode before search)
-   */
-  async flush(): Promise<void> {
-    if (this.currentStrategy) {
-      await this.currentStrategy.flush();
-    }
-  }
+  /** Flush pending changes (delegates to current strategy) */
+  async flush(): Promise<void>;
 
-  /**
-   * Stop current strategy
-   */
-  async stop(): Promise<void> {
-    if (this.currentStrategy) {
-      await this.currentStrategy.flush();
-      await this.currentStrategy.stop();
-      this.currentStrategy = null;
-    }
+  /** Stop current strategy (flush + stop + unregister cleanup) */
+  async stop(): Promise<void>;
 
-    if (this.cleanupHandler) {
-      unregisterCleanup(this.cleanupHandler);
-      this.cleanupHandler = null;
-    }
-  }
+  /** Get strategy statistics or null */
+  getStats(): StrategyStats | null;
 
-  /**
-   * Get strategy statistics
-   */
-  getStats(): StrategyStats | null {
-    return this.currentStrategy?.getStats() ?? null;
-  }
+  /** Check if a strategy is active */
+  isActive(): boolean;
+
+  /** Accessors */
+  getProjectPath(): string;
+  getIndexPath(): string;
 }
+
+// Factory function
+export function createStrategyOrchestrator(
+  deps: StrategyOrchestratorDependencies
+): StrategyOrchestrator;
 ```
+
+### Updated: `src/engines/index.ts`
+
+Added exports:
+```typescript
+// Strategy Orchestrator
+export {
+  StrategyOrchestrator,
+  createStrategyOrchestrator,
+  type StrategyOrchestratorDependencies,
+} from './strategyOrchestrator.js';
+```
+
+### Tests: `tests/unit/engines/strategyOrchestrator.test.ts`
+
+Comprehensive tests covering (43 tests total):
+- Constructor and initial state (no strategy active)
+- setStrategy() for all three strategies (realtime, lazy, git)
+- Idempotent behavior (same strategy is no-op)
+- Strategy switching (flush old before starting new)
+- flush() delegation and null-safety
+- stop() with flush, stop, and cleanup unregistration
+- getCurrentStrategy() accessor
+- getStats() delegation
+- isActive() status check
+- Factory function
+- Null docsIndexManager handling
+- Edge cases (rapid switching, failed strategy start)
 
 ---
 

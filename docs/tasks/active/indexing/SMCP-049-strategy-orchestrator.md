@@ -3,11 +3,11 @@ task_id: "SMCP-049"
 title: "Strategy Orchestrator"
 category: "Technical"
 priority: "P1"
-status: "not-started"
+status: "completed"
 created_date: "2025-12-10"
 due_date: ""
 estimated_hours: 3
-actual_hours: 0
+actual_hours: 2
 assigned_to: "blakazulu"
 tags: ["orchestrator", "indexing", "lifecycle"]
 ---
@@ -20,27 +20,27 @@ Create a StrategyOrchestrator class that manages the lifecycle of indexing strat
 
 ## Goals
 
-- [ ] Create StrategyOrchestrator class
-- [ ] Implement strategy factory method
-- [ ] Support runtime strategy switching
-- [ ] Register cleanup handlers
+- [x] Create StrategyOrchestrator class
+- [x] Implement strategy factory method
+- [x] Support runtime strategy switching
+- [x] Register cleanup handlers
 
 ## Success Criteria
 
-- ✅ Orchestrator can create any strategy by name
-- ✅ Strategy switching flushes pending before stopping old strategy
-- ✅ No data loss when switching strategies
-- ✅ Proper cleanup registration
-- ✅ Provides flush() for tools to call before search
+- [x] Orchestrator can create any strategy by name
+- [x] Strategy switching flushes pending before stopping old strategy
+- [x] No data loss when switching strategies
+- [x] Proper cleanup registration
+- [x] Provides flush() for tools to call before search
 
 ## Dependencies
 
 **Blocked by:**
 
-- SMCP-043: Config Schema
-- SMCP-046: Realtime Strategy
-- SMCP-047: Lazy Strategy
-- SMCP-048: Git Strategy
+- SMCP-043: Config Schema (COMPLETED)
+- SMCP-046: Realtime Strategy (COMPLETED)
+- SMCP-047: Lazy Strategy (COMPLETED)
+- SMCP-048: Git Strategy (COMPLETED)
 
 **Blocks:**
 
@@ -55,12 +55,12 @@ Create a StrategyOrchestrator class that manages the lifecycle of indexing strat
 
 ### Phase 1: Create Orchestrator Class (1.5 hours)
 
-- [ ] 1.1 Create `src/engines/strategyOrchestrator.ts`:
+- [x] 1.1 Create `src/engines/strategyOrchestrator.ts`:
     - Import all strategy classes
     - Import Config type
     - Import cleanup utilities
 
-- [ ] 1.2 Implement constructor with dependencies:
+- [x] 1.2 Implement constructor with dependencies:
     - projectPath
     - indexPath
     - indexManager
@@ -70,13 +70,13 @@ Create a StrategyOrchestrator class that manages the lifecycle of indexing strat
     - fingerprints
     - docsFingerprints (nullable)
 
-- [ ] 1.3 Implement state:
+- [x] 1.3 Implement state:
     - currentStrategy: IndexingStrategy | null
     - cleanupHandler: CleanupHandler | null
 
 ### Phase 2: Strategy Factory (1 hour)
 
-- [ ] 2.1 Implement `createStrategy(name, config)`:
+- [x] 2.1 Implement `createStrategy(name, config)`:
     ```typescript
     switch (name) {
       case 'realtime': return new RealtimeStrategy(...);
@@ -86,7 +86,7 @@ Create a StrategyOrchestrator class that manages the lifecycle of indexing strat
     }
     ```
 
-- [ ] 2.2 Implement `setStrategy(config)`:
+- [x] 2.2 Implement `setStrategy(config)`:
     - Check if same strategy already running
     - Flush current strategy
     - Stop current strategy
@@ -96,20 +96,20 @@ Create a StrategyOrchestrator class that manages the lifecycle of indexing strat
 
 ### Phase 3: Public Interface (0.5 hours)
 
-- [ ] 3.1 Implement `getCurrentStrategy()`:
+- [x] 3.1 Implement `getCurrentStrategy()`:
     - Return current strategy or null
 
-- [ ] 3.2 Implement `flush()`:
+- [x] 3.2 Implement `flush()`:
     - Delegate to current strategy's flush()
 
-- [ ] 3.3 Implement `stop()`:
+- [x] 3.3 Implement `stop()`:
     - Flush and stop current strategy
     - Unregister cleanup handler
 
-- [ ] 3.4 Implement `getStats()`:
+- [x] 3.4 Implement `getStats()`:
     - Delegate to current strategy's getStats()
 
-- [ ] 3.5 Export from `src/engines/index.ts`
+- [x] 3.5 Export from `src/engines/index.ts`
 
 ## Resources
 
@@ -120,19 +120,61 @@ Create a StrategyOrchestrator class that manages the lifecycle of indexing strat
 
 Before marking this task complete:
 
-- [ ] All subtasks completed
-- [ ] All success criteria met
-- [ ] Code tested (if applicable)
-- [ ] Documentation updated (if applicable)
-- [ ] Changes committed to Git
-- [ ] No regressions introduced
+- [x] All subtasks completed
+- [x] All success criteria met
+- [x] Code tested (if applicable)
+- [x] Documentation updated (if applicable)
+- [ ] Changes committed to Git (pending user approval)
+- [x] No regressions introduced
 
 ## Progress Log
 
 ### 2025-12-10 - 0 hours
 
-- ⏳ Task created
-- 📝 Subtasks defined
+- Task created
+- Subtasks defined
+
+### 2025-12-10 - 2 hours
+
+- Created `src/engines/strategyOrchestrator.ts` with full implementation
+- Implemented StrategyOrchestrator class with:
+  - Constructor accepting StrategyOrchestratorDependencies
+  - createStrategy() private factory method
+  - setStrategy(config) for starting/switching strategies
+  - getCurrentStrategy() accessor
+  - flush() delegation method
+  - stop() for graceful shutdown
+  - getStats() delegation method
+  - isActive() status check
+  - Cleanup handler registration/unregistration
+- Implemented factory function createStrategyOrchestrator()
+- Exported from `src/engines/index.ts`
+- Created comprehensive test suite (43 tests) in `tests/unit/engines/strategyOrchestrator.test.ts`
+- All 626 project tests pass with no regressions
+- Build successful with no TypeScript errors
+
+## Implementation Summary
+
+### New Files
+
+| File | Purpose |
+|------|---------|
+| `src/engines/strategyOrchestrator.ts` | Strategy lifecycle management |
+| `tests/unit/engines/strategyOrchestrator.test.ts` | Unit tests (43 tests) |
+
+### Modified Files
+
+| File | Changes |
+|------|---------|
+| `src/engines/index.ts` | Added exports for StrategyOrchestrator |
+
+### Key Features
+
+1. **Strategy Creation**: Factory method creates appropriate strategy based on config
+2. **Idempotent setStrategy()**: Calling with same active strategy is a no-op
+3. **Safe Switching**: Always flushes old strategy before stopping
+4. **Cleanup Registration**: Ensures graceful shutdown on server exit
+5. **Null-safe Operations**: flush(), stop(), getStats() all safe when no strategy active
 
 ## Notes
 

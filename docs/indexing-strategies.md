@@ -10,7 +10,7 @@ Add user-configurable indexing strategies to reduce performance overhead from co
 |-------|---------|-------------|--------|
 | 1 | SMCP-043 | Config Schema Changes | COMPLETED |
 | 2 | SMCP-044 | Dirty Files Manager | COMPLETED |
-| 3 | SMCP-045 | Strategy Interface | Not Started |
+| 3 | SMCP-045 | Strategy Interface | COMPLETED |
 | 4 | SMCP-046 | Realtime Strategy | Not Started |
 | 5 | SMCP-047 | Lazy Strategy | Not Started |
 | 6 | SMCP-048 | Git Strategy | Not Started |
@@ -124,9 +124,19 @@ export function getDirtyFilesPath(indexPath: string): string {
 
 ---
 
-## Phase 3: Strategy Interface
+## Phase 3: Strategy Interface (COMPLETED - SMCP-045)
 
 ### New File: `src/engines/indexingStrategy.ts`
+
+**Note:** Named `StrategyFileEvent` instead of `FileEvent` to avoid collision with existing `FileEvent` type in `fileWatcher.ts`.
+
+**Implemented exports:**
+- `StrategyFileEvent` - File event interface for strategy handlers
+- `StrategyStats` - Statistics interface for status reporting
+- `IndexingStrategy` - Main interface that all strategies must implement
+- `STRATEGY_NAMES` - Constant array of valid strategy names
+- `StrategyName` - Type alias for valid strategy names
+- `isValidStrategyName()` - Type guard function
 
 ```typescript
 /**
@@ -143,7 +153,7 @@ export function getDirtyFilesPath(indexPath: string): string {
 /**
  * File event from the filesystem
  */
-export interface FileEvent {
+export interface StrategyFileEvent {
   type: 'add' | 'change' | 'unlink';
   relativePath: string;
   absolutePath: string;
@@ -184,7 +194,7 @@ export interface IndexingStrategy {
   isActive(): boolean;
 
   /** Handle a file event - may process immediately or queue */
-  onFileEvent(event: FileEvent): Promise<void>;
+  onFileEvent(event: StrategyFileEvent): Promise<void>;
 
   /** Force processing of all pending changes */
   flush(): Promise<void>;
@@ -192,6 +202,29 @@ export interface IndexingStrategy {
   /** Get statistics for status reporting */
   getStats(): StrategyStats;
 }
+
+// ============================================================================
+// Type Guards
+// ============================================================================
+
+export const STRATEGY_NAMES = ['realtime', 'lazy', 'git'] as const;
+export type StrategyName = (typeof STRATEGY_NAMES)[number];
+export function isValidStrategyName(name: string): name is StrategyName {
+  return STRATEGY_NAMES.includes(name as StrategyName);
+}
+```
+
+**Updated `src/engines/index.ts` with new exports:**
+```typescript
+// Indexing Strategy Interface
+export {
+  type StrategyFileEvent,
+  type StrategyStats,
+  type IndexingStrategy,
+  type StrategyName,
+  STRATEGY_NAMES,
+  isValidStrategyName,
+} from './indexingStrategy.js';
 ```
 
 ---

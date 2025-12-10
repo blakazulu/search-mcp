@@ -137,3 +137,13 @@ export {
   DocsIndexManager,
   type DocsDeltaResult,
 } from './docsIndexManager.js';
+
+// Indexing Strategy Interface
+export {
+  type StrategyFileEvent,
+  type StrategyStats,
+  type IndexingStrategy,
+  type StrategyName,
+  STRATEGY_NAMES,
+  isValidStrategyName,
+} from './indexingStrategy.js';

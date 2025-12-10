@@ -15,7 +15,7 @@ Add user-configurable indexing strategies to reduce performance overhead from co
 | 5 | SMCP-047 | Lazy Strategy | COMPLETED |
 | 6 | SMCP-048 | Git Strategy | COMPLETED |
 | 7 | SMCP-049 | Strategy Orchestrator | COMPLETED |
-| 8 | SMCP-050 | Tool Integrations | Not Started |
+| 8 | SMCP-050 | Tool Integrations | COMPLETED |
 | 9 | SMCP-051 | Server Integration | Not Started |
 
 ---
@@ -833,61 +833,104 @@ Comprehensive tests covering (43 tests total):
 
 ---
 
-## Phase 8: Tool Integrations
+## Phase 8: Tool Integrations (COMPLETED - SMCP-050)
 
-### Modify: `src/tools/searchCode.ts`
+**Implementation completed 2025-12-10**
 
-Add before executing search:
+All tools updated to integrate with the strategy orchestrator via optional context properties.
+
+### Modified: `src/tools/searchCode.ts`
+
+- Added `StrategyOrchestrator` type import
+- Extended `ToolContext` interface with optional `orchestrator?: StrategyOrchestrator`
+- Added flush logic before search:
 
 ```typescript
-// Flush pending changes if using lazy strategy
-const orchestrator = getOrchestrator(); // Access via server context
-if (orchestrator?.getCurrentStrategy()?.name === 'lazy') {
-  await orchestrator.flush();
+// Flush pending changes if using lazy strategy (ensures fresh results)
+if (context.orchestrator) {
+  const strategy = context.orchestrator.getCurrentStrategy();
+  if (strategy?.name === 'lazy') {
+    logger.debug('searchCode', 'Flushing lazy strategy before search');
+    await context.orchestrator.flush();
+  }
 }
 ```
 
-### Modify: `src/tools/searchDocs.ts`
+### Modified: `src/tools/searchDocs.ts`
 
-Same change as searchCode.ts.
+- Same changes as searchCode.ts
+- Extended `DocsToolContext` with optional `orchestrator?: StrategyOrchestrator`
 
-### Modify: `src/tools/getIndexStatus.ts`
+### Modified: `src/tools/getIndexStatus.ts`
 
-Add to status output:
+- Added `StrategyOrchestrator` and `StrategyName` type imports
+- Extended `GetIndexStatusOutput` with new fields:
+  - `indexingStrategy?: StrategyName` - Current strategy name
+  - `pendingFiles?: number` - Files pending indexing (for lazy strategy)
+- Added strategy info collection in `collectStatus()`:
 
 ```typescript
-// Add strategy info to result
-const strategyStats = orchestrator?.getStats();
-if (strategyStats) {
-  result.indexingStrategy = strategyStats.name;
-  result.pendingFiles = strategyStats.pendingFiles;
+// Get strategy info from orchestrator if available
+let indexingStrategy: StrategyName | undefined;
+let pendingFiles: number | undefined;
+
+if (context.orchestrator) {
+  const strategyStats = context.orchestrator.getStats();
+  if (strategyStats) {
+    indexingStrategy = strategyStats.name as StrategyName;
+    pendingFiles = strategyStats.pendingFiles;
+  }
 }
 ```
 
-### Modify: `src/tools/createIndex.ts`
+### Modified: `src/tools/createIndex.ts`
 
-After indexing completes, start the strategy:
-
-```typescript
-// Start configured indexing strategy
-const config = await configManager.load();
-await orchestrator.setStrategy(config);
-```
-
-### Modify: `src/tools/deleteIndex.ts`
-
-Before deleting:
+- Added `StrategyOrchestrator` and `Config` type imports
+- Extended `CreateIndexContext` with:
+  - `orchestrator?: StrategyOrchestrator`
+  - `config?: Config` (required if orchestrator is provided)
+- Added step to start strategy after indexing:
 
 ```typescript
-// Stop strategy
-await orchestrator?.stop();
-
-// Delete dirty-files.json
-const dirtyFilesPath = getDirtyFilesPath(indexPath);
-if (fs.existsSync(dirtyFilesPath)) {
-  await fs.promises.unlink(dirtyFilesPath);
+// Step 6: Start indexing strategy if orchestrator and config provided
+if (context.orchestrator && context.config) {
+  logger.debug('createIndex', 'Starting indexing strategy', {
+    strategy: context.config.indexingStrategy,
+  });
+  await context.orchestrator.setStrategy(context.config);
+  logger.info('createIndex', 'Indexing strategy started', {
+    strategy: context.config.indexingStrategy,
+  });
 }
 ```
+
+### Modified: `src/tools/deleteIndex.ts`
+
+- Added `StrategyOrchestrator` type import
+- Added `getDirtyFilesPath` to path utils import
+- Extended `DeleteIndexContext` with `orchestrator?: StrategyOrchestrator`
+- Added step to stop orchestrator before deletion:
+
+```typescript
+// Step 2: Stop strategy orchestrator if provided
+if (context.orchestrator) {
+  logger.debug('deleteIndex', 'Stopping indexing strategy');
+  try {
+    await context.orchestrator.stop();
+    logger.debug('deleteIndex', 'Indexing strategy stopped');
+  } catch (error) {
+    logger.warn('deleteIndex', 'Failed to stop indexing strategy', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    // Continue with deletion even if strategy stop fails
+  }
+}
+```
+
+- Updated `safeDeleteIndex` to include additional files:
+  - `docs.lancedb` (directory)
+  - `docs-fingerprints.json`
+  - `dirty-files.json`
 
 ---
 

@@ -17,11 +17,12 @@
 import { z } from 'zod';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { getIndexPath, getIndexesDir, isWithinDirectory, normalizePath } from '../utils/paths.js';
+import { getIndexPath, getIndexesDir, isWithinDirectory, normalizePath, getDirtyFilesPath } from '../utils/paths.js';
 import { getLogger } from '../utils/logger.js';
 import { MCPError, ErrorCode, isMCPError } from '../errors/index.js';
 import { loadMetadata } from '../storage/metadata.js';
 import type { ToolContext } from './searchCode.js';
+import type { StrategyOrchestrator } from '../engines/strategyOrchestrator.js';
 
 // ============================================================================
 // Input/Output Schemas
@@ -68,6 +69,8 @@ export interface DeleteIndexContext extends ToolContext {
   stopWatcher?: () => Promise<void>;
   /** Optional callback to close LanceDB connection before deletion */
   closeLanceDB?: () => Promise<void>;
+  /** Optional strategy orchestrator for stopping strategy before deletion */
+  orchestrator?: StrategyOrchestrator;
 }
 
 // ============================================================================
@@ -169,7 +172,10 @@ export async function safeDeleteIndex(
   // Define the files/directories to delete in order
   const itemsToDelete = [
     { name: 'index.lancedb', isDirectory: true },
+    { name: 'docs.lancedb', isDirectory: true },
     { name: 'fingerprints.json', isDirectory: false },
+    { name: 'docs-fingerprints.json', isDirectory: false },
+    { name: 'dirty-files.json', isDirectory: false },
     { name: 'config.json', isDirectory: false },
     { name: 'metadata.json', isDirectory: false },
     { name: 'logs', isDirectory: true },
@@ -301,7 +307,21 @@ export async function deleteIndex(
       };
     }
 
-    // Step 2: Stop file watcher if callback provided
+    // Step 2: Stop strategy orchestrator if provided
+    if (context.orchestrator) {
+      logger.debug('deleteIndex', 'Stopping indexing strategy');
+      try {
+        await context.orchestrator.stop();
+        logger.debug('deleteIndex', 'Indexing strategy stopped');
+      } catch (error) {
+        logger.warn('deleteIndex', 'Failed to stop indexing strategy', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        // Continue with deletion even if strategy stop fails
+      }
+    }
+
+    // Step 3: Stop file watcher if callback provided (legacy - kept for backward compatibility)
     if (context.stopWatcher) {
       logger.debug('deleteIndex', 'Stopping file watcher');
       try {
@@ -315,7 +335,7 @@ export async function deleteIndex(
       }
     }
 
-    // Step 3: Close LanceDB connection if callback provided
+    // Step 5: Close LanceDB connection if callback provided
     if (context.closeLanceDB) {
       logger.debug('deleteIndex', 'Closing LanceDB connection');
       try {
@@ -329,7 +349,7 @@ export async function deleteIndex(
       }
     }
 
-    // Step 4: Delete the index directory
+    // Step 6: Delete the index directory
     const { success, warnings } = await safeDeleteIndex(indexPath);
 
     if (warnings.length > 0) {

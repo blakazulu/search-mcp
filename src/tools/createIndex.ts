@@ -21,6 +21,8 @@ import { getLogger } from '../utils/logger.js';
 import { IndexingLock } from '../utils/asyncMutex.js';
 import { MCPError, ErrorCode, isMCPError } from '../errors/index.js';
 import type { ToolContext } from './searchCode.js';
+import type { StrategyOrchestrator } from '../engines/strategyOrchestrator.js';
+import type { Config } from '../storage/config.js';
 
 // ============================================================================
 // Input/Output Schemas
@@ -74,6 +76,10 @@ export interface CreateIndexContext extends ToolContext {
   onProgress?: ProgressCallback;
   /** Whether user has confirmed the operation (for MCP confirmation flow) */
   confirmed?: boolean;
+  /** Optional strategy orchestrator for starting indexing strategy after completion */
+  orchestrator?: StrategyOrchestrator;
+  /** Optional config for starting strategy (required if orchestrator is provided) */
+  config?: Config;
 }
 
 // ============================================================================
@@ -320,8 +326,16 @@ export async function createIndex(
       duration: output.duration,
     });
 
-    // Note: File watcher startup would be handled by the MCP server
-    // after this tool completes. The server maintains watcher state.
+    // Step 6: Start indexing strategy if orchestrator and config provided
+    if (context.orchestrator && context.config) {
+      logger.debug('createIndex', 'Starting indexing strategy', {
+        strategy: context.config.indexingStrategy,
+      });
+      await context.orchestrator.setStrategy(context.config);
+      logger.info('createIndex', 'Indexing strategy started', {
+        strategy: context.config.indexingStrategy,
+      });
+    }
 
     return output;
   } catch (error) {

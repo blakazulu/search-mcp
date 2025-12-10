@@ -3,11 +3,11 @@ task_id: "SMCP-050"
 title: "Tool Integrations"
 category: "Technical"
 priority: "P1"
-status: "not-started"
+status: "completed"
 created_date: "2025-12-10"
 due_date: ""
 estimated_hours: 3
-actual_hours: 0
+actual_hours: 2
 assigned_to: "blakazulu"
 tags: ["tools", "indexing", "integration"]
 ---
@@ -20,18 +20,18 @@ Update MCP tools to integrate with the strategy orchestrator. Search tools need 
 
 ## Goals
 
-- [ ] Search tools flush lazy strategy before search
-- [ ] Status tool reports current strategy and pending files
-- [ ] Create index starts the configured strategy
-- [ ] Delete index stops strategy and cleans up
+- [x] Search tools flush lazy strategy before search
+- [x] Status tool reports current strategy and pending files
+- [x] Create index starts the configured strategy
+- [x] Delete index stops strategy and cleans up
 
 ## Success Criteria
 
-- ✅ search_code flushes pending files before search (lazy mode)
-- ✅ search_docs flushes pending files before search (lazy mode)
-- ✅ get_index_status shows indexingStrategy and pendingFiles
-- ✅ create_index starts strategy after indexing completes
-- ✅ delete_index stops strategy and removes dirty-files.json
+- [x] search_code flushes pending files before search (lazy mode)
+- [x] search_docs flushes pending files before search (lazy mode)
+- [x] get_index_status shows indexingStrategy and pendingFiles
+- [x] create_index starts strategy after indexing completes
+- [x] delete_index stops strategy and removes dirty-files.json
 
 ## Dependencies
 
@@ -55,54 +55,38 @@ Update MCP tools to integrate with the strategy orchestrator. Search tools need 
 
 ### Phase 1: Search Tools (1 hour)
 
-- [ ] 1.1 Modify `src/tools/searchCode.ts`:
-    ```typescript
-    // Before executing search
-    const orchestrator = getOrchestrator();
-    if (orchestrator?.getCurrentStrategy()?.name === 'lazy') {
-      await orchestrator.flush();
-    }
-    ```
+- [x] 1.1 Modify `src/tools/searchCode.ts`:
+    - Added `StrategyOrchestrator` type import
+    - Extended `ToolContext` interface with optional `orchestrator` property
+    - Added flush logic before search when using lazy strategy
 
-- [ ] 1.2 Modify `src/tools/searchDocs.ts`:
-    - Same flush logic as searchCode
+- [x] 1.2 Modify `src/tools/searchDocs.ts`:
+    - Same changes as searchCode.ts
+    - Extended `DocsToolContext` with optional `orchestrator` property
 
 ### Phase 2: Status Tool (0.5 hours)
 
-- [ ] 2.1 Modify `src/tools/getIndexStatus.ts`:
-    ```typescript
-    // Add to result object
-    const strategyStats = orchestrator?.getStats();
-    if (strategyStats) {
-      result.indexingStrategy = strategyStats.name;
-      result.pendingFiles = strategyStats.pendingFiles;
-    }
-    ```
+- [x] 2.1 Modify `src/tools/getIndexStatus.ts`:
+    - Added `StrategyOrchestrator` and `StrategyName` type imports
+    - Added `indexingStrategy` and `pendingFiles` to output interface
+    - Added logic to get strategy stats from orchestrator in `collectStatus()`
 
-- [ ] 2.2 Update result type to include new fields
+- [x] 2.2 Update result type to include new fields
 
 ### Phase 3: Index Management Tools (1.5 hours)
 
-- [ ] 3.1 Modify `src/tools/createIndex.ts`:
-    ```typescript
-    // After indexing completes
-    const config = await configManager.load();
-    await orchestrator.setStrategy(config);
-    ```
+- [x] 3.1 Modify `src/tools/createIndex.ts`:
+    - Added `StrategyOrchestrator` and `Config` type imports
+    - Extended `CreateIndexContext` with optional `orchestrator` and `config` properties
+    - Added step to start strategy after indexing completes
 
-- [ ] 3.2 Modify `src/tools/deleteIndex.ts`:
-    ```typescript
-    // Before deleting index
-    await orchestrator?.stop();
+- [x] 3.2 Modify `src/tools/deleteIndex.ts`:
+    - Added `StrategyOrchestrator` type import
+    - Extended `DeleteIndexContext` with optional `orchestrator` property
+    - Added step to stop orchestrator before deletion
+    - Added `dirty-files.json`, `docs.lancedb`, and `docs-fingerprints.json` to items to delete
 
-    // Delete dirty-files.json
-    const dirtyFilesPath = getDirtyFilesPath(indexPath);
-    if (fs.existsSync(dirtyFilesPath)) {
-      await fs.promises.unlink(dirtyFilesPath);
-    }
-    ```
-
-- [ ] 3.3 Import getDirtyFilesPath in deleteIndex
+- [x] 3.3 Import getDirtyFilesPath in deleteIndex
 
 ## Resources
 
@@ -113,23 +97,35 @@ Update MCP tools to integrate with the strategy orchestrator. Search tools need 
 
 Before marking this task complete:
 
-- [ ] All subtasks completed
-- [ ] All success criteria met
-- [ ] Code tested (if applicable)
-- [ ] Documentation updated (if applicable)
+- [x] All subtasks completed
+- [x] All success criteria met
+- [x] Code tested (if applicable)
+- [x] Documentation updated (if applicable)
 - [ ] Changes committed to Git
-- [ ] No regressions introduced
+- [x] No regressions introduced
 
 ## Progress Log
 
 ### 2025-12-10 - 0 hours
 
-- ⏳ Task created
-- 📝 Subtasks defined
+- Task created
+- Subtasks defined
+
+### 2025-12-10 - 2 hours
+
+- Implemented all tool integrations
+- Modified searchCode.ts with flush logic before search
+- Modified searchDocs.ts with flush logic before search
+- Modified getIndexStatus.ts to report strategy info (indexingStrategy, pendingFiles)
+- Modified createIndex.ts to start strategy after indexing
+- Modified deleteIndex.ts to stop strategy and cleanup dirty-files.json
+- Updated safeDeleteIndex to also delete docs.lancedb, docs-fingerprints.json, dirty-files.json
+- All 1748 tests passing, no regressions
+- Build successful
 
 ## Notes
 
-- getOrchestrator() function needs to be created/exported from server context
+- Orchestrator is passed via optional properties in tool contexts (backward compatible)
 - Only flush for lazy strategy (realtime doesn't need it, git uses integrity)
-- Could also flush for git strategy before search (optional enhancement)
-- Consider adding a small delay after flush to ensure index is updated
+- Tool contexts extended with optional orchestrator property to avoid breaking changes
+- Server integration (SMCP-051) will wire up the orchestrator to the actual tool calls

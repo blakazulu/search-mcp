@@ -22,6 +22,7 @@ import { loadMetadata } from '../storage/metadata.js';
 import { getIndexPath } from '../utils/paths.js';
 import { getLogger } from '../utils/logger.js';
 import { indexNotFound, MCPError, ErrorCode } from '../errors/index.js';
+import type { StrategyOrchestrator } from '../engines/strategyOrchestrator.js';
 
 // ============================================================================
 // Input/Output Schemas
@@ -89,6 +90,8 @@ export interface SearchDocsOutput {
 export interface DocsToolContext {
   /** Absolute path to the project root */
   projectPath: string;
+  /** Optional strategy orchestrator for flushing pending changes before search */
+  orchestrator?: StrategyOrchestrator;
 }
 
 // ============================================================================
@@ -130,6 +133,15 @@ export async function searchDocs(
     topK: input.top_k,
     projectPath: context.projectPath,
   });
+
+  // Flush pending changes if using lazy strategy (ensures fresh results)
+  if (context.orchestrator) {
+    const strategy = context.orchestrator.getCurrentStrategy();
+    if (strategy?.name === 'lazy') {
+      logger.debug('searchDocs', 'Flushing lazy strategy before search');
+      await context.orchestrator.flush();
+    }
+  }
 
   // Get the index path for this project
   const indexPath = getIndexPath(context.projectPath);

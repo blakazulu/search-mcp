@@ -21,6 +21,8 @@ import { getIndexPath, getLanceDbPath } from '../utils/paths.js';
 import { getLogger } from '../utils/logger.js';
 import { indexNotFound, MCPError, ErrorCode, isMCPError } from '../errors/index.js';
 import type { ToolContext } from './searchCode.js';
+import type { StrategyOrchestrator } from '../engines/strategyOrchestrator.js';
+import type { StrategyName } from '../engines/indexingStrategy.js';
 
 // ============================================================================
 // Input/Output Schemas
@@ -73,6 +75,10 @@ export interface GetIndexStatusOutput {
     processedFiles?: number;
     startedAt?: string;
   };
+  /** Current indexing strategy (realtime, lazy, git) */
+  indexingStrategy?: StrategyName;
+  /** Number of files pending indexing (for lazy strategy) */
+  pendingFiles?: number;
 }
 
 // ============================================================================
@@ -253,6 +259,18 @@ export async function collectStatus(
     }
   }
 
+  // Get strategy info from orchestrator if available
+  let indexingStrategy: StrategyName | undefined;
+  let pendingFiles: number | undefined;
+
+  if (context.orchestrator) {
+    const strategyStats = context.orchestrator.getStats();
+    if (strategyStats) {
+      indexingStrategy = strategyStats.name as StrategyName;
+      pendingFiles = strategyStats.pendingFiles;
+    }
+  }
+
   // Build the output
   const output: GetIndexStatusOutput = {
     status,
@@ -265,6 +283,8 @@ export async function collectStatus(
     warning,
     failedEmbeddings: metadata.stats.failedEmbeddings,
     indexingProgress,
+    indexingStrategy,
+    pendingFiles,
   };
 
   logger.debug('getIndexStatus', 'Status collected', {
@@ -273,6 +293,8 @@ export async function collectStatus(
     totalChunks: output.totalChunks,
     storageSize: output.storageSize,
     warning: output.warning,
+    indexingStrategy: output.indexingStrategy,
+    pendingFiles: output.pendingFiles,
   });
 
   return output;

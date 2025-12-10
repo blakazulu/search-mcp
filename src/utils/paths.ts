@@ -6,12 +6,29 @@
  * - Relative path conversion (always forward-slash separated)
  * - Path traversal prevention (security)
  * - Index storage path helpers
+ * - Path length validation (Windows MAX_PATH)
+ * - Unicode normalization (NFC)
  */
 
 import * as path from 'node:path';
 import * as os from 'node:os';
 import * as fs from 'node:fs';
 import { hashProjectPath } from './hash.js';
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+/**
+ * Maximum path length for Windows (traditional MAX_PATH limit)
+ * Note: Long path support exists but is not universally enabled
+ */
+export const MAX_PATH_LENGTH_WINDOWS = 260;
+
+/**
+ * Maximum path length for Unix-like systems (PATH_MAX)
+ */
+export const MAX_PATH_LENGTH_UNIX = 4096;
 
 // ============================================================================
 // Path Normalization
@@ -55,6 +72,83 @@ export function normalizePath(inputPath: string): string {
   }
 
   return normalized;
+}
+
+/**
+ * Normalize Unicode characters in a path to NFC form
+ *
+ * Different operating systems may use different Unicode normalization forms:
+ * - macOS uses NFD (decomposed)
+ * - Windows and Linux typically use NFC (composed)
+ *
+ * This function normalizes paths to NFC for consistent comparison and storage.
+ *
+ * @param filePath - The path to normalize
+ * @returns Path with Unicode characters normalized to NFC form
+ *
+ * @example
+ * ```typescript
+ * // The character 'e' can be represented as:
+ * // - NFC: 'e' (single code point U+00E9)
+ * // - NFD: 'e' + combining acute accent (U+0065 + U+0301)
+ * normalizeUnicode('cafe\u0301') // => 'cafe' (with composed e)
+ * ```
+ */
+export function normalizeUnicode(filePath: string): string {
+  // Normalize to NFC form for consistent comparison
+  return filePath.normalize('NFC');
+}
+
+/**
+ * Validate that a path length is within acceptable limits
+ *
+ * Windows traditionally has a MAX_PATH limit of 260 characters.
+ * Unix-like systems typically allow up to 4096 characters.
+ *
+ * @param absolutePath - The absolute path to validate
+ * @returns true if the path length is acceptable
+ *
+ * @example
+ * ```typescript
+ * validatePathLength('/home/user/project/file.ts') // => true
+ * validatePathLength('C:\\very\\long\\path...') // => depends on length
+ * ```
+ */
+export function validatePathLength(absolutePath: string): boolean {
+  const maxLength = process.platform === 'win32'
+    ? MAX_PATH_LENGTH_WINDOWS
+    : MAX_PATH_LENGTH_UNIX;
+
+  return absolutePath.length <= maxLength;
+}
+
+/**
+ * Check if a path is too long for the current platform
+ *
+ * Returns detailed information about path length issues.
+ *
+ * @param absolutePath - The absolute path to check
+ * @returns Object with validation result and details
+ */
+export function checkPathLength(absolutePath: string): {
+  valid: boolean;
+  length: number;
+  maxLength: number;
+  exceededBy: number;
+} {
+  const maxLength = process.platform === 'win32'
+    ? MAX_PATH_LENGTH_WINDOWS
+    : MAX_PATH_LENGTH_UNIX;
+
+  const length = absolutePath.length;
+  const valid = length <= maxLength;
+
+  return {
+    valid,
+    length,
+    maxLength,
+    exceededBy: valid ? 0 : length - maxLength,
+  };
 }
 
 /**
@@ -167,6 +261,12 @@ export function isPathTraversal(relativePath: string): boolean {
  * Joins the paths and validates that the result stays within the base directory.
  * Returns null if path traversal is detected.
  *
+ * SECURITY: This function rejects ALL paths containing:
+ * - Parent directory references (..)
+ * - Absolute paths
+ * - Null bytes (poison null byte attack)
+ * - Paths that would escape the base directory
+ *
  * @param basePath - The base directory path
  * @param relativePath - The relative path to join
  * @returns The joined absolute path, or null if traversal detected
@@ -180,31 +280,40 @@ export function isPathTraversal(relativePath: string): boolean {
  * // => null (traversal detected)
  *
  * safeJoin('/project', 'src/../config.ts')
- * // => '/project/config.ts' (resolved within base, so allowed)
+ * // => null (contains .., always rejected for security)
  * ```
  */
 export function safeJoin(basePath: string, relativePath: string): string | null {
-  // First check for obvious traversal patterns
-  if (isPathTraversal(relativePath)) {
-    // Special case: allow paths with .. that resolve within base
-    // Convert forward slashes to platform separators
-    const platformRelative = relativePath.replace(/\//g, path.sep);
-    const normalizedBase = normalizePath(basePath);
-    const joined = path.resolve(normalizedBase, platformRelative);
-    const normalizedJoined = normalizePath(joined);
-
-    // Verify result is still within base directory
-    if (!isWithinDirectory(normalizedJoined, normalizedBase)) {
-      return null;
-    }
-
-    return normalizedJoined;
+  // SECURITY: Reject any path containing .. components
+  // This is a strict policy to prevent path traversal attacks
+  // Even paths that would resolve within base are rejected
+  const normalized = relativePath.replace(/\\/g, '/');
+  if (normalized.includes('..')) {
+    return null;
   }
 
+  // Reject absolute paths
+  if (path.isAbsolute(relativePath)) {
+    return null;
+  }
+
+  // Reject Windows drive letters in relative paths
+  if (/^[A-Za-z]:/.test(normalized)) {
+    return null;
+  }
+
+  // Reject null bytes (poison null byte attack)
+  if (relativePath.includes('\0')) {
+    return null;
+  }
+
+  // Apply Unicode normalization for consistent handling
+  const normalizedPath = normalizeUnicode(relativePath);
+
   // Convert forward slashes to platform separators and join
-  const platformRelative = relativePath.replace(/\//g, path.sep);
+  const platformRelative = normalizedPath.replace(/\//g, path.sep);
   const normalizedBase = normalizePath(basePath);
-  const joined = path.join(normalizedBase, platformRelative);
+  const joined = path.resolve(normalizedBase, platformRelative);
   const normalizedJoined = normalizePath(joined);
 
   // Final safety check: ensure result is within base

@@ -36,14 +36,20 @@ export {
 
 // Path exports
 export {
+  // Constants
+  MAX_PATH_LENGTH_WINDOWS,
+  MAX_PATH_LENGTH_UNIX,
   // Path normalization
   normalizePath,
+  normalizeUnicode,
   toRelativePath,
   toAbsolutePath,
   // Security functions
   isPathTraversal,
   safeJoin,
   isWithinDirectory,
+  validatePathLength,
+  checkPathLength,
   // Storage paths
   getStorageRoot,
   getIndexPath,
@@ -54,6 +60,8 @@ export {
   getMetadataPath,
   getFingerprintsPath,
   getLanceDbPath,
+  getDocsFingerprintsPath,
+  getDocsLanceDbPath,
   // Utility functions
   expandTilde,
   getExtension,

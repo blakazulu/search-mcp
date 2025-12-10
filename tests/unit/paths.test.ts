@@ -5,11 +5,16 @@ import * as os from 'node:os';
 
 import {
   normalizePath,
+  normalizeUnicode,
   toRelativePath,
   toAbsolutePath,
   isPathTraversal,
   safeJoin,
   isWithinDirectory,
+  validatePathLength,
+  checkPathLength,
+  MAX_PATH_LENGTH_WINDOWS,
+  MAX_PATH_LENGTH_UNIX,
   getStorageRoot,
   getIndexPath,
   getIndexesDir,
@@ -18,6 +23,8 @@ import {
   getMetadataPath,
   getFingerprintsPath,
   getLanceDbPath,
+  getDocsFingerprintsPath,
+  getDocsLanceDbPath,
   expandTilde,
   getExtension,
   getBaseName,
@@ -221,13 +228,12 @@ describe('Path Utilities', () => {
       expect(result).toBeNull();
     });
 
-    it('should allow paths with .. that resolve within base', () => {
-      const result = safeJoin(basePath, 'src/../config.ts');
-      expect(result).not.toBeNull();
-      if (result) {
-        expect(result).toContain('config.ts');
-        expect(isWithinDirectory(result, basePath)).toBe(true);
-      }
+    // SECURITY: Now rejects ALL paths with .. components
+    it('should reject all paths containing .. for security', () => {
+      // Even paths that would resolve within base are now rejected
+      expect(safeJoin(basePath, 'src/../config.ts')).toBeNull();
+      expect(safeJoin(basePath, 'foo/../bar/file.ts')).toBeNull();
+      expect(safeJoin(basePath, './src/../test')).toBeNull();
     });
 
     it('should return null for paths escaping base via ..', () => {
@@ -241,6 +247,44 @@ describe('Path Utilities', () => {
       if (result) {
         expect(result.endsWith('README.md')).toBe(true);
       }
+    });
+
+    // Additional security tests for path traversal
+    describe('Path Traversal Security', () => {
+      it('should reject Unix-style traversal attacks', () => {
+        expect(safeJoin(basePath, '../../../etc/passwd')).toBeNull();
+        expect(safeJoin(basePath, '..\\..\\..\\etc\\passwd')).toBeNull();
+      });
+
+      it('should reject Windows-style traversal attacks', () => {
+        expect(safeJoin(basePath, '..\\..\\windows\\system32')).toBeNull();
+        expect(safeJoin(basePath, '..\\..\\..\\..\\windows\\system32')).toBeNull();
+      });
+
+      it('should reject mixed traversal patterns', () => {
+        expect(safeJoin(basePath, 'foo/../../../bar')).toBeNull();
+        expect(safeJoin(basePath, 'foo/..\\..\\bar')).toBeNull();
+      });
+
+      it('should reject null byte injection', () => {
+        expect(safeJoin(basePath, 'file.txt\0.jpg')).toBeNull();
+        expect(safeJoin(basePath, 'src/file\0test.ts')).toBeNull();
+      });
+
+      it('should reject absolute paths', () => {
+        expect(safeJoin(basePath, '/etc/passwd')).toBeNull();
+        expect(safeJoin(basePath, 'C:\\Windows\\System32')).toBeNull();
+      });
+
+      it('should reject Windows drive letters in relative paths', () => {
+        expect(safeJoin(basePath, 'D:/data/file.txt')).toBeNull();
+        expect(safeJoin(basePath, 'C:file.txt')).toBeNull();
+      });
+
+      it('should handle encoded traversal attempts', () => {
+        // These should be caught by the .. check after normalization
+        expect(safeJoin(basePath, '..%2F..%2Fetc%2Fpasswd')).toBeNull();
+      });
     });
   });
 
@@ -463,6 +507,104 @@ describe('Path Utilities', () => {
         // Dotfiles with extensions return name without extension
         expect(getBaseName('/path/to/.eslintrc.json')).toBe('.eslintrc');
       });
+    });
+  });
+
+  describe('Unicode Normalization', () => {
+    describe('normalizeUnicode', () => {
+      it('should normalize NFD to NFC', () => {
+        // 'e' (U+0065) + combining acute accent (U+0301) -> e (U+00E9)
+        const nfd = 'cafe\u0301'; // 'cafe' with decomposed accent
+        const nfc = 'caf\u00e9'; // 'cafe' with composed accent
+        expect(normalizeUnicode(nfd)).toBe(nfc);
+      });
+
+      it('should not change already normalized strings', () => {
+        const path = '/home/user/project/src/file.ts';
+        expect(normalizeUnicode(path)).toBe(path);
+      });
+
+      it('should handle paths with unicode characters', () => {
+        const path = '/home/user/projet/fichier.ts';
+        expect(normalizeUnicode(path)).toBe('/home/user/projet/fichier.ts');
+      });
+
+      it('should handle empty strings', () => {
+        expect(normalizeUnicode('')).toBe('');
+      });
+    });
+  });
+
+  describe('Path Length Validation', () => {
+    describe('Constants', () => {
+      it('should have correct MAX_PATH values', () => {
+        expect(MAX_PATH_LENGTH_WINDOWS).toBe(260);
+        expect(MAX_PATH_LENGTH_UNIX).toBe(4096);
+      });
+    });
+
+    describe('validatePathLength', () => {
+      it('should return true for normal paths', () => {
+        expect(validatePathLength('/home/user/project/file.ts')).toBe(true);
+        expect(validatePathLength('C:\\Users\\dev\\project\\file.ts')).toBe(true);
+      });
+
+      it('should return true for paths at the limit', () => {
+        const maxLength = process.platform === 'win32'
+          ? MAX_PATH_LENGTH_WINDOWS
+          : MAX_PATH_LENGTH_UNIX;
+        const pathAtLimit = 'x'.repeat(maxLength);
+        expect(validatePathLength(pathAtLimit)).toBe(true);
+      });
+
+      it('should return false for paths exceeding the limit', () => {
+        const maxLength = process.platform === 'win32'
+          ? MAX_PATH_LENGTH_WINDOWS
+          : MAX_PATH_LENGTH_UNIX;
+        const pathOverLimit = 'x'.repeat(maxLength + 1);
+        expect(validatePathLength(pathOverLimit)).toBe(false);
+      });
+    });
+
+    describe('checkPathLength', () => {
+      it('should return valid for normal paths', () => {
+        const testPath = '/home/user/project/file.ts';
+        const result = checkPathLength(testPath);
+        expect(result.valid).toBe(true);
+        expect(result.exceededBy).toBe(0);
+        expect(result.length).toBe(testPath.length);
+      });
+
+      it('should return invalid for long paths with details', () => {
+        const maxLength = process.platform === 'win32'
+          ? MAX_PATH_LENGTH_WINDOWS
+          : MAX_PATH_LENGTH_UNIX;
+        const excessLength = 50;
+        const longPath = 'x'.repeat(maxLength + excessLength);
+
+        const result = checkPathLength(longPath);
+        expect(result.valid).toBe(false);
+        expect(result.length).toBe(maxLength + excessLength);
+        expect(result.maxLength).toBe(maxLength);
+        expect(result.exceededBy).toBe(excessLength);
+      });
+    });
+  });
+
+  describe('Docs Path Helpers', () => {
+    const indexPath =
+      process.platform === 'win32'
+        ? 'C:\\Users\\testuser\\.mcp\\search\\indexes\\abc123'
+        : '/home/testuser/.mcp/search/indexes/abc123';
+
+    it('getDocsFingerprintsPath should return docs-fingerprints.json path', () => {
+      const result = getDocsFingerprintsPath(indexPath);
+      expect(result).toBe(path.join(indexPath, 'docs-fingerprints.json'));
+    });
+
+    it('getDocsLanceDbPath should return docs.lancedb path', () => {
+      const result = getDocsLanceDbPath(indexPath);
+      expect(result).toBe(path.join(indexPath, 'docs.lancedb'));
     });
   });
 

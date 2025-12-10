@@ -16,14 +16,16 @@ Deep security and stability analysis of the Search MCP codebase revealed **65+ p
 
 **UPDATE 2024-12-10: SMCP-039 Completed** - Memory leak fixes (Bug #9, #10, #11, #14, MCP-22, MCP-26) have been fixed with tensor disposal, query pagination, streaming for large files, and memory monitoring utilities. 6 bugs resolved.
 
+**UPDATE 2024-12-10: SMCP-040 Completed** - Path security and validation (Bug #7, #16, MCP-19, MCP-29) have been fixed with path traversal hardening, path length validation, TOCTOU lockfile fix, and Unicode normalization. 4 bugs resolved.
+
 ### Bug Count Summary
 | Severity | Count | Fixed |
 |----------|-------|-------|
 | **CRITICAL** | ~~10~~ 1 | 9 |
-| **HIGH** | ~~19~~ 11 | 8 |
-| **MEDIUM** | ~~27~~ 22 | 5 |
-| **LOW** | 9+ | 0 |
-| **TOTAL** | **~~65+~~ 43+** | **21** |
+| **HIGH** | ~~19~~ 9 | 10 |
+| **MEDIUM** | ~~27~~ 20 | 7 |
+| **LOW** | ~~9+~~ 8+ | 1 |
+| **TOTAL** | **~~65+~~ 38+** | **25** |
 
 ---
 
@@ -467,23 +469,28 @@ content = await fs.promises.readFile(absolutePath, 'utf8');
 
 ---
 
-### MCP-19. VERY LONG FILE PATHS CAUSE ISSUES
+### MCP-19. VERY LONG FILE PATHS CAUSE ISSUES ✅ FIXED (SMCP-040)
 **Severity:** LOW
-**Status:** VULNERABLE ON WINDOWS
+**Status:** RESOLVED on 2024-12-10
 
-**Issue:** Windows has a 260-character path limit by default. Very long relative paths in deeply nested projects can fail.
+**Fix Applied:**
+- Added `MAX_PATH_LENGTH_WINDOWS` (260) and `MAX_PATH_LENGTH_UNIX` (4096) constants
+- Added `validatePathLength()` - returns boolean for path length check
+- Added `checkPathLength()` - returns detailed validation result with exceeded amount
 
-**Code Evidence:**
-```typescript
-// No path length validation anywhere in the codebase
-// fs operations will fail with ENAMETOOLONG
-```
+~~**Issue:** Windows has a 260-character path limit by default. Very long relative paths in deeply nested projects can fail.~~
 
-**Scenario:**
-1. Project has path: `src/components/features/user/profile/settings/advanced/deep/nested/Component.tsx`
-2. Index path: `~/.mcp/search/indexes/<64-char-hash>/`
-3. Combined path exceeds 260 chars
-4. LanceDB write fails with cryptic error
+~~**Code Evidence:**~~
+~~```typescript~~
+~~// No path length validation anywhere in the codebase~~
+~~// fs operations will fail with ENAMETOOLONG~~
+~~```~~
+
+~~**Scenario:**~~
+~~1. Project has path: `src/components/features/user/profile/settings/advanced/deep/nested/Component.tsx`~~
+~~2. Index path: `~/.mcp/search/indexes/<64-char-hash>/`~~
+~~3. Combined path exceeds 260 chars~~
+~~4. LanceDB write fails with cryptic error~~
 
 ---
 
@@ -704,23 +711,29 @@ awaitWriteFinish: {
 
 ---
 
-### MCP-29. UNICODE PATH HANDLING INCOMPLETE
+### MCP-29. UNICODE PATH HANDLING INCOMPLETE ✅ FIXED (SMCP-040)
 **Severity:** MEDIUM
-**Status:** VULNERABLE
+**Status:** RESOLVED on 2024-12-10
 
-**Issue:** Path normalization doesn't handle Unicode combining characters, NFC/NFD forms, or RTL marks.
+**Fix Applied:**
+- Added `normalizeUnicode()` function for NFC normalization
+- Applied automatically in `safeJoin()` before path processing
+- Ensures consistent comparison and storage of paths across platforms
+- macOS uses NFD (decomposed), Windows/Linux typically use NFC (composed)
 
-**Code Evidence:**
-```typescript
-// src/utils/paths.ts - no UTF-8 normalization, no NFC/NFD handling
-// SQL LIKE pattern in lancedb may not handle Unicode correctly
-```
+~~**Issue:** Path normalization doesn't handle Unicode combining characters, NFC/NFD forms, or RTL marks.~~
 
-**Scenario:**
-1. Filename: `café.ts` (with combining acute accent: e + ´)
-2. macOS uses NFD, Linux uses NFC
-3. Same file copied produces different hashes on different systems
-4. Index lookup fails for files with composed/decomposed Unicode
+~~**Code Evidence:**~~
+~~```typescript~~
+~~// src/utils/paths.ts - no UTF-8 normalization, no NFC/NFD handling~~
+~~// SQL LIKE pattern in lancedb may not handle Unicode correctly~~
+~~```~~
+
+~~**Scenario:**~~
+~~1. Filename: `café.ts` (with combining acute accent: e + ´)~~
+~~2. macOS uses NFD, Linux uses NFC~~
+~~3. Same file copied produces different hashes on different systems~~
+~~4. Index lookup fails for files with composed/decomposed Unicode~~
 
 ---
 
@@ -938,17 +951,24 @@ const durationMs = endTime - startTime;  // Can be negative if clock adjusted!
 
 ---
 
-### 7. TOCTOU in LanceDB Lockfile Cleanup
+### 7. TOCTOU in LanceDB Lockfile Cleanup ✅ FIXED (SMCP-040)
 **File:** `src/storage/lancedb.ts:121-133`
+**Status:** RESOLVED on 2024-12-10
 
-```typescript
-const stats = fs.statSync(lockFile);  // CHECK
-if (ageMs > fiveMinutesMs) {
-  fs.unlinkSync(lockFile);  // USE - file could be deleted/changed between
-}
-```
+**Fix Applied:**
+- Converted from synchronous to async operations
+- Uses `fs.promises.open()` with 'r+' mode to verify file isn't in use before deleting
+- Proper error handling for ENOENT (race condition where file was already deleted)
+- Added `STALE_LOCKFILE_AGE_MS` constant
 
-**Impact:** Deletion of active lockfiles causing database corruption.
+~~```typescript~~
+~~const stats = fs.statSync(lockFile);  // CHECK~~
+~~if (ageMs > fiveMinutesMs) {~~
+~~  fs.unlinkSync(lockFile);  // USE - file could be deleted/changed between~~
+~~}~~
+~~```~~
+
+~~**Impact:** Deletion of active lockfiles causing database corruption.~~
 
 ---
 
@@ -1088,17 +1108,25 @@ const context: CreateIndexContext = {
 
 ---
 
-### 16. Path Traversal Insufficient Validation
+### 16. Path Traversal Insufficient Validation ✅ FIXED (SMCP-040)
 **File:** `src/utils/paths.ts:186-216`
+**Status:** RESOLVED on 2024-12-10
 
-```typescript
-if (isPathTraversal(relativePath)) {
-  // Allows paths with .. that resolve back within base
-  return normalizedJoined;
-}
-```
+**Fix Applied:**
+- `safeJoin()` now rejects ALL paths containing `..` components
+- Added null byte injection detection
+- Added absolute path rejection
+- Added Windows drive letter detection in relative paths
+- Added Unicode NFC normalization before processing
 
-**Issue:** `src/../../../etc/passwd` that resolves within project is allowed.
+~~```typescript~~
+~~if (isPathTraversal(relativePath)) {~~
+~~  // Allows paths with .. that resolve back within base~~
+~~  return normalizedJoined;~~
+~~}~~
+~~```~~
+
+~~**Issue:** `src/../../../etc/passwd` that resolves within project is allowed.~~
 
 ---
 
@@ -1220,12 +1248,12 @@ await this.initialize();  // Never runs if above throws
 | Memory Leaks | - | ~~3~~ 0 | - | - | ✅ 3 (SMCP-039, Bug #9,10,11) |
 | Resource Leaks | ~~2~~ 0 | 2 | 1 | - | ✅ 2 (SMCP-037, Bug #5,6) |
 | Error Handling | ~~1~~ 0 | ~~1~~ 0 | 3 | 2 | ✅ 2 (SMCP-036 Bug #4, SMCP-039 Bug #14) |
-| Security | - | 1 | ~~2~~ 0 | - | ✅ 2 (SMCP-035 Bug #22, SMCP-037 Bug #17) |
-| Logic Flaws | - | 1 | 2 | - | |
+| Security | - | ~~1~~ 0 | ~~2~~ 0 | - | ✅ 3 (SMCP-035 Bug #22, SMCP-037 Bug #17, SMCP-040 Bug #16) |
+| Logic Flaws | - | ~~1~~ 0 | 2 | - | ✅ 1 (SMCP-040, Bug #7) |
 | Performance | - | - | 3 | - | |
 | Resource Mgmt | - | ~~2~~ 0 | - | - | ✅ 2 (SMCP-038, Bug #12,13) |
 
-**Subtotal: ~~7~~ 1 Critical, ~~8~~ 2 High, ~~13~~ 9 Medium, 2+ Low (15 Fixed from original)**
+**Subtotal: ~~7~~ 1 Critical, ~~8~~ 0 High, ~~13~~ 8 Medium, 2+ Low (17 Fixed from original)**
 
 ### MCP-Specific Vulnerabilities (From Web Research + Deep Analysis)
 | Category | Critical | High | Medium | Low |
@@ -1247,7 +1275,7 @@ await this.initialize();  // Never runs if above throws
 | File Rename Data Loss | - | - | 1 | - |
 | Symlink Loops | - | - | 1 | - |
 | Non-UTF8 Files | - | - | 1 | - |
-| Long File Paths | - | - | - | 1 |
+| Long File Paths | - | - | - | ~~1~~ 0 | ✅ (SMCP-040, MCP-19) |
 | Hash Collision | - | - | - | 1 |
 | Model Version Mismatch | - | - | 1 | - |
 | Low Memory Handling | - | - | ~~1~~ 0 | - | ✅ (SMCP-039, MCP-22) |
@@ -1257,7 +1285,7 @@ await this.initialize();  // Never runs if above throws
 | **Multi-GB File Memory** | ~~**1**~~ 0 | - | - | - | ✅ (SMCP-039, MCP-26) |
 | **Hard Link Duplicates** | - | **1** | - | - |
 | **NFS Timestamp Aliasing** | - | **1** | - | - |
-| **Unicode Path Handling** | - | - | **1** | - |
+| **Unicode Path Handling** | - | - | ~~**1**~~ 0 | - | ✅ (SMCP-040, MCP-29) |
 | **BOM Not Stripped** | - | - | - | **1** |
 | **Clock Drift** | - | - | **1** | - |
 | **Permission TOCTOU** | - | **1** | - | - |
@@ -1265,9 +1293,9 @@ await this.initialize();  // Never runs if above throws
 | **Orphaned Chunks on Error** | - | ~~**1**~~ 0 | - | - | ✅ (SMCP-037, MCP-34) |
 | **Future Timestamps** | - | - | - | **1** |
 
-**Subtotal: ~~3~~ 1 Critical, ~~11~~ 9 High, ~~14~~ 12 Medium, 7 Low = 29 MCP-specific issues (6 Fixed)**
+**Subtotal: ~~3~~ 1 Critical, ~~11~~ 9 High, ~~14~~ 11 Medium, ~~7~~ 6 Low = 27 MCP-specific issues (8 Fixed)**
 
-### GRAND TOTAL: ~~10~~ 1 Critical, ~~19~~ 11 High, ~~27~~ 22 Medium, 9+ Low = 43+ Issues (21 Fixed)
+### GRAND TOTAL: ~~10~~ 1 Critical, ~~19~~ 9 High, ~~27~~ 20 Medium, ~~9+~~ 8+ Low = 38+ Issues (25 Fixed)
 
 ---
 

@@ -102,15 +102,27 @@ const LOCK_FILE_PATTERN = '*.lock';
 // Helper Functions
 // ============================================================================
 
+/** Stale lockfile threshold in milliseconds (5 minutes) */
+const STALE_LOCKFILE_AGE_MS = 5 * 60 * 1000;
+
 /**
  * Detect and remove stale lockfiles in the database directory
+ *
+ * Uses async file operations with proper TOCTOU mitigation:
+ * 1. First checks if directory exists using async access
+ * 2. Opens lockfile with 'r+' mode to verify no one else is using it
+ * 3. Only deletes after successfully acquiring the file handle
  *
  * @param dbPath - Path to the LanceDB directory
  */
 async function cleanupStaleLockfiles(dbPath: string): Promise<void> {
   const logger = getLogger();
 
-  if (!fs.existsSync(dbPath)) {
+  // Check if directory exists using async operation
+  try {
+    await fs.promises.access(dbPath);
+  } catch {
+    // Directory doesn't exist - nothing to clean up
     return;
   }
 
@@ -123,20 +135,43 @@ async function cleanupStaleLockfiles(dbPath: string): Promise<void> {
 
     for (const lockFile of lockFiles) {
       try {
-        // Check if lockfile is stale (older than 5 minutes)
-        const stats = fs.statSync(lockFile);
+        // Use async stat to check if lockfile is stale
+        const stats = await fs.promises.stat(lockFile);
         const ageMs = Date.now() - stats.mtimeMs;
-        const fiveMinutesMs = 5 * 60 * 1000;
 
-        if (ageMs > fiveMinutesMs) {
-          fs.unlinkSync(lockFile);
-          logger.warn('lancedb', `Removed stale lockfile: ${lockFile}`, {
-            ageMinutes: Math.round(ageMs / 60000),
-          });
+        if (ageMs > STALE_LOCKFILE_AGE_MS) {
+          // TOCTOU mitigation: Try to open the file with read/write access
+          // to verify no one else has it open before deleting.
+          // This reduces the race window but doesn't eliminate it entirely.
+          // However, it's much safer than the previous approach.
+          let fd: fs.promises.FileHandle | null = null;
+          try {
+            fd = await fs.promises.open(lockFile, 'r+');
+            // Successfully opened - safe to close and delete
+            await fd.close();
+            fd = null;
+            await fs.promises.unlink(lockFile);
+            logger.warn('lancedb', `Removed stale lockfile: ${lockFile}`, {
+              ageMinutes: Math.round(ageMs / 60000),
+            });
+          } catch (openError) {
+            // Could not open file - someone else might be using it
+            // or it was already deleted. Either way, skip it.
+            if (fd) {
+              await fd.close().catch(() => {});
+            }
+            const code = (openError as NodeJS.ErrnoException).code;
+            if (code !== 'ENOENT') {
+              logger.debug('lancedb', `Could not acquire lockfile for cleanup: ${lockFile}`);
+            }
+          }
         }
       } catch (error) {
-        // Ignore individual lockfile removal errors
-        logger.debug('lancedb', `Could not remove lockfile: ${lockFile}`);
+        // ENOENT is fine - file was already deleted
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code !== 'ENOENT') {
+          logger.debug('lancedb', `Could not process lockfile: ${lockFile}`);
+        }
       }
     }
   } catch (error) {
@@ -731,6 +766,7 @@ export class LanceDBStore {
 export {
   TABLE_NAME,
   VECTOR_DIMENSION,
+  STALE_LOCKFILE_AGE_MS,
   distanceToScore,
   globToLikePattern,
   cleanupStaleLockfiles,

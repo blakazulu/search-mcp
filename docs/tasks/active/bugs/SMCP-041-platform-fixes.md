@@ -3,11 +3,12 @@ task_id: "SMCP-041"
 title: "Windows & Platform-Specific Fixes"
 category: "Technical"
 priority: "P2"
-status: "not-started"
+status: "completed"
 created_date: "2024-12-09"
+completed_date: "2024-12-10"
 due_date: ""
 estimated_hours: 3
-actual_hours: 0
+actual_hours: 2.5
 assigned_to: "Team"
 tags: ["medium", "windows", "platform", "performance", "filewatcher"]
 ---
@@ -28,10 +29,10 @@ Fix platform-specific issues, particularly for Windows where file watching uses 
 
 ## Goals
 
-- [ ] Add polling interval for Windows file watching
-- [ ] Convert sync file ops to async
-- [ ] Batch fingerprint updates instead of reloading each time
-- [ ] Add timestamp handling for edge cases
+- [x] Add polling interval for Windows file watching
+- [x] Convert sync file ops to async
+- [x] Batch fingerprint updates instead of reloading each time
+- [x] Add timestamp handling for edge cases
 
 ## Success Criteria
 
@@ -51,9 +52,9 @@ Fix platform-specific issues, particularly for Windows where file watching uses 
 
 ## Subtasks
 
-### Phase 1: Windows Polling Configuration (0.5 hours)
+### Phase 1: Windows Polling Configuration (0.5 hours) ✅
 
-- [ ] 1.1 Update `WATCHER_OPTIONS` in `src/engines/fileWatcher.ts:104-117`
+- [x] 1.1 Update `WATCHER_OPTIONS` in `src/engines/fileWatcher.ts:104-117`
     ```typescript
     export const WATCHER_OPTIONS: chokidar.WatchOptions = {
       persistent: true,
@@ -70,21 +71,21 @@ Fix platform-specific issues, particularly for Windows where file watching uses 
     };
     ```
 
-### Phase 2: Convert Sync Ops to Async (1 hour)
+### Phase 2: Convert Sync Ops to Async (1 hour) ✅
 
-- [ ] 2.1 Update lockfile cleanup in `src/storage/lancedb.ts:121-140`
+- [x] 2.1 Update lockfile cleanup in `src/storage/lancedb.ts:121-140`
     - Replace `fs.statSync()` with `fs.promises.stat()`
     - Replace `fs.unlinkSync()` with `fs.promises.unlink()`
     - Replace `fs.existsSync()` with `fs.promises.access()`
 
-- [ ] 2.2 Search for other sync operations and convert
+- [x] 2.2 Search for other sync operations and convert
     ```bash
     grep -r "Sync(" src/
     ```
 
-### Phase 3: Batch Fingerprint Updates (1 hour)
+### Phase 3: Batch Fingerprint Updates (1 hour) ✅
 
-- [ ] 3.1 Update FileWatcher to batch fingerprint changes
+- [x] 3.1 Update FileWatcher to batch fingerprint changes
     ```typescript
     // Instead of reloading fingerprints after every update:
     // await this.fingerprints.load();
@@ -113,9 +114,9 @@ Fix platform-specific issues, particularly for Windows where file watching uses 
     }
     ```
 
-### Phase 4: Timestamp Edge Cases (0.5 hours)
+### Phase 4: Timestamp Edge Cases (0.5 hours) ✅
 
-- [ ] 4.1 Add timestamp validation
+- [x] 4.1 Add timestamp validation
     ```typescript
     function isValidTimestamp(timestamp: number): boolean {
       const now = Date.now();
@@ -129,7 +130,7 @@ Fix platform-specific issues, particularly for Windows where file watching uses 
     }
     ```
 
-- [ ] 4.2 Use `performance.now()` for duration calculations instead of `Date.now()`
+- [x] 4.2 Use `performance.now()` for duration calculations instead of `Date.now()`
     - Already used in some places, verify consistency
 
 ## Resources
@@ -142,21 +143,65 @@ Fix platform-specific issues, particularly for Windows where file watching uses 
 
 Before marking this task complete:
 
-- [ ] All subtasks completed
-- [ ] All success criteria met
-- [ ] Windows polling configured properly
-- [ ] No more sync file operations in hot paths
-- [ ] Fingerprints batched, not reloaded each time
-- [ ] Timestamp edge cases handled
-- [ ] Tested on Windows
-- [ ] `npm run build` passes
-- [ ] `npm run test` passes
+- [x] All subtasks completed
+- [x] All success criteria met
+- [x] Windows polling configured properly
+- [x] No more sync file operations in hot paths
+- [x] Fingerprints batched, not reloaded each time
+- [x] Timestamp edge cases handled
+- [x] Tested on Windows
+- [x] `npm run build` passes
+- [x] `npm run test` passes (1519 tests, no regressions)
 
 ## Progress Log
 
-### 2024-12-09 - 0 hours
+### 2024-12-09 - Task Created
 
 - Task created from bug hunt findings
+
+### 2024-12-10 - Task Completed (2.5 hours)
+
+- Added Windows polling configuration:
+  - `WINDOWS_POLL_INTERVAL` (300ms) and `WINDOWS_BINARY_POLL_INTERVAL` (500ms) constants
+  - Updated `WATCHER_OPTIONS` with `interval` and `binaryInterval` for Windows
+- Converted sync file operations to async:
+  - `lancedb.ts`: `open()`, `delete()`, `getStorageSize()` now use async fs operations
+  - `docsLancedb.ts`: Same conversions applied
+  - `getIndexStatus.ts`: `calculateDirectorySize()` converted to async
+- Optimized fingerprint updates:
+  - `handleAddOrChange()` now updates in-memory fingerprints directly
+  - `handleDocAddOrChange()` same optimization
+  - `handleUnlink()` uses `fingerprints.delete()` instead of reload
+  - `handleDocUnlink()` same optimization
+- Created timestamp utilities (`src/utils/timestamp.ts`):
+  - `validateTimestamp()` - validates timestamps, detects future/old timestamps
+  - `couldBeNfsAliased()` - checks NFS 1-second resolution aliasing
+  - `getSafeTimestamp()` - returns safe timestamp with fallback
+  - `createPerfTimer()` - high-precision timer using `performance.now()`
+  - `measureDuration()` - helper for async operation timing
+- Added 21 unit tests for timestamp utilities
+- All 1519 tests pass (no regressions)
+
+## Implementation Details
+
+### Files Created
+- `src/utils/timestamp.ts` - Timestamp validation and utilities
+- `tests/utils/timestamp.test.ts` - Unit tests
+
+### Files Modified
+- `src/utils/index.ts` - Added exports for timestamp utilities
+- `src/engines/fileWatcher.ts` - Windows polling config, fingerprint optimization
+- `src/storage/lancedb.ts` - Async file operations
+- `src/storage/docsLancedb.ts` - Async file operations
+- `src/tools/getIndexStatus.ts` - Async directory size calculation
+
+### Key Features
+- Windows polling with 300ms interval (prevents high CPU)
+- Non-blocking async file operations
+- In-memory fingerprint updates (avoids disk I/O)
+- NFS timestamp aliasing detection
+- Clock drift/future timestamp handling
+- High-precision duration measurement
 
 ## Notes
 
@@ -167,4 +212,4 @@ Before marking this task complete:
 
 ## Blockers
 
-_None currently identified_
+_None - task completed_

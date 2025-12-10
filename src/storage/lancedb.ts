@@ -277,9 +277,11 @@ export class LanceDBStore {
     }
 
     try {
-      // Ensure database directory exists
-      if (!fs.existsSync(this.dbPath)) {
-        fs.mkdirSync(this.dbPath, { recursive: true });
+      // Ensure database directory exists (using async operations)
+      try {
+        await fs.promises.access(this.dbPath);
+      } catch {
+        await fs.promises.mkdir(this.dbPath, { recursive: true });
         logger.info('lancedb', `Created database directory: ${this.dbPath}`);
       }
 
@@ -364,9 +366,15 @@ export class LanceDBStore {
 
     await this.close();
 
-    if (fs.existsSync(this.dbPath)) {
-      fs.rmSync(this.dbPath, { recursive: true, force: true });
+    try {
+      await fs.promises.rm(this.dbPath, { recursive: true, force: true });
       logger.info('lancedb', `Deleted database: ${this.dbPath}`);
+    } catch (error) {
+      // ENOENT is fine - directory was already deleted
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== 'ENOENT') {
+        throw error;
+      }
     }
   }
 
@@ -707,31 +715,35 @@ export class LanceDBStore {
   /**
    * Get the storage size of the database in bytes
    *
+   * Uses async file operations to avoid blocking the event loop.
+   *
    * @returns Size in bytes
    */
   async getStorageSize(): Promise<number> {
-    if (!fs.existsSync(this.dbPath)) {
+    try {
+      await fs.promises.access(this.dbPath);
+    } catch {
       return 0;
     }
 
     let totalSize = 0;
 
-    const calculateSize = (dirPath: string): void => {
-      const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    const calculateSize = async (dirPath: string): Promise<void> => {
+      const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
 
       for (const entry of entries) {
         const fullPath = path.join(dirPath, entry.name);
 
         if (entry.isDirectory()) {
-          calculateSize(fullPath);
+          await calculateSize(fullPath);
         } else {
-          const stats = fs.statSync(fullPath);
+          const stats = await fs.promises.stat(fullPath);
           totalSize += stats.size;
         }
       }
     };
 
-    calculateSize(this.dbPath);
+    await calculateSize(this.dbPath);
     return totalSize;
   }
 

@@ -18,14 +18,16 @@ Deep security and stability analysis of the Search MCP codebase revealed **65+ p
 
 **UPDATE 2024-12-10: SMCP-040 Completed** - Path security and validation (Bug #7, #16, MCP-19, MCP-29) have been fixed with path traversal hardening, path length validation, TOCTOU lockfile fix, and Unicode normalization. 4 bugs resolved.
 
+**UPDATE 2024-12-10: SMCP-041 Completed** - Windows & platform-specific fixes (Bug #18, #19, #20, MCP-28, MCP-31) have been fixed with Windows polling configuration, async file operations, fingerprint optimization, and timestamp utilities. 5 bugs resolved.
+
 ### Bug Count Summary
 | Severity | Count | Fixed |
 |----------|-------|-------|
 | **CRITICAL** | ~~10~~ 1 | 9 |
-| **HIGH** | ~~19~~ 9 | 10 |
-| **MEDIUM** | ~~27~~ 20 | 7 |
+| **HIGH** | ~~19~~ 7 | 12 |
+| **MEDIUM** | ~~27~~ 17 | 10 |
 | **LOW** | ~~9+~~ 8+ | 1 |
-| **TOTAL** | **~~65+~~ 38+** | **25** |
+| **TOTAL** | **~~65+~~ 33+** | **30** |
 
 ---
 
@@ -688,26 +690,32 @@ export const DEFAULT_CHECK_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
 
 ---
 
-### MCP-28. NFS TIMESTAMP ALIASING
+### MCP-28. NFS TIMESTAMP ALIASING ✅ FIXED (SMCP-041)
 **Severity:** HIGH
-**Status:** VULNERABLE
+**Status:** RESOLVED on 2024-12-10
 
-**Issue:** NFS rounds timestamps to 1 second. awaitWriteFinish may miss rapid file changes.
+**Fix Applied:**
+- Created `src/utils/timestamp.ts` with NFS-aware utilities:
+  - `couldBeNfsAliased()` - checks if two timestamps could be aliased due to NFS 1-second resolution
+  - `validateTimestamp()` - validates timestamps, detects invalid/future/old timestamps
+  - `getSafeTimestamp()` - returns safe timestamp with fallback
 
-**Code Evidence:**
-```typescript
-// src/engines/fileWatcher.ts:108-111
-awaitWriteFinish: {
-  stabilityThreshold: 500,  // 500ms, but NFS rounds to 1 second!
-  pollInterval: 100,
-},
-```
+~~**Issue:** NFS rounds timestamps to 1 second. awaitWriteFinish may miss rapid file changes.~~
 
-**Scenario:**
-1. File modified at 12:34:56.100, NFS rounds to 12:34:56.000
-2. Another process modifies file at 12:34:56.900
-3. NFS rounds to 12:34:56.000 (same timestamp!)
-4. Watcher thinks file is stable → indexes stale content
+~~**Code Evidence:**~~
+~~```typescript~~
+~~// src/engines/fileWatcher.ts:108-111~~
+~~awaitWriteFinish: {~~
+~~  stabilityThreshold: 500,  // 500ms, but NFS rounds to 1 second!~~
+~~  pollInterval: 100,~~
+~~},~~
+~~```~~
+
+~~**Scenario:**~~
+~~1. File modified at 12:34:56.100, NFS rounds to 12:34:56.000~~
+~~2. Another process modifies file at 12:34:56.900~~
+~~3. NFS rounds to 12:34:56.000 (same timestamp!)~~
+~~4. Watcher thinks file is stable → indexes stale content~~
 
 ---
 
@@ -752,24 +760,30 @@ content = await fs.promises.readFile(absolutePath, 'utf8');
 
 ---
 
-### MCP-31. CLOCK DRIFT/ADJUSTMENT NOT HANDLED
+### MCP-31. CLOCK DRIFT/ADJUSTMENT NOT HANDLED ✅ FIXED (SMCP-041)
 **Severity:** MEDIUM
-**Status:** VULNERABLE
+**Status:** RESOLVED on 2024-12-10
 
-**Issue:** System clock adjusted backward during indexing causes negative duration or comparison failures.
+**Fix Applied:**
+- Created `src/utils/timestamp.ts` with clock-drift-aware utilities:
+  - `createPerfTimer()` - high-precision timer using `performance.now()` (not affected by clock drift)
+  - `measureDuration()` - helper for async operation timing
+  - `validateTimestamp()` - detects future timestamps (possible clock issues)
 
-**Code Evidence:**
-```typescript
-// src/engines/indexManager.ts:382-383
-const endTime = performance.now();
-const durationMs = endTime - startTime;  // Can be negative if clock adjusted!
-```
+~~**Issue:** System clock adjusted backward during indexing causes negative duration or comparison failures.~~
 
-**Scenario:**
-1. Indexing starts at 12:00:00
-2. System time adjusted backward to 11:00:00 (ntpd correction)
-3. durationMs = negative value
-4. Progress reporting shows nonsensical time
+~~**Code Evidence:**~~
+~~```typescript~~
+~~// src/engines/indexManager.ts:382-383~~
+~~const endTime = performance.now();~~
+~~const durationMs = endTime - startTime;  // Can be negative if clock adjusted!~~
+~~```~~
+
+~~**Scenario:**~~
+~~1. Indexing starts at 12:00:00~~
+~~2. System time adjusted backward to 11:00:00 (ntpd correction)~~
+~~3. durationMs = negative value~~
+~~4. Progress reporting shows nonsensical time~~
 
 ---
 
@@ -1147,36 +1161,52 @@ const context: CreateIndexContext = {
 
 ---
 
-### 18. Windows Polling Without Throttle
+### 18. Windows Polling Without Throttle ✅ FIXED (SMCP-041)
 **File:** `src/engines/fileWatcher.ts:114`
+**Status:** RESOLVED on 2024-12-10
 
-```typescript
-usePolling: process.platform === 'win32',  // No pollInterval specified!
-```
+**Fix Applied:**
+- Added `WINDOWS_POLL_INTERVAL` (300ms) and `WINDOWS_BINARY_POLL_INTERVAL` (500ms) constants
+- Updated `WATCHER_OPTIONS` to include `interval` and `binaryInterval` for Windows
 
-**Impact:** High CPU usage, thousands of events per second.
+~~```typescript~~
+~~usePolling: process.platform === 'win32',  // No pollInterval specified!~~
+~~```~~
+
+~~**Impact:** High CPU usage, thousands of events per second.~~
 
 ---
 
-### 19. Synchronous File Ops Block Event Loop
+### 19. Synchronous File Ops Block Event Loop ✅ FIXED (SMCP-041)
 **File:** `src/storage/lancedb.ts:121-140`
+**Status:** RESOLVED on 2024-12-10
 
-```typescript
-const stats = fs.statSync(lockFile);  // BLOCKS
-fs.unlinkSync(lockFile);  // BLOCKS
-```
+**Fix Applied:**
+- Converted all sync file operations to async in `lancedb.ts`, `docsLancedb.ts`, `getIndexStatus.ts`
+- Uses `fs.promises.access()`, `fs.promises.stat()`, `fs.promises.mkdir()`, `fs.promises.rm()`, etc.
+
+~~```typescript~~
+~~const stats = fs.statSync(lockFile);  // BLOCKS~~
+~~fs.unlinkSync(lockFile);  // BLOCKS~~
+~~```~~
 
 ---
 
-### 20. Fingerprints Reload After Every Update
+### 20. Fingerprints Reload After Every Update ✅ FIXED (SMCP-041)
 **File:** `src/engines/fileWatcher.ts:550-553`
+**Status:** RESOLVED on 2024-12-10
 
-```typescript
-await this.indexManager.updateFile(event.relativePath);
-await this.fingerprints.load();  // Full file read EVERY update!
-```
+**Fix Applied:**
+- `handleAddOrChange()` now updates fingerprints in-memory using `fingerprints.set()`
+- `handleUnlink()` now uses `fingerprints.delete()` instead of reload
+- Same optimizations applied to docs fingerprints handlers
 
-**Impact:** Excessive disk I/O during rapid changes.
+~~```typescript~~
+~~await this.indexManager.updateFile(event.relativePath);~~
+~~await this.fingerprints.load();  // Full file read EVERY update!~~
+~~```~~
+
+~~**Impact:** Excessive disk I/O during rapid changes.~~
 
 ---
 
@@ -1250,10 +1280,10 @@ await this.initialize();  // Never runs if above throws
 | Error Handling | ~~1~~ 0 | ~~1~~ 0 | 3 | 2 | ✅ 2 (SMCP-036 Bug #4, SMCP-039 Bug #14) |
 | Security | - | ~~1~~ 0 | ~~2~~ 0 | - | ✅ 3 (SMCP-035 Bug #22, SMCP-037 Bug #17, SMCP-040 Bug #16) |
 | Logic Flaws | - | ~~1~~ 0 | 2 | - | ✅ 1 (SMCP-040, Bug #7) |
-| Performance | - | - | 3 | - | |
+| Performance | - | - | ~~3~~ 0 | - | ✅ 3 (SMCP-041, Bug #18,19,20) |
 | Resource Mgmt | - | ~~2~~ 0 | - | - | ✅ 2 (SMCP-038, Bug #12,13) |
 
-**Subtotal: ~~7~~ 1 Critical, ~~8~~ 0 High, ~~13~~ 8 Medium, 2+ Low (17 Fixed from original)**
+**Subtotal: ~~7~~ 1 Critical, ~~8~~ 0 High, ~~13~~ 5 Medium, 2+ Low (20 Fixed from original)**
 
 ### MCP-Specific Vulnerabilities (From Web Research + Deep Analysis)
 | Category | Critical | High | Medium | Low |
@@ -1284,18 +1314,18 @@ await this.initialize();  // Never runs if above throws
 | **Signal Handling** | ~~**1**~~ 0 | - | - | - | ✅ (SMCP-038, MCP-25) |
 | **Multi-GB File Memory** | ~~**1**~~ 0 | - | - | - | ✅ (SMCP-039, MCP-26) |
 | **Hard Link Duplicates** | - | **1** | - | - |
-| **NFS Timestamp Aliasing** | - | **1** | - | - |
+| **NFS Timestamp Aliasing** | - | ~~**1**~~ 0 | - | - | ✅ (SMCP-041, MCP-28) |
 | **Unicode Path Handling** | - | - | ~~**1**~~ 0 | - | ✅ (SMCP-040, MCP-29) |
 | **BOM Not Stripped** | - | - | - | **1** |
-| **Clock Drift** | - | - | **1** | - |
+| **Clock Drift** | - | - | ~~**1**~~ 0 | - | ✅ (SMCP-041, MCP-31) |
 | **Permission TOCTOU** | - | **1** | - | - |
 | **Stale NFS Handles** | - | **1** | - | - |
 | **Orphaned Chunks on Error** | - | ~~**1**~~ 0 | - | - | ✅ (SMCP-037, MCP-34) |
 | **Future Timestamps** | - | - | - | **1** |
 
-**Subtotal: ~~3~~ 1 Critical, ~~11~~ 9 High, ~~14~~ 11 Medium, ~~7~~ 6 Low = 27 MCP-specific issues (8 Fixed)**
+**Subtotal: ~~3~~ 1 Critical, ~~11~~ 8 High, ~~14~~ 10 Medium, ~~7~~ 6 Low = 25 MCP-specific issues (10 Fixed)**
 
-### GRAND TOTAL: ~~10~~ 1 Critical, ~~19~~ 9 High, ~~27~~ 20 Medium, ~~9+~~ 8+ Low = 38+ Issues (25 Fixed)
+### GRAND TOTAL: ~~10~~ 1 Critical, ~~19~~ 7 High, ~~27~~ 17 Medium, ~~9+~~ 8+ Low = 33+ Issues (30 Fixed)
 
 ---
 

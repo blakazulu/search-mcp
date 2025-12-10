@@ -41,15 +41,27 @@ const INSERT_BATCH_SIZE = 500;
 // Helper Functions
 // ============================================================================
 
+/** Stale lockfile threshold in milliseconds (5 minutes) */
+const STALE_LOCKFILE_AGE_MS = 5 * 60 * 1000;
+
 /**
  * Detect and remove stale lockfiles in the database directory
+ *
+ * Uses async file operations with proper TOCTOU mitigation:
+ * 1. First checks if directory exists using async access
+ * 2. Opens lockfile with 'r+' mode to verify no one else is using it
+ * 3. Only deletes after successfully acquiring the file handle
  *
  * @param dbPath - Path to the LanceDB directory
  */
 async function cleanupStaleLockfiles(dbPath: string): Promise<void> {
   const logger = getLogger();
 
-  if (!fs.existsSync(dbPath)) {
+  // Check if directory exists using async operation
+  try {
+    await fs.promises.access(dbPath);
+  } catch {
+    // Directory doesn't exist - nothing to clean up
     return;
   }
 
@@ -62,20 +74,41 @@ async function cleanupStaleLockfiles(dbPath: string): Promise<void> {
 
     for (const lockFile of lockFiles) {
       try {
-        // Check if lockfile is stale (older than 5 minutes)
-        const stats = fs.statSync(lockFile);
+        // Use async stat to check if lockfile is stale
+        const stats = await fs.promises.stat(lockFile);
         const ageMs = Date.now() - stats.mtimeMs;
-        const fiveMinutesMs = 5 * 60 * 1000;
 
-        if (ageMs > fiveMinutesMs) {
-          fs.unlinkSync(lockFile);
-          logger.warn('docsLancedb', `Removed stale lockfile: ${lockFile}`, {
-            ageMinutes: Math.round(ageMs / 60000),
-          });
+        if (ageMs > STALE_LOCKFILE_AGE_MS) {
+          // TOCTOU mitigation: Try to open the file with read/write access
+          // to verify no one else has it open before deleting.
+          let fd: fs.promises.FileHandle | null = null;
+          try {
+            fd = await fs.promises.open(lockFile, 'r+');
+            // Successfully opened - safe to close and delete
+            await fd.close();
+            fd = null;
+            await fs.promises.unlink(lockFile);
+            logger.warn('docsLancedb', `Removed stale lockfile: ${lockFile}`, {
+              ageMinutes: Math.round(ageMs / 60000),
+            });
+          } catch (openError) {
+            // Could not open file - someone else might be using it
+            // or it was already deleted. Either way, skip it.
+            if (fd) {
+              await fd.close().catch(() => {});
+            }
+            const code = (openError as NodeJS.ErrnoException).code;
+            if (code !== 'ENOENT') {
+              logger.debug('docsLancedb', `Could not acquire lockfile for cleanup: ${lockFile}`);
+            }
+          }
         }
       } catch (error) {
-        // Ignore individual lockfile removal errors
-        logger.debug('docsLancedb', `Could not remove lockfile: ${lockFile}`);
+        // ENOENT is fine - file was already deleted
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code !== 'ENOENT') {
+          logger.debug('docsLancedb', `Could not process lockfile: ${lockFile}`);
+        }
       }
     }
   } catch (error) {
@@ -165,9 +198,11 @@ export class DocsLanceDBStore {
     }
 
     try {
-      // Ensure database directory exists
-      if (!fs.existsSync(this.dbPath)) {
-        fs.mkdirSync(this.dbPath, { recursive: true });
+      // Ensure database directory exists (using async operations)
+      try {
+        await fs.promises.access(this.dbPath);
+      } catch {
+        await fs.promises.mkdir(this.dbPath, { recursive: true });
         logger.info('docsLancedb', `Created database directory: ${this.dbPath}`);
       }
 
@@ -252,9 +287,15 @@ export class DocsLanceDBStore {
 
     await this.close();
 
-    if (fs.existsSync(this.dbPath)) {
-      fs.rmSync(this.dbPath, { recursive: true, force: true });
+    try {
+      await fs.promises.rm(this.dbPath, { recursive: true, force: true });
       logger.info('docsLancedb', `Deleted database: ${this.dbPath}`);
+    } catch (error) {
+      // ENOENT is fine - directory was already deleted
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== 'ENOENT') {
+        throw error;
+      }
     }
   }
 
@@ -592,31 +633,35 @@ export class DocsLanceDBStore {
   /**
    * Get the storage size of the database in bytes
    *
+   * Uses async file operations to avoid blocking the event loop.
+   *
    * @returns Size in bytes
    */
   async getStorageSize(): Promise<number> {
-    if (!fs.existsSync(this.dbPath)) {
+    try {
+      await fs.promises.access(this.dbPath);
+    } catch {
       return 0;
     }
 
     let totalSize = 0;
 
-    const calculateSize = (dirPath: string): void => {
-      const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    const calculateSize = async (dirPath: string): Promise<void> => {
+      const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
 
       for (const entry of entries) {
         const fullPath = path.join(dirPath, entry.name);
 
         if (entry.isDirectory()) {
-          calculateSize(fullPath);
+          await calculateSize(fullPath);
         } else {
-          const stats = fs.statSync(fullPath);
+          const stats = await fs.promises.stat(fullPath);
           totalSize += stats.size;
         }
       }
     };
 
-    calculateSize(this.dbPath);
+    await calculateSize(this.dbPath);
     return totalSize;
   }
 

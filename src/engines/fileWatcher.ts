@@ -82,6 +82,19 @@ export const STABILITY_THRESHOLD = 500;
 export const POLL_INTERVAL = 100;
 
 /**
+ * Windows polling interval in milliseconds
+ * Used when usePolling is enabled (Windows file watching)
+ * 300ms is a good balance between responsiveness and CPU usage
+ */
+export const WINDOWS_POLL_INTERVAL = 300;
+
+/**
+ * Windows binary file polling interval in milliseconds
+ * Can be higher since binary files change less frequently
+ */
+export const WINDOWS_BINARY_POLL_INTERVAL = 500;
+
+/**
  * Maximum restart attempts on error
  */
 export const MAX_RESTART_ATTEMPTS = 3;
@@ -111,6 +124,11 @@ function getDenyPatternsForChokidar(): string[] {
 
 /**
  * Chokidar watcher options
+ *
+ * Windows-specific configuration:
+ * - usePolling: Required for Windows/network drives for reliable change detection
+ * - interval: Throttle polling to avoid high CPU usage (Bug #18)
+ * - binaryInterval: Higher interval for binary files which change less frequently
  */
 export const WATCHER_OPTIONS: chokidar.WatchOptions = {
   ignored: getDenyPatternsForChokidar(),
@@ -121,8 +139,11 @@ export const WATCHER_OPTIONS: chokidar.WatchOptions = {
     pollInterval: POLL_INTERVAL,
   },
   followSymlinks: false,
-  // Use polling on Windows for better reliability
+  // Use polling on Windows for better reliability with network drives
   usePolling: process.platform === 'win32',
+  // Windows polling throttling to avoid high CPU usage (Bug #18)
+  interval: process.platform === 'win32' ? WINDOWS_POLL_INTERVAL : undefined,
+  binaryInterval: process.platform === 'win32' ? WINDOWS_BINARY_POLL_INTERVAL : undefined,
   // Ignore permission errors
   ignorePermissionErrors: true,
 };
@@ -728,8 +749,10 @@ export class FileWatcher {
 
     await this.indexManager.updateFile(event.relativePath);
 
-    // Reload fingerprints to get the updated hash
-    await this.fingerprints.load();
+    // Update in-memory fingerprint directly instead of reloading from disk (Bug #20)
+    // The IndexManager already saved the updated fingerprints to disk,
+    // so we just need to update our local cache to avoid expensive disk I/O
+    this.fingerprints.set(event.relativePath, currentHash);
 
     this.stats.indexUpdates++;
   }
@@ -790,9 +813,11 @@ export class FileWatcher {
 
     await this.docsIndexManager!.updateDocFile(event.relativePath);
 
-    // Reload docs fingerprints to get the updated hash
+    // Update in-memory docs fingerprint directly instead of reloading from disk (Bug #20)
+    // The DocsIndexManager already saved the updated fingerprints to disk,
+    // so we just need to update our local cache to avoid expensive disk I/O
     if (this.docsFingerprints) {
-      await this.docsFingerprints.load();
+      this.docsFingerprints.set(event.relativePath, currentHash);
     }
 
     this.stats.indexUpdates++;
@@ -839,8 +864,10 @@ export class FileWatcher {
 
     await this.indexManager.removeFile(event.relativePath);
 
-    // Reload fingerprints to reflect removal
-    await this.fingerprints.load();
+    // Remove from in-memory fingerprints directly instead of reloading from disk (Bug #20)
+    // The IndexManager already saved the updated fingerprints to disk,
+    // so we just need to update our local cache to avoid expensive disk I/O
+    this.fingerprints.delete(event.relativePath);
 
     this.stats.indexUpdates++;
   }
@@ -868,9 +895,11 @@ export class FileWatcher {
 
     await this.docsIndexManager!.removeDocFile(event.relativePath);
 
-    // Reload docs fingerprints to reflect removal
+    // Remove from in-memory docs fingerprints directly instead of reloading from disk (Bug #20)
+    // The DocsIndexManager already saved the updated fingerprints to disk,
+    // so we just need to update our local cache to avoid expensive disk I/O
     if (this.docsFingerprints) {
-      await this.docsFingerprints.load();
+      this.docsFingerprints.delete(event.relativePath);
     }
 
     this.stats.indexUpdates++;

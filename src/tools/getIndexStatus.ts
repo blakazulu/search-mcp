@@ -119,28 +119,31 @@ export function formatStorageSize(bytes: number): string {
  * Calculate the total size of a directory in bytes
  *
  * Recursively calculates the size of all files in a directory.
+ * Uses async file operations to avoid blocking the event loop.
  *
  * @param dirPath - Path to the directory
  * @returns Total size in bytes
  */
-function calculateDirectorySize(dirPath: string): number {
-  if (!fs.existsSync(dirPath)) {
+async function calculateDirectorySize(dirPath: string): Promise<number> {
+  try {
+    await fs.promises.access(dirPath);
+  } catch {
     return 0;
   }
 
   let totalSize = 0;
 
   try {
-    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
 
     for (const entry of entries) {
       const fullPath = `${dirPath}/${entry.name}`;
 
       if (entry.isDirectory()) {
-        totalSize += calculateDirectorySize(fullPath);
+        totalSize += await calculateDirectorySize(fullPath);
       } else {
         try {
-          const stats = fs.statSync(fullPath);
+          const stats = await fs.promises.stat(fullPath);
           totalSize += stats.size;
         } catch {
           // Skip files we can't stat
@@ -201,9 +204,9 @@ export async function collectStatus(
     return { status: 'not_found' };
   }
 
-  // Get LanceDB storage size
+  // Get LanceDB storage size (async to avoid blocking event loop)
   const lanceDbPath = getLanceDbPath(indexPath);
-  const storageSizeBytes = calculateDirectorySize(lanceDbPath);
+  const storageSizeBytes = await calculateDirectorySize(lanceDbPath);
 
   // Determine last updated timestamp
   // Use lastIncrementalUpdate if available, otherwise use lastFullIndex

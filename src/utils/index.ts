@@ -100,3 +100,17 @@ export {
   getAdaptiveBatchSize,
   MemoryMonitor,
 } from './memory.js';
+
+// Timestamp utilities exports
+export {
+  type TimestampValidationResult,
+  type PerfTimer,
+  MAX_REASONABLE_AGE_MS,
+  MAX_FUTURE_TOLERANCE_MS,
+  NFS_TIMESTAMP_RESOLUTION_MS,
+  validateTimestamp,
+  couldBeNfsAliased,
+  getSafeTimestamp,
+  createPerfTimer,
+  measureDuration,
+} from './timestamp.js';

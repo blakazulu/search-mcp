@@ -732,6 +732,88 @@ On 'unlink' (delete):
 6. Update fingerprints.json
 ```
 
+### 5.7 Indexing Strategies
+
+**Purpose:** Allow users to choose between different indexing behaviors based on their workflow.
+
+**Available Strategies:**
+
+| Strategy | Description | Use Case |
+|----------|-------------|----------|
+| `realtime` | Index immediately on file change | Default, always up-to-date |
+| `lazy` | Batch index after idle period or on search | Large projects, battery savings |
+| `git` | Index only on git commit | Projects with frequent saves |
+
+**Architecture:**
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                  Strategy Orchestrator                   │
+│  - Manages strategy lifecycle                           │
+│  - Routes file events to active strategy                │
+│  - Handles strategy switching                           │
+└─────────────────────────┬───────────────────────────────┘
+                          │
+        ┌─────────────────┼─────────────────┐
+        │                 │                 │
+        ▼                 ▼                 ▼
+┌───────────────┐ ┌───────────────┐ ┌───────────────┐
+│   Realtime    │ │     Lazy      │ │      Git      │
+│   Strategy    │ │   Strategy    │ │   Strategy    │
+│               │ │               │ │               │
+│ - Immediate   │ │ - Batch queue │ │ - Post-commit │
+│   indexing    │ │ - Idle timer  │ │   hook        │
+│ - File watcher│ │ - On-demand   │ │ - Dirty track │
+└───────────────┘ └───────────────┘ └───────────────┘
+                          │
+                          ▼
+                ┌───────────────────┐
+                │ Dirty Files Mgr   │
+                │ - Tracks pending  │
+                │ - Persists state  │
+                └───────────────────┘
+```
+
+**Strategy Interface:**
+```typescript
+interface IndexingStrategy {
+  readonly name: 'realtime' | 'lazy' | 'git';
+  initialize(): Promise<void>;
+  start(): Promise<void>;
+  stop(): Promise<void>;
+  isActive(): boolean;
+  onFileEvent(event: StrategyFileEvent): Promise<void>;
+  flush(): Promise<void>;  // Force process pending
+  getStats(): StrategyStats;
+}
+```
+
+**Dirty Files Manager:**
+- Tracks files pending indexing across restarts
+- Persists to `dirty-files.json` in index directory
+- Shared by lazy and git strategies
+
+### 5.8 Concurrency Control
+
+**Purpose:** Prevent race conditions and data corruption from concurrent operations.
+
+**Components:**
+
+| Component | Purpose |
+|-----------|---------|
+| `AsyncMutex` | Simple async mutex with `withLock()`, `tryAcquire()`, timeout support |
+| `ReadWriteLock` | Allows concurrent reads, exclusive writes |
+| `IndexingLock` | Singleton preventing concurrent indexing operations |
+
+**Protected Operations:**
+- LanceDB insert/delete/search (per-store mutex)
+- Full indexing and reindexing (IndexingLock singleton)
+- File watcher debouncing (atomic queue operations)
+
+**Atomic Writes:**
+- All JSON files written atomically (write to temp, rename)
+- Prevents corruption from crashes or concurrent writes
+
 ---
 
 ## 6. Error Handling
@@ -788,6 +870,9 @@ Created at `~/.mcp/search/indexes/<hash>/config.json` on first index:
 
   "enhancedToolDescriptions": false,
 
+  "indexingStrategy": "realtime",
+  "lazyIdleThreshold": 30,
+
   "_hardcodedExcludes": [
     "// These patterns are ALWAYS excluded and cannot be overridden:",
     "// - node_modules/, jspm_packages/, bower_components/  (dependencies)",
@@ -808,7 +893,9 @@ Created at `~/.mcp/search/indexes/<hash>/config.json` on first index:
     "maxFiles": "Warn if project exceeds this many files.",
     "docPatterns": "Glob patterns for documentation files. Default: ['**/*.md', '**/*.txt'].",
     "indexDocs": "If true, index documentation files with prose-optimized chunking. Default: true.",
-    "enhancedToolDescriptions": "If true, tool descriptions include AI hints. Default: false."
+    "enhancedToolDescriptions": "If true, tool descriptions include AI hints. Default: false.",
+    "indexingStrategy": "Indexing strategy: 'realtime' (immediate), 'lazy' (on idle/search), 'git' (on commit). Default: 'realtime'.",
+    "lazyIdleThreshold": "Seconds of inactivity before lazy indexing triggers. Default: 30."
   }
 }
 ```
@@ -824,6 +911,8 @@ On load, validate:
 - `docPatterns` is array of strings (glob patterns)
 - `indexDocs` is boolean
 - `enhancedToolDescriptions` is boolean
+- `indexingStrategy` is one of: 'realtime', 'lazy', 'git'
+- `lazyIdleThreshold` is positive integer
 
 Invalid config → Use defaults + log warning
 

@@ -82,6 +82,12 @@ A **local-first Model Context Protocol (MCP) Server** that enables Claude Code (
 - **As a Developer**, I want to see the status of my index (files indexed, size, last update).
 - **As a Developer**, I want to delete an index if I no longer need it.
 
+### Indexing Strategies
+
+- **As a Developer** working on a large project, I want to choose a "lazy" indexing strategy that batches updates during idle time, so my machine stays responsive.
+- **As a Developer** who commits frequently, I want to choose a "git" indexing strategy that only updates after commits, so I don't waste resources on WIP saves.
+- **As a Developer**, I want the default "realtime" strategy to index immediately, so my searches always reflect the latest code.
+
 ### Safety & Privacy
 
 - **As a Developer**, I want to be sure that `node_modules`, `.git`, and secrets (`.env`, `*.key`) are **never** indexed.
@@ -188,6 +194,9 @@ Priority chain for detecting project root:
 
   "enhancedToolDescriptions": false,
 
+  "indexingStrategy": "realtime",
+  "lazyIdleThreshold": 30,
+
   "_hardcodedExcludes": [
     "// These patterns are ALWAYS excluded and cannot be overridden:",
     "// - node_modules/, jspm_packages/, bower_components/  (dependencies)",
@@ -208,7 +217,9 @@ Priority chain for detecting project root:
     "maxFiles": "Warn if project exceeds this many files.",
     "docPatterns": "Glob patterns for documentation files. Default: ['**/*.md', '**/*.txt'].",
     "indexDocs": "If true, index documentation files separately with prose-optimized chunking.",
-    "enhancedToolDescriptions": "If true, tool descriptions include hints for AI to prefer search over re-reading context. Default: false."
+    "enhancedToolDescriptions": "If true, tool descriptions include hints for AI to prefer search over re-reading context. Default: false.",
+    "indexingStrategy": "Indexing strategy: 'realtime' (immediate), 'lazy' (on idle/search), 'git' (on commit). Default: 'realtime'.",
+    "lazyIdleThreshold": "Seconds of inactivity before lazy indexing triggers. Default: 30."
   }
 }
 ```

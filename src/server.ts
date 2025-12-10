@@ -12,6 +12,7 @@
  * - Lazy initialization of shared components
  * - Graceful shutdown on SIGINT/SIGTERM
  * - Proper error handling and logging
+ * - Strategy orchestrator for configurable indexing strategies
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -26,8 +27,22 @@ import { z } from 'zod';
 
 import { getLogger } from './utils/logger.js';
 import { runCleanup, isShutdownInProgress } from './utils/cleanup.js';
+import { getIndexPath } from './utils/paths.js';
 import { detectProjectRoot } from './engines/projectRoot.js';
 import { MCPError, isMCPError } from './errors/index.js';
+
+// Strategy orchestrator and dependencies
+import {
+  StrategyOrchestrator,
+  IndexManager,
+  DocsIndexManager,
+  IntegrityEngine,
+  IndexingPolicy,
+} from './engines/index.js';
+import { FingerprintsManager } from './storage/fingerprints.js';
+import { DocsFingerprintsManager } from './storage/docsFingerprints.js';
+import { loadConfig, Config } from './storage/config.js';
+import { loadMetadata } from './storage/metadata.js';
 
 // Import tool definitions and handlers
 import {
@@ -117,6 +132,10 @@ interface ServerContext {
   cwd: string;
   /** Detected project path (cached after first detection) */
   projectPath: string | null;
+  /** Strategy orchestrator for indexing strategies */
+  orchestrator: StrategyOrchestrator | null;
+  /** Loaded configuration (cached) */
+  config: Config | null;
 }
 
 /**
@@ -126,7 +145,258 @@ function createServerContext(): ServerContext {
   return {
     cwd: process.cwd(),
     projectPath: null,
+    orchestrator: null,
+    config: null,
   };
+}
+
+// ============================================================================
+// Orchestrator Access Functions
+// ============================================================================
+
+/**
+ * Get the current strategy orchestrator
+ *
+ * Returns null if:
+ * - No index exists yet
+ * - Orchestrator hasn't been initialized
+ *
+ * @param context - Server context
+ * @returns StrategyOrchestrator or null
+ */
+function getOrchestrator(context: ServerContext): StrategyOrchestrator | null {
+  return context.orchestrator;
+}
+
+/**
+ * Set the strategy orchestrator
+ *
+ * @param context - Server context
+ * @param orchestrator - StrategyOrchestrator instance or null
+ */
+function setOrchestrator(context: ServerContext, orchestrator: StrategyOrchestrator | null): void {
+  context.orchestrator = orchestrator;
+}
+
+/**
+ * Get the cached configuration
+ *
+ * @param context - Server context
+ * @returns Config or null
+ */
+function getConfig(context: ServerContext): Config | null {
+  return context.config;
+}
+
+/**
+ * Set the cached configuration
+ *
+ * @param context - Server context
+ * @param config - Config instance or null
+ */
+function setConfig(context: ServerContext, config: Config | null): void {
+  context.config = config;
+}
+
+/**
+ * Initialize the strategy orchestrator for a project
+ *
+ * Creates all dependencies and starts the indexing strategy based on config.
+ * This should only be called when an index exists for the project.
+ *
+ * @param context - Server context to update
+ * @param projectPath - Absolute path to the project root
+ * @param indexPath - Absolute path to the index directory
+ * @param config - Project configuration
+ * @returns The created StrategyOrchestrator or null if initialization fails
+ */
+async function initializeOrchestrator(
+  context: ServerContext,
+  projectPath: string,
+  indexPath: string,
+  config: Config
+): Promise<StrategyOrchestrator | null> {
+  const logger = getLogger();
+
+  try {
+    logger.info('server', 'Initializing strategy orchestrator', {
+      projectPath,
+      indexPath,
+      strategy: config.indexingStrategy,
+    });
+
+    // Create all required dependencies
+    // Note: IndexManager and DocsIndexManager derive indexPath from projectPath if not provided
+    const indexManager = new IndexManager(projectPath, indexPath);
+    const docsIndexManager = config.indexDocs ? new DocsIndexManager(projectPath, indexPath) : null;
+
+    // Create and load fingerprints manager
+    const fingerprints = new FingerprintsManager(indexPath, projectPath);
+    await fingerprints.load();
+
+    // Create and load docs fingerprints manager if docs indexing is enabled
+    const docsFingerprints = config.indexDocs
+      ? new DocsFingerprintsManager(indexPath, projectPath)
+      : null;
+    if (docsFingerprints) {
+      await docsFingerprints.load();
+    }
+
+    // Create and initialize indexing policy
+    const policy = new IndexingPolicy(projectPath, config);
+    await policy.initialize();
+
+    // Create integrity engine
+    const integrityEngine = new IntegrityEngine(
+      projectPath,
+      indexPath,
+      indexManager,
+      fingerprints,
+      policy
+    );
+
+    // Create the strategy orchestrator
+    const orchestrator = new StrategyOrchestrator({
+      projectPath,
+      indexPath,
+      indexManager,
+      docsIndexManager,
+      integrityEngine,
+      policy,
+      fingerprints,
+      docsFingerprints,
+    });
+
+    // Start the strategy based on config
+    await orchestrator.setStrategy(config);
+
+    // Store in context
+    context.orchestrator = orchestrator;
+    context.config = config;
+
+    logger.info('server', 'Strategy orchestrator initialized successfully', {
+      strategy: config.indexingStrategy,
+    });
+
+    return orchestrator;
+  } catch (error) {
+    logger.error('server', 'Failed to initialize strategy orchestrator', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+/**
+ * Initialize orchestrator if an index exists for the project
+ *
+ * Called on server startup to set up indexing strategy for existing indexes.
+ *
+ * @param context - Server context
+ * @param projectPath - Absolute path to the project root
+ */
+async function maybeInitializeOrchestrator(
+  context: ServerContext,
+  projectPath: string
+): Promise<void> {
+  const logger = getLogger();
+  const indexPath = getIndexPath(projectPath);
+
+  try {
+    // Check if index exists by loading metadata
+    const metadata = await loadMetadata(indexPath);
+    if (!metadata) {
+      logger.debug('server', 'No existing index found, skipping orchestrator initialization', {
+        projectPath,
+      });
+      return;
+    }
+
+    // Load configuration
+    const config = await loadConfig(indexPath);
+
+    // Initialize orchestrator
+    await initializeOrchestrator(context, projectPath, indexPath, config);
+  } catch (error) {
+    logger.warn('server', 'Error checking for existing index', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    // Continue without orchestrator - it will be created when create_index is called
+  }
+}
+
+/**
+ * Initialize orchestrator without starting a strategy
+ *
+ * Creates the orchestrator with all dependencies but doesn't start a strategy.
+ * Used by create_index to set up the orchestrator before indexing completes,
+ * so it can start the strategy after the index is created.
+ *
+ * @param context - Server context (not updated by this function)
+ * @param projectPath - Absolute path to the project root
+ * @param indexPath - Absolute path to the index directory
+ * @param config - Project configuration
+ * @returns The created StrategyOrchestrator or null if creation fails
+ */
+async function initializeOrchestratorWithoutStarting(
+  context: ServerContext,
+  projectPath: string,
+  indexPath: string,
+  config: Config
+): Promise<StrategyOrchestrator | null> {
+  const logger = getLogger();
+
+  try {
+    logger.debug('server', 'Creating orchestrator without starting strategy', {
+      projectPath,
+      indexPath,
+    });
+
+    // Create all required dependencies
+    // Note: IndexManager and DocsIndexManager derive indexPath from projectPath if not provided
+    const indexManager = new IndexManager(projectPath, indexPath);
+    const docsIndexManager = config.indexDocs ? new DocsIndexManager(projectPath, indexPath) : null;
+
+    // Create fingerprints managers (will be populated during indexing)
+    const fingerprints = new FingerprintsManager(indexPath, projectPath);
+    const docsFingerprints = config.indexDocs
+      ? new DocsFingerprintsManager(indexPath, projectPath)
+      : null;
+
+    // Create and initialize indexing policy
+    const policy = new IndexingPolicy(projectPath, config);
+    await policy.initialize();
+
+    // Create integrity engine
+    const integrityEngine = new IntegrityEngine(
+      projectPath,
+      indexPath,
+      indexManager,
+      fingerprints,
+      policy
+    );
+
+    // Create the strategy orchestrator (but don't start a strategy)
+    const orchestrator = new StrategyOrchestrator({
+      projectPath,
+      indexPath,
+      indexManager,
+      docsIndexManager,
+      integrityEngine,
+      policy,
+      fingerprints,
+      docsFingerprints,
+    });
+
+    logger.debug('server', 'Orchestrator created (not started)');
+
+    return orchestrator;
+  } catch (error) {
+    logger.error('server', 'Failed to create orchestrator', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 }
 
 /**
@@ -183,15 +453,45 @@ async function executeTool(
       case 'create_index': {
         // MCP handles confirmation via requiresConfirmation flag on the tool definition
         // When we reach this point, the user has already confirmed (if required)
+
+        // Initialize orchestrator after create_index completes if not already initialized
+        // Load config first (will use defaults if config doesn't exist yet)
+        const indexPath = getIndexPath(projectPath);
+        const config = await loadConfig(indexPath);
+
+        // If orchestrator doesn't exist, create dependencies for it
+        // but pass to create_index so it can start the strategy after indexing
+        let orchestrator = serverContext.orchestrator;
+        if (!orchestrator) {
+          // Create the orchestrator for create_index to start after indexing
+          orchestrator = await initializeOrchestratorWithoutStarting(
+            serverContext,
+            projectPath,
+            indexPath,
+            config
+          );
+        }
+
         const context: CreateIndexContext = {
           projectPath,
+          orchestrator: orchestrator || undefined,
+          config: orchestrator ? config : undefined,
         };
         result = await createIndex({}, context);
+
+        // If orchestrator was created, store it and the config in context
+        if (orchestrator && !serverContext.orchestrator) {
+          serverContext.orchestrator = orchestrator;
+          serverContext.config = config;
+        }
         break;
       }
 
       case 'search_code': {
-        const context: ToolContext = { projectPath };
+        const context: ToolContext = {
+          projectPath,
+          orchestrator: serverContext.orchestrator || undefined,
+        };
         const parsed = z.object({
           query: z.string(),
           top_k: z.number().optional().default(10),
@@ -201,7 +501,10 @@ async function executeTool(
       }
 
       case 'search_docs': {
-        const context: DocsToolContext = { projectPath };
+        const context: DocsToolContext = {
+          projectPath,
+          orchestrator: serverContext.orchestrator || undefined,
+        };
         const parsed = z.object({
           query: z.string(),
           top_k: z.number().optional().default(10),
@@ -211,7 +514,10 @@ async function executeTool(
       }
 
       case 'search_by_path': {
-        const context: ToolContext = { projectPath };
+        const context: ToolContext = {
+          projectPath,
+          orchestrator: serverContext.orchestrator || undefined,
+        };
         const parsed = z.object({
           pattern: z.string(),
           limit: z.number().optional().default(20),
@@ -221,7 +527,10 @@ async function executeTool(
       }
 
       case 'get_index_status': {
-        const context: ToolContext = { projectPath };
+        const context: ToolContext = {
+          projectPath,
+          orchestrator: serverContext.orchestrator || undefined,
+        };
         result = await getIndexStatus({}, context);
         break;
       }
@@ -237,7 +546,10 @@ async function executeTool(
       }
 
       case 'reindex_file': {
-        const context: ToolContext = { projectPath };
+        const context: ToolContext = {
+          projectPath,
+          orchestrator: serverContext.orchestrator || undefined,
+        };
         const parsed = z.object({
           path: z.string(),
         }).parse(args);
@@ -250,8 +562,15 @@ async function executeTool(
         // When we reach this point, the user has already confirmed (if required)
         const context: DeleteIndexContext = {
           projectPath,
+          orchestrator: serverContext.orchestrator || undefined,
         };
         result = await deleteIndex({}, context);
+
+        // Clear orchestrator after delete_index completes
+        if (serverContext.orchestrator) {
+          serverContext.orchestrator = null;
+          serverContext.config = null;
+        }
         break;
       }
 
@@ -423,8 +742,22 @@ export async function startServer(): Promise<void> {
   logger.info('server', 'Starting MCP server...');
 
   // Create server
-  const { server } = createServer();
+  const { server, context } = createServer();
   serverInstance = server;
+
+  // Detect project path early so we can initialize orchestrator if index exists
+  try {
+    const projectPath = await getProjectPath(context);
+    logger.debug('server', 'Project path detected for startup', { projectPath });
+
+    // Initialize orchestrator if an index already exists
+    await maybeInitializeOrchestrator(context, projectPath);
+  } catch (error) {
+    logger.warn('server', 'Failed to detect project path or initialize orchestrator on startup', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    // Continue starting server - orchestrator will be created when tools need it
+  }
 
   // Setup graceful shutdown handlers with proper signal handling
   // Note: On Windows, SIGTERM is not fully supported, but we handle both for cross-platform compatibility
@@ -481,6 +814,12 @@ export {
   shutdown,
   createServerContext,
   getProjectPath,
+  getOrchestrator,
+  setOrchestrator,
+  getConfig,
+  setConfig,
+  initializeOrchestrator,
+  maybeInitializeOrchestrator,
   type ServerContext,
   type ToolName,
 };

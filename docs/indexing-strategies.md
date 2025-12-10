@@ -16,7 +16,7 @@ Add user-configurable indexing strategies to reduce performance overhead from co
 | 6 | SMCP-048 | Git Strategy | COMPLETED |
 | 7 | SMCP-049 | Strategy Orchestrator | COMPLETED |
 | 8 | SMCP-050 | Tool Integrations | COMPLETED |
-| 9 | SMCP-051 | Server Integration | Not Started |
+| 9 | SMCP-051 | Server Integration | COMPLETED |
 
 ---
 
@@ -934,36 +934,151 @@ if (context.orchestrator) {
 
 ---
 
-## Phase 9: Server Integration
+## Phase 9: Server Integration (COMPLETED - SMCP-051)
 
-### Modify: `src/server.ts`
+**Implementation completed 2025-12-10**
+
+### Modified: `src/server.ts`
+
+Extended `ServerContext` with orchestrator:
 
 ```typescript
-// Create orchestrator after index manager initialization
-const orchestrator = new StrategyOrchestrator(
-  projectPath,
-  indexPath,
-  indexManager,
-  docsIndexManager,
-  integrityEngine,
-  policy,
-  fingerprints,
-  docsFingerprints,
-);
-
-// Make orchestrator available to tools
-// (via server context or module-level export)
-
-// Start strategy based on config
-const config = await configManager.load();
-await orchestrator.setStrategy(config);
-
-// Optional: Watch config file for strategy changes
-// chokidar.watch(configPath).on('change', async () => {
-//   const newConfig = await configManager.load();
-//   await orchestrator.setStrategy(newConfig);
-// });
+interface ServerContext {
+  cwd: string;
+  projectPath: string | null;
+  orchestrator: StrategyOrchestrator | null;  // NEW
+  config: Config | null;  // NEW
+}
 ```
+
+Added orchestrator initialization functions:
+
+```typescript
+/**
+ * Initialize orchestrator for a project (when index exists)
+ */
+async function initializeOrchestrator(
+  context: ServerContext,
+  projectPath: string,
+  indexPath: string,
+  config: Config
+): Promise<StrategyOrchestrator | null> {
+  // Create all dependencies:
+  // - IndexManager, DocsIndexManager (if indexDocs)
+  // - FingerprintsManager, DocsFingerprintsManager (if indexDocs)
+  // - IndexingPolicy
+  // - IntegrityEngine
+  // - StrategyOrchestrator
+  // Start strategy from config
+}
+
+/**
+ * Check if index exists and initialize orchestrator on startup
+ */
+async function maybeInitializeOrchestrator(
+  context: ServerContext,
+  projectPath: string
+): Promise<void> {
+  // Load metadata to check if index exists
+  // If exists, load config and initialize orchestrator
+}
+
+/**
+ * Create orchestrator without starting strategy (for create_index)
+ */
+async function initializeOrchestratorWithoutStarting(
+  context: ServerContext,
+  projectPath: string,
+  indexPath: string,
+  config: Config
+): Promise<StrategyOrchestrator | null> {
+  // Create orchestrator but don't start strategy
+  // Used by create_index to start strategy after indexing
+}
+```
+
+Updated `startServer()` to initialize orchestrator on startup:
+
+```typescript
+export async function startServer(): Promise<void> {
+  const { server, context } = createServer();
+  serverInstance = server;
+
+  // Detect project path early
+  const projectPath = await getProjectPath(context);
+
+  // Initialize orchestrator if index exists
+  await maybeInitializeOrchestrator(context, projectPath);
+
+  // ... rest of startup
+}
+```
+
+Updated tool handlers to pass orchestrator in context:
+
+```typescript
+case 'search_code': {
+  const context: ToolContext = {
+    projectPath,
+    orchestrator: serverContext.orchestrator || undefined,  // Pass orchestrator
+  };
+  // ...
+}
+
+case 'create_index': {
+  // Create orchestrator without starting strategy
+  let orchestrator = serverContext.orchestrator;
+  if (!orchestrator) {
+    orchestrator = await initializeOrchestratorWithoutStarting(...);
+  }
+  const context: CreateIndexContext = {
+    projectPath,
+    orchestrator: orchestrator || undefined,
+    config: orchestrator ? config : undefined,
+  };
+  result = await createIndex({}, context);
+  // Store orchestrator in server context after indexing
+  if (orchestrator && !serverContext.orchestrator) {
+    serverContext.orchestrator = orchestrator;
+    serverContext.config = config;
+  }
+}
+
+case 'delete_index': {
+  const context: DeleteIndexContext = {
+    projectPath,
+    orchestrator: serverContext.orchestrator || undefined,
+  };
+  result = await deleteIndex({}, context);
+  // Clear orchestrator from context
+  if (serverContext.orchestrator) {
+    serverContext.orchestrator = null;
+    serverContext.config = null;
+  }
+}
+```
+
+### Initialization Flow
+
+1. **Server startup:**
+   - Detect project path
+   - Check if index exists (load metadata)
+   - If index exists: initialize orchestrator with strategy
+
+2. **create_index call:**
+   - Create orchestrator without starting strategy
+   - Run indexing
+   - Start strategy after indexing completes
+   - Store orchestrator in server context
+
+3. **delete_index call:**
+   - Stop orchestrator (flushes + stops + cleanup)
+   - Clear orchestrator from server context
+   - Delete index files
+
+### Tests
+
+All 1748 existing tests pass with no regressions.
 
 ---
 

@@ -6,8 +6,7 @@
  * - Lifecycle management (initialize, start, stop)
  * - File event queuing (not immediate processing)
  * - Dirty files persistence
- * - Flush behavior
- * - Idle timer logic
+ * - Flush behavior (on-demand only, no timer)
  * - Code vs docs file routing
  * - Error handling
  */
@@ -258,30 +257,6 @@ describe('LazyStrategy', () => {
       expect(strategy).toBeInstanceOf(LazyStrategy);
     });
 
-    it('should use default idle threshold of 30 seconds', () => {
-      const strategy = new LazyStrategy(
-        projectPath,
-        indexManager,
-        null,
-        policy,
-        dirtyFiles
-      );
-
-      expect(strategy.getIdleThreshold()).toBe(30);
-    });
-
-    it('should accept custom idle threshold', () => {
-      const strategy = new LazyStrategy(
-        projectPath,
-        indexManager,
-        null,
-        policy,
-        dirtyFiles,
-        60 // 60 seconds
-      );
-
-      expect(strategy.getIdleThreshold()).toBe(60);
-    });
   });
 
   describe('Lifecycle Management', () => {
@@ -459,14 +434,12 @@ describe('LazyStrategy', () => {
       policy = new IndexingPolicy(projectPath, config);
       dirtyFiles = new DirtyFilesManager(indexPath);
 
-      // Use a very long idle threshold to prevent auto-flush
       strategy = new LazyStrategy(
         projectPath,
         indexManager,
         null,
         policy,
-        dirtyFiles,
-        3600 // 1 hour
+        dirtyFiles
       );
 
       await strategy.initialize();
@@ -597,8 +570,7 @@ describe('LazyStrategy', () => {
         indexManager,
         null,
         policy,
-        dirtyFiles,
-        3600 // Long idle threshold
+        dirtyFiles
       );
 
       await strategy.initialize();
@@ -672,129 +644,6 @@ describe('LazyStrategy', () => {
     });
   });
 
-  describe('Idle Timer', () => {
-    let projectPath: string;
-    let indexPath: string;
-    let indexManager: IndexManager;
-    let policy: IndexingPolicy;
-    let dirtyFiles: DirtyFilesManager;
-    let strategy: LazyStrategy;
-
-    beforeEach(async () => {
-      projectPath = await createTempDir('lazy-timer-test-project-');
-      indexPath = await createTempDir('lazy-timer-test-index-');
-      await createTestProject(projectPath);
-
-      const config: Config = { ...DEFAULT_CONFIG };
-      indexManager = new IndexManager(projectPath, indexPath);
-      policy = new IndexingPolicy(projectPath, config);
-      dirtyFiles = new DirtyFilesManager(indexPath);
-
-      // Use 1 second idle threshold for faster tests
-      strategy = new LazyStrategy(
-        projectPath,
-        indexManager,
-        null,
-        policy,
-        dirtyFiles,
-        1 // 1 second
-      );
-
-      await strategy.initialize();
-    });
-
-    afterEach(async () => {
-      if (strategy?.isActive()) {
-        await strategy.stop();
-      }
-      await removeTempDir(projectPath);
-      await removeTempDir(indexPath);
-    });
-
-    it('should trigger flush after idle timeout', async () => {
-      await strategy.start();
-
-      // Add a dirty file
-      await strategy.onFileEvent({
-        type: 'change',
-        relativePath: 'src/index.ts',
-        absolutePath: path.join(projectPath, 'src/index.ts'),
-      });
-
-      expect(strategy.getStats().pendingFiles).toBe(1);
-
-      // Wait for idle timeout (1s) plus some buffer
-      await delay(1500);
-
-      // Dirty files should be cleared by idle flush
-      expect(dirtyFiles.isEmpty()).toBe(true);
-    });
-
-    it('should reset timer on new file events', async () => {
-      await strategy.start();
-
-      // Add first event
-      await strategy.onFileEvent({
-        type: 'add',
-        relativePath: 'file1.ts',
-        absolutePath: path.join(projectPath, 'file1.ts'),
-      });
-
-      // Wait 500ms (half the idle time)
-      await delay(500);
-
-      // Add second event - should reset timer
-      await strategy.onFileEvent({
-        type: 'add',
-        relativePath: 'file2.ts',
-        absolutePath: path.join(projectPath, 'file2.ts'),
-      });
-
-      // Wait another 600ms - total 1.1s from first event but only 0.6s from second
-      await delay(600);
-
-      // Files should still be pending (timer was reset)
-      expect(strategy.getStats().pendingFiles).toBe(2);
-
-      // Wait for full idle period
-      await delay(600);
-
-      // Now should be flushed
-      expect(dirtyFiles.isEmpty()).toBe(true);
-    });
-
-    it('should start idle timer if dirty files exist on start', async () => {
-      // Add dirty file before start
-      dirtyFiles.add('existing-dirty.ts');
-
-      await strategy.start();
-
-      // Wait for idle timeout
-      await delay(1500);
-
-      // Should have triggered flush
-      expect(dirtyFiles.isEmpty()).toBe(true);
-    });
-
-    it('should clear timer on stop', async () => {
-      await strategy.start();
-
-      await strategy.onFileEvent({
-        type: 'add',
-        relativePath: 'test.ts',
-        absolutePath: path.join(projectPath, 'test.ts'),
-      });
-
-      // Stop before idle timeout
-      await strategy.stop();
-
-      // Files should still be pending (saved but not flushed)
-      const newDirtyFiles = new DirtyFilesManager(indexPath);
-      await newDirtyFiles.load();
-      expect(newDirtyFiles.has('test.ts')).toBe(true);
-    });
-  });
-
   describe('getStats()', () => {
     let projectPath: string;
     let indexPath: string;
@@ -818,8 +667,7 @@ describe('LazyStrategy', () => {
         indexManager,
         null,
         policy,
-        dirtyFiles,
-        3600
+        dirtyFiles
       );
 
       await strategy.initialize();
@@ -915,21 +763,6 @@ describe('LazyStrategy', () => {
       );
 
       expect(strategy).toBeInstanceOf(LazyStrategy);
-      expect(strategy.getIdleThreshold()).toBe(30);
-    });
-
-    it('should create LazyStrategy with custom options', () => {
-      const strategy = createLazyStrategy(
-        projectPath,
-        indexManager,
-        null,
-        policy,
-        dirtyFiles,
-        { idleThresholdSeconds: 60 }
-      );
-
-      expect(strategy).toBeInstanceOf(LazyStrategy);
-      expect(strategy.getIdleThreshold()).toBe(60);
     });
 
     it('should create LazyStrategy with DocsIndexManager', () => {
@@ -970,8 +803,7 @@ describe('LazyStrategy', () => {
         indexManager,
         null,
         policy,
-        dirtyFiles,
-        45
+        dirtyFiles
       );
 
       await strategy.initialize();
@@ -999,10 +831,6 @@ describe('LazyStrategy', () => {
       });
 
       expect(strategy.getDirtyCount()).toBe(1);
-    });
-
-    it('should return idle threshold', () => {
-      expect(strategy.getIdleThreshold()).toBe(45);
     });
 
     it('should return flushing state', async () => {

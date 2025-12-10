@@ -70,43 +70,9 @@ jobs:
 
 ---
 
-## 2. Logging Improvements
+## 2. Future Features
 
-### 2.1 Log Location
-
-```
-~/.mcp/search/indexes/<hash>/logs/
-├── search-mcp.log      # Current log
-├── search-mcp.1.log    # Rotated log
-└── search-mcp.2.log    # Older rotated log
-```
-
-### 2.2 Log Format
-
-```
-[2024-01-15T10:30:45.123Z] [INFO] [indexing] Indexed file: src/auth/login.ts (3 chunks)
-[2024-01-15T10:30:46.456Z] [WARN] [watcher] File exceeds size limit: large-file.json (2.5MB)
-[2024-01-15T10:30:47.789Z] [ERROR] [embedding] Model inference failed: OutOfMemory
-```
-
-### 2.3 Rotation Policy
-
-| Setting | Value |
-|---------|-------|
-| Max file size | 10MB |
-| Max files | 3 |
-| Compression | None (keep readable) |
-
-### 2.4 Log Library
-
-- **Recommended:** `pino` (fast, JSON-friendly)
-- **Alternative:** `winston` (more features)
-
----
-
-## 3. Future Features
-
-### 3.1 High Priority
+### 2.1 High Priority
 
 | Feature | Description | Complexity |
 |---------|-------------|------------|
@@ -114,7 +80,7 @@ jobs:
 | Hybrid Search | Combine vector + keyword search (BM25) | Medium |
 | PDF Doc Support | Add PDF text extraction to `search_docs` | Medium |
 
-### 3.2 Medium Priority
+### 2.2 Medium Priority
 
 | Feature | Description | Complexity |
 |---------|-------------|------------|
@@ -124,7 +90,7 @@ jobs:
 | RST/AsciiDoc Support | Add .rst and .adoc to doc search | Low |
 | Markdown Header Chunking | Split docs by headers for better context | Medium |
 
-### 3.3 Low Priority
+### 2.3 Low Priority
 
 | Feature | Description | Complexity |
 |---------|-------------|------------|
@@ -134,7 +100,7 @@ jobs:
 
 ---
 
-## 4. Technical Debt
+## 3. Technical Debt
 
 | Item | Description | Priority |
 |------|-------------|----------|
@@ -143,7 +109,7 @@ jobs:
 
 ---
 
-## 5. Documentation
+## 4. Documentation
 
 | Item | Status |
 |------|--------|

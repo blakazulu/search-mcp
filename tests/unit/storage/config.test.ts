@@ -114,7 +114,6 @@ describe('Config Manager', () => {
         indexDocs: false,
         enhancedToolDescriptions: true,
         indexingStrategy: 'lazy' as const,
-        lazyIdleThreshold: 60,
       };
 
       const result = ConfigSchema.safeParse(config);
@@ -137,7 +136,6 @@ describe('Config Manager', () => {
         expect(result.data.indexDocs).toBe(true);
         expect(result.data.enhancedToolDescriptions).toBe(false);
         expect(result.data.indexingStrategy).toBe('realtime');
-        expect(result.data.lazyIdleThreshold).toBe(30);
       }
     });
 
@@ -213,37 +211,6 @@ describe('Config Manager', () => {
       expect(result.success).toBe(false);
     });
 
-    it('should accept valid lazyIdleThreshold', () => {
-      const result = ConfigSchema.safeParse({
-        lazyIdleThreshold: 60,
-      });
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.data.lazyIdleThreshold).toBe(60);
-      }
-    });
-
-    it('should reject zero lazyIdleThreshold', () => {
-      const result = ConfigSchema.safeParse({
-        lazyIdleThreshold: 0,
-      });
-      expect(result.success).toBe(false);
-    });
-
-    it('should reject negative lazyIdleThreshold', () => {
-      const result = ConfigSchema.safeParse({
-        lazyIdleThreshold: -10,
-      });
-      expect(result.success).toBe(false);
-    });
-
-    it('should reject non-number lazyIdleThreshold', () => {
-      const result = ConfigSchema.safeParse({
-        lazyIdleThreshold: '30',
-      });
-      expect(result.success).toBe(false);
-    });
-
     it('should reject invalid maxFileSize format', () => {
       const result = ConfigSchema.safeParse({
         maxFileSize: '1GB',
@@ -295,7 +262,6 @@ describe('Config Manager', () => {
       expect(DEFAULT_CONFIG.indexDocs).toBeDefined();
       expect(DEFAULT_CONFIG.enhancedToolDescriptions).toBeDefined();
       expect(DEFAULT_CONFIG.indexingStrategy).toBeDefined();
-      expect(DEFAULT_CONFIG.lazyIdleThreshold).toBeDefined();
     });
 
     it('should have correct enhancedToolDescriptions default', () => {
@@ -312,10 +278,6 @@ describe('Config Manager', () => {
 
     it('should have correct indexingStrategy default', () => {
       expect(DEFAULT_CONFIG.indexingStrategy).toBe('realtime');
-    });
-
-    it('should have correct lazyIdleThreshold default', () => {
-      expect(DEFAULT_CONFIG.lazyIdleThreshold).toBe(30);
     });
 
     it('should match schema defaults', () => {
@@ -366,7 +328,6 @@ describe('Config Manager', () => {
         indexDocs: false,
         enhancedToolDescriptions: true,
         indexingStrategy: 'lazy',
-        lazyIdleThreshold: 45,
       };
 
       const configPath = path.join(indexPath, 'config.json');

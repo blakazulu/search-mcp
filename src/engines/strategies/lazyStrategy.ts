@@ -2,17 +2,15 @@
  * Lazy Indexing Strategy
  *
  * Detects file changes in real-time but defers indexing until:
- * 1. Idle timeout (default 30s of no activity)
- * 2. Before search (flush called by search tools)
+ * - Before search (flush called by search tools)
  *
- * This reduces CPU usage for large projects by batching index updates
- * instead of processing each change immediately.
+ * This is true lazy loading - files are only indexed when their
+ * data is actually needed at search time.
  *
  * Features:
  * - Real-time file change detection
  * - Queues changes using DirtyFilesManager
- * - Automatic flush after idle threshold
- * - Manual flush via flush() method
+ * - Manual flush via flush() method (called by search tools)
  * - Graceful shutdown with dirty files persistence
  */
 
@@ -45,8 +43,7 @@ import {
  * Configuration options for LazyStrategy
  */
 export interface LazyStrategyOptions {
-  /** Idle threshold in seconds before auto-flush (default: 30) */
-  idleThresholdSeconds?: number;
+  // No options currently - true lazy loading has no timer
 }
 
 // ============================================================================
@@ -56,9 +53,8 @@ export interface LazyStrategyOptions {
 /**
  * Lazy Indexing Strategy
  *
- * Queues file changes and processes them on idle or before search.
- * This strategy is ideal for large projects where immediate indexing
- * would cause excessive CPU usage.
+ * Queues file changes and processes them only when needed (before search).
+ * This is true lazy loading - no background processing, only on-demand.
  *
  * @example
  * ```typescript
@@ -67,15 +63,14 @@ export interface LazyStrategyOptions {
  *   indexManager,
  *   docsIndexManager,
  *   policy,
- *   dirtyFiles,
- *   30 // idle threshold in seconds
+ *   dirtyFiles
  * );
  *
  * await strategy.initialize();
  * await strategy.start();
  *
  * // File changes are queued, not processed immediately
- * // To force processing:
+ * // Processing happens when search tools call flush():
  * await strategy.flush();
  *
  * await strategy.stop();
@@ -90,16 +85,12 @@ export class LazyStrategy implements IndexingStrategy {
   private readonly docsIndexManager: DocsIndexManager | null;
   private readonly policy: IndexingPolicy;
   private readonly dirtyFiles: DirtyFilesManager;
-  private readonly idleThresholdSeconds: number;
 
   // State
   private watcher: chokidar.FSWatcher | null = null;
   private active = false;
   private processedCount = 0;
   private lastActivity: Date | null = null;
-
-  // Idle timer
-  private idleTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Flush lock to prevent concurrent flushes
   private flushing = false;
@@ -115,22 +106,19 @@ export class LazyStrategy implements IndexingStrategy {
    * @param docsIndexManager - DocsIndexManager for doc file updates (nullable)
    * @param policy - IndexingPolicy for file filtering
    * @param dirtyFiles - DirtyFilesManager for tracking pending changes
-   * @param idleThresholdSeconds - Seconds of inactivity before auto-flush (default: 30)
    */
   constructor(
     projectPath: string,
     indexManager: IndexManager,
     docsIndexManager: DocsIndexManager | null,
     policy: IndexingPolicy,
-    dirtyFiles: DirtyFilesManager,
-    idleThresholdSeconds: number = 30
+    dirtyFiles: DirtyFilesManager
   ) {
     this.projectPath = normalizePath(projectPath);
     this.indexManager = indexManager;
     this.docsIndexManager = docsIndexManager;
     this.policy = policy;
     this.dirtyFiles = dirtyFiles;
-    this.idleThresholdSeconds = idleThresholdSeconds;
   }
 
   // ==========================================================================
@@ -177,7 +165,6 @@ export class LazyStrategy implements IndexingStrategy {
 
     logger.info('LazyStrategy', 'Starting file watcher (lazy mode)', {
       projectPath: this.projectPath,
-      idleThreshold: this.idleThresholdSeconds,
     });
 
     // Create watcher with shared options from FileWatcher
@@ -199,12 +186,11 @@ export class LazyStrategy implements IndexingStrategy {
 
     this.active = true;
 
-    // If there are pending dirty files from previous session, start idle timer
+    // Log if there are pending dirty files from previous session
     if (!this.dirtyFiles.isEmpty()) {
-      logger.info('LazyStrategy', 'Found pending dirty files from previous session', {
+      logger.info('LazyStrategy', 'Found pending dirty files from previous session (will be processed on next search)', {
         count: this.dirtyFiles.count(),
       });
-      this.resetIdleTimer();
     }
 
     // Register cleanup handler for graceful shutdown
@@ -217,7 +203,7 @@ export class LazyStrategy implements IndexingStrategy {
   /**
    * Stop the strategy
    *
-   * Clears idle timer, saves dirty files, and closes watcher.
+   * Saves dirty files and closes watcher.
    */
   async stop(): Promise<void> {
     const logger = getLogger();
@@ -233,12 +219,6 @@ export class LazyStrategy implements IndexingStrategy {
     if (this.cleanupHandler) {
       unregisterCleanup(this.cleanupHandler);
       this.cleanupHandler = null;
-    }
-
-    // Clear idle timer
-    if (this.idleTimer) {
-      clearTimeout(this.idleTimer);
-      this.idleTimer = null;
     }
 
     // Save dirty files before stopping
@@ -288,7 +268,6 @@ export class LazyStrategy implements IndexingStrategy {
     }
 
     this.lastActivity = new Date();
-    this.resetIdleTimer();
   }
 
   /**
@@ -296,7 +275,6 @@ export class LazyStrategy implements IndexingStrategy {
    *
    * Processes all dirty files and deletions, then clears the queue.
    * This is called:
-   * - Automatically after idle timeout
    * - By search tools before returning results
    * - During strategy switching
    */
@@ -444,38 +422,6 @@ export class LazyStrategy implements IndexingStrategy {
   }
 
   /**
-   * Reset the idle timer
-   *
-   * Clears any existing timer and sets a new one for idleThresholdSeconds.
-   * When the timer fires, it triggers a flush.
-   */
-  private resetIdleTimer(): void {
-    const logger = getLogger();
-
-    // Clear existing timer
-    if (this.idleTimer) {
-      clearTimeout(this.idleTimer);
-    }
-
-    // Set new timer
-    this.idleTimer = setTimeout(() => {
-      this.idleTimer = null;
-
-      // Don't flush during shutdown
-      if (isShutdownInProgress()) {
-        return;
-      }
-
-      logger.info('LazyStrategy', 'Idle timeout reached, triggering flush');
-      this.flush().catch((error) => {
-        logger.error('LazyStrategy', 'Error during idle flush', {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      });
-    }, this.idleThresholdSeconds * 1000);
-  }
-
-  /**
    * Handle watcher error
    */
   private handleError(error: Error): void {
@@ -511,13 +457,6 @@ export class LazyStrategy implements IndexingStrategy {
   }
 
   /**
-   * Get the idle threshold in seconds
-   */
-  getIdleThreshold(): number {
-    return this.idleThresholdSeconds;
-  }
-
-  /**
    * Check if a flush is currently in progress
    */
   isFlushing(): boolean {
@@ -537,7 +476,7 @@ export class LazyStrategy implements IndexingStrategy {
  * @param docsIndexManager - DocsIndexManager for doc file updates (nullable)
  * @param policy - IndexingPolicy for file filtering
  * @param dirtyFiles - DirtyFilesManager for tracking pending changes
- * @param options - Optional configuration
+ * @param _options - Optional configuration (currently unused)
  * @returns LazyStrategy instance (not yet started)
  */
 export function createLazyStrategy(
@@ -546,14 +485,13 @@ export function createLazyStrategy(
   docsIndexManager: DocsIndexManager | null,
   policy: IndexingPolicy,
   dirtyFiles: DirtyFilesManager,
-  options?: LazyStrategyOptions
+  _options?: LazyStrategyOptions
 ): LazyStrategy {
   return new LazyStrategy(
     projectPath,
     indexManager,
     docsIndexManager,
     policy,
-    dirtyFiles,
-    options?.idleThresholdSeconds ?? 30
+    dirtyFiles
   );
 }

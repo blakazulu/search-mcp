@@ -324,8 +324,7 @@ export class StrategyOrchestrator {
           this.indexManager,
           this.docsIndexManager,
           this.policy,
-          new DirtyFilesManager(this.indexPath),
-          config.lazyIdleThreshold
+          new DirtyFilesManager(this.indexPath)
         );
 
       case 'git':

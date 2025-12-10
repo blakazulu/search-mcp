@@ -286,10 +286,14 @@ export async function deleteIndex(
     confirmed: context.confirmed,
   });
 
-  // Support explicit confirmation for direct API calls (e.g., tests)
-  // MCP server handles confirmation via requiresConfirmation flag
-  if (context.confirmed === false) {
-    logger.info('deleteIndex', 'Index deletion cancelled by user');
+  // SECURITY: Require explicit confirmation for direct API calls
+  // MCP server handles confirmation via requiresConfirmation flag at protocol level,
+  // but direct API access must also be protected against bypass attempts.
+  // Using !== true instead of === false to prevent undefined/null bypass
+  if (context.confirmed !== true) {
+    logger.info('deleteIndex', 'Index deletion cancelled - confirmation required', {
+      confirmedValue: context.confirmed,
+    });
     return { status: 'cancelled' };
   }
 

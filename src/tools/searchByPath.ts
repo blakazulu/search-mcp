@@ -19,6 +19,7 @@ import { loadMetadata } from '../storage/metadata.js';
 import { getIndexPath } from '../utils/paths.js';
 import { getLogger } from '../utils/logger.js';
 import { indexNotFound, invalidPattern, MCPError, ErrorCode } from '../errors/index.js';
+import { isPatternSafe, MAX_GLOB_PATTERN_LENGTH } from '../utils/limits.js';
 
 // ============================================================================
 // Input/Output Schemas
@@ -34,6 +35,9 @@ export const SearchByPathInputSchema = z.object({
   pattern: z
     .string()
     .min(1)
+    .max(MAX_GLOB_PATTERN_LENGTH, {
+      message: `Pattern too long. Maximum length is ${MAX_GLOB_PATTERN_LENGTH} characters.`,
+    })
     .describe("Glob pattern to match (e.g., '**/auth*.ts', 'src/**/*.md')"),
   /** Maximum results to return (1-100, default 20) */
   limit: z
@@ -236,7 +240,17 @@ export async function searchByPath(
     projectPath: context.projectPath,
   });
 
-  // Validate the glob pattern first
+  // SECURITY: Validate pattern complexity to prevent ReDoS attacks
+  const safetyCheck = isPatternSafe(input.pattern);
+  if (!safetyCheck.valid) {
+    logger.warn('searchByPath', 'Pattern failed safety check', {
+      pattern: input.pattern,
+      error: safetyCheck.error,
+    });
+    throw invalidPattern(input.pattern, safetyCheck.error || 'Pattern failed safety check');
+  }
+
+  // Validate the glob pattern syntax
   const validation = validateGlobPattern(input.pattern);
   if (!validation.valid) {
     logger.warn('searchByPath', 'Invalid pattern', {

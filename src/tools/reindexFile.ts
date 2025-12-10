@@ -23,7 +23,7 @@ import { FingerprintsManager } from '../storage/fingerprints.js';
 import { MetadataManager } from '../storage/metadata.js';
 import { chunkFile } from '../engines/chunking.js';
 import { getEmbeddingEngine } from '../engines/embedding.js';
-import { getIndexPath, toAbsolutePath, normalizePath, safeJoin } from '../utils/paths.js';
+import { getIndexPath, toAbsolutePath, normalizePath, safeJoin, sanitizeIndexPath } from '../utils/paths.js';
 import { hashFile } from '../utils/hash.js';
 import { getLogger } from '../utils/logger.js';
 import { MCPError, ErrorCode, isMCPError, fileNotFound, indexNotFound } from '../errors/index.js';
@@ -219,7 +219,7 @@ export async function reindexFile(
         code: ErrorCode.INDEX_NOT_FOUND,
         userMessage:
           'No search index exists for this project. Please create one first using the create_index tool.',
-        developerMessage: `Index not found at ${indexPath}`,
+        developerMessage: `Index not found at ${sanitizeIndexPath(indexPath)}`,
       });
     }
 

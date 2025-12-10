@@ -22,6 +22,8 @@ import { loadMetadata } from '../storage/metadata.js';
 import { getIndexPath } from '../utils/paths.js';
 import { getLogger } from '../utils/logger.js';
 import { indexNotFound, MCPError, ErrorCode } from '../errors/index.js';
+import { MAX_QUERY_LENGTH } from '../utils/limits.js';
+import { sanitizeIndexPath } from '../utils/paths.js';
 import type { StrategyOrchestrator } from '../engines/strategyOrchestrator.js';
 
 // ============================================================================
@@ -38,6 +40,9 @@ export const SearchDocsInputSchema = z.object({
   query: z
     .string()
     .min(1)
+    .max(MAX_QUERY_LENGTH, {
+      message: `Query too long. Maximum length is ${MAX_QUERY_LENGTH} characters.`,
+    })
     .describe('The question or topic to search for in documentation'),
   /** Number of results to return (1-50, default 10) */
   top_k: z
@@ -189,7 +194,7 @@ export async function searchDocs(
         code: ErrorCode.INDEX_NOT_FOUND,
         userMessage:
           'The documentation search index is empty. Please index some documentation files first using create_index.',
-        developerMessage: `Docs index at ${indexPath} exists but contains no data`,
+        developerMessage: `Docs index at ${sanitizeIndexPath(indexPath)} exists but contains no data`,
       });
     }
 
@@ -252,7 +257,7 @@ export function docsIndexNotFound(indexPath: string): MCPError {
     code: ErrorCode.INDEX_NOT_FOUND,
     userMessage:
       'No documentation search index exists for this project. Please create one first using the create_index tool.',
-    developerMessage: `Docs index not found at path: ${indexPath}`,
+    developerMessage: `Docs index not found at path: ${sanitizeIndexPath(indexPath)}`,
   });
 }
 

@@ -20,6 +20,8 @@ import { loadMetadata } from '../storage/metadata.js';
 import { getIndexPath } from '../utils/paths.js';
 import { getLogger } from '../utils/logger.js';
 import { indexNotFound, MCPError, ErrorCode } from '../errors/index.js';
+import { MAX_QUERY_LENGTH } from '../utils/limits.js';
+import { sanitizeIndexPath } from '../utils/paths.js';
 import type { StrategyOrchestrator } from '../engines/strategyOrchestrator.js';
 
 // ============================================================================
@@ -33,7 +35,13 @@ import type { StrategyOrchestrator } from '../engines/strategyOrchestrator.js';
  */
 export const SearchCodeInputSchema = z.object({
   /** The question or code concept to search for */
-  query: z.string().min(1).describe('The question or code concept to search for'),
+  query: z
+    .string()
+    .min(1)
+    .max(MAX_QUERY_LENGTH, {
+      message: `Query too long. Maximum length is ${MAX_QUERY_LENGTH} characters.`,
+    })
+    .describe('The question or code concept to search for'),
   /** Number of results to return (1-50, default 10) */
   top_k: z
     .number()
@@ -184,7 +192,7 @@ export async function searchCode(
         code: ErrorCode.INDEX_NOT_FOUND,
         userMessage:
           'The search index is empty. Please index some files first using create_index.',
-        developerMessage: `Index at ${indexPath} exists but contains no data`,
+        developerMessage: `Index at ${sanitizeIndexPath(indexPath)} exists but contains no data`,
       });
     }
 

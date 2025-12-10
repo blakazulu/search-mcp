@@ -197,17 +197,30 @@ describe('delete_index Tool', () => {
       expect(result.projectPath).toBe(projectDir);
     });
 
-    it('should proceed when confirmed is undefined and index exists (default behavior)', async () => {
+    it('should return cancelled when confirmed is undefined (security: prevent bypass)', async () => {
       const { createIndex } = await import('../../../src/tools/createIndex.js');
       const { deleteIndex } = await import('../../../src/tools/deleteIndex.js');
 
       // First create an index
       await createIndex({}, { projectPath: projectDir, confirmed: true });
 
-      // Now delete without explicit confirmation
+      // SECURITY: undefined confirmed should NOT proceed - prevents bypass attacks
       const result = await deleteIndex({}, { projectPath: projectDir });
 
-      expect(result.status).toBe('success');
+      expect(result.status).toBe('cancelled');
+    });
+
+    it('should return cancelled when confirmed is null (security: prevent bypass)', async () => {
+      const { createIndex } = await import('../../../src/tools/createIndex.js');
+      const { deleteIndex } = await import('../../../src/tools/deleteIndex.js');
+
+      // First create an index
+      await createIndex({}, { projectPath: projectDir, confirmed: true });
+
+      // SECURITY: null confirmed should NOT proceed - prevents bypass attacks
+      const result = await deleteIndex({}, { projectPath: projectDir, confirmed: null as any });
+
+      expect(result.status).toBe('cancelled');
     });
   });
 

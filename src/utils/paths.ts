@@ -555,3 +555,96 @@ export function getExtension(filePath: string): string {
 export function getBaseName(filePath: string): string {
   return path.basename(filePath, path.extname(filePath));
 }
+
+// ============================================================================
+// Path Sanitization (for error messages)
+// ============================================================================
+
+/**
+ * Sanitize a path for display in error messages
+ *
+ * Replaces sensitive information like home directory and user names
+ * with safe placeholders to prevent information disclosure.
+ *
+ * @param fullPath - The full path to sanitize
+ * @param projectPath - Optional project path to make relative to
+ * @returns Sanitized path safe for display in error messages
+ *
+ * @example
+ * ```typescript
+ * sanitizePath('/Users/john/.mcp/search/indexes/abc123')
+ * // => '~/.mcp/search/indexes/abc123'
+ *
+ * sanitizePath('/Users/john/projects/myapp/src/file.ts', '/Users/john/projects/myapp')
+ * // => './src/file.ts'
+ *
+ * sanitizePath('C:\\Users\\john\\Documents\\project')
+ * // => '~\\Documents\\project' (Windows)
+ * ```
+ */
+export function sanitizePath(fullPath: string, projectPath?: string): string {
+  if (!fullPath) {
+    return '<unknown>';
+  }
+
+  // If project path is provided, try to make it relative
+  if (projectPath) {
+    const normalizedFull = normalizePath(fullPath);
+    const normalizedProject = normalizePath(projectPath);
+
+    if (isWithinDirectory(normalizedFull, normalizedProject)) {
+      const relativePath = toRelativePath(normalizedFull, normalizedProject);
+      return `./${relativePath}`;
+    }
+  }
+
+  // Replace home directory with ~
+  const homeDir = os.homedir();
+  const normalizedHome = normalizePath(homeDir);
+  const normalizedPath = normalizePath(fullPath);
+
+  if (isWithinDirectory(normalizedPath, normalizedHome)) {
+    // Get relative path from home
+    const relativePath = path.relative(normalizedHome, normalizedPath);
+    // Use forward slash for consistency in error messages
+    const sanitized = '~/' + relativePath.replace(/\\/g, '/');
+    return sanitized;
+  }
+
+  // If not in home directory, return as-is but replace backslashes for consistency
+  return normalizedPath.replace(/\\/g, '/');
+}
+
+/**
+ * Sanitize an index path for display
+ *
+ * Specifically handles index paths, showing a generic format
+ * without exposing the full hash or system paths.
+ *
+ * @param indexPath - The index path to sanitize
+ * @returns Sanitized index path description
+ *
+ * @example
+ * ```typescript
+ * sanitizeIndexPath('/Users/john/.mcp/search/indexes/abc123def456')
+ * // => '~/.mcp/search/indexes/<project-hash>'
+ * ```
+ */
+export function sanitizeIndexPath(indexPath: string): string {
+  if (!indexPath) {
+    return '<unknown index>';
+  }
+
+  // Check if it's an index path
+  const indexesDir = getIndexesDir();
+  const normalizedIndexPath = normalizePath(indexPath);
+  const normalizedIndexesDir = normalizePath(indexesDir);
+
+  if (isWithinDirectory(normalizedIndexPath, normalizedIndexesDir)) {
+    // It's an index path - replace with generic format
+    return '~/.mcp/search/indexes/<project-hash>';
+  }
+
+  // Otherwise, use regular path sanitization
+  return sanitizePath(indexPath);
+}

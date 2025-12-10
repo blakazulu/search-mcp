@@ -17,7 +17,7 @@ import { z } from 'zod';
 import * as fs from 'node:fs';
 import { IndexManager, IndexProgress, IndexResult } from '../engines/indexManager.js';
 import { ConfigManager, Config } from '../storage/config.js';
-import { getIndexPath } from '../utils/paths.js';
+import { getIndexPath, sanitizeIndexPath } from '../utils/paths.js';
 import { getLogger } from '../utils/logger.js';
 import { IndexingLock } from '../utils/asyncMutex.js';
 import { MCPError, ErrorCode, isMCPError, indexNotFound } from '../errors/index.js';
@@ -201,10 +201,14 @@ export async function reindexProject(
     confirmed: context.confirmed,
   });
 
-  // Support explicit confirmation for direct API calls (e.g., tests)
-  // MCP server handles confirmation via requiresConfirmation flag
-  if (context.confirmed === false) {
-    logger.info('reindexProject', 'Reindex cancelled by user');
+  // SECURITY: Require explicit confirmation for direct API calls
+  // MCP server handles confirmation via requiresConfirmation flag at protocol level,
+  // but direct API access must also be protected against bypass attempts.
+  // Using !== true instead of === false to prevent undefined/null bypass
+  if (context.confirmed !== true) {
+    logger.info('reindexProject', 'Reindex cancelled - confirmation required', {
+      confirmedValue: context.confirmed,
+    });
     return { status: 'cancelled' };
   }
 
@@ -219,7 +223,7 @@ export async function reindexProject(
       code: ErrorCode.INDEX_NOT_FOUND,
       userMessage:
         'No search index exists for this project. Please use create_index to create one first.',
-      developerMessage: `Index not found at ${indexPath}`,
+      developerMessage: `Index not found at ${sanitizeIndexPath(indexPath)}`,
     });
   }
 

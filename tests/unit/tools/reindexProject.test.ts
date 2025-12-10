@@ -187,17 +187,30 @@ describe('reindex_project Tool', () => {
       expect(result.duration).toBeDefined();
     });
 
-    it('should proceed when confirmed is undefined and index exists (default behavior)', async () => {
+    it('should return cancelled when confirmed is undefined (security: prevent bypass)', async () => {
       const { createIndex } = await import('../../../src/tools/createIndex.js');
       const { reindexProject } = await import('../../../src/tools/reindexProject.js');
 
       // First create an index
       await createIndex({}, { projectPath: projectDir, confirmed: true });
 
-      // Now reindex without explicit confirmation
+      // SECURITY: undefined confirmed should NOT proceed - prevents bypass attacks
       const result = await reindexProject({}, { projectPath: projectDir });
 
-      expect(result.status).toBe('success');
+      expect(result.status).toBe('cancelled');
+    });
+
+    it('should return cancelled when confirmed is null (security: prevent bypass)', async () => {
+      const { createIndex } = await import('../../../src/tools/createIndex.js');
+      const { reindexProject } = await import('../../../src/tools/reindexProject.js');
+
+      // First create an index
+      await createIndex({}, { projectPath: projectDir, confirmed: true });
+
+      // SECURITY: null confirmed should NOT proceed - prevents bypass attacks
+      const result = await reindexProject({}, { projectPath: projectDir, confirmed: null as any });
+
+      expect(result.status).toBe('cancelled');
     });
   });
 

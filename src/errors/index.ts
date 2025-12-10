@@ -9,6 +9,7 @@
  */
 
 import { getLogger } from '../utils/logger.js';
+import { sanitizeIndexPath, sanitizePath } from '../utils/paths.js';
 
 /**
  * Error codes for all MCP errors
@@ -155,7 +156,7 @@ export function indexNotFound(indexPath: string): MCPError {
     code: ErrorCode.INDEX_NOT_FOUND,
     userMessage:
       'No search index exists for this project. Please create one first using the create_index tool.',
-    developerMessage: `Index not found at path: ${indexPath}`,
+    developerMessage: `Index not found at path: ${sanitizeIndexPath(indexPath)}`,
   });
 }
 
@@ -221,7 +222,7 @@ export function permissionDenied(filePath: string): MCPError {
     code: ErrorCode.PERMISSION_DENIED,
     userMessage:
       'Access denied. Please check that you have permission to access this location.',
-    developerMessage: `Permission denied accessing path: ${filePath}`,
+    developerMessage: `Permission denied accessing path: ${sanitizePath(filePath)}`,
   });
 }
 
@@ -260,7 +261,7 @@ export function fileNotFound(filePath: string): MCPError {
   return new MCPError({
     code: ErrorCode.FILE_NOT_FOUND,
     userMessage: 'The requested file could not be found.',
-    developerMessage: `File not found: ${filePath}`,
+    developerMessage: `File not found: ${sanitizePath(filePath)}`,
   });
 }
 
@@ -292,7 +293,7 @@ export function projectNotDetected(searchedPath: string): MCPError {
     code: ErrorCode.PROJECT_NOT_DETECTED,
     userMessage:
       'Could not detect a project in this location. Make sure you are in a project directory with a package.json, .git, or similar project marker.',
-    developerMessage: `Project root not detected from path: ${searchedPath}. No project markers (package.json, .git, etc.) found in path hierarchy.`,
+    developerMessage: `Project root not detected from path: ${sanitizePath(searchedPath)}. No project markers (package.json, .git, etc.) found in path hierarchy.`,
   });
 }
 
@@ -309,7 +310,7 @@ export function symlinkNotAllowed(filePath: string): MCPError {
     code: ErrorCode.SYMLINK_NOT_ALLOWED,
     userMessage:
       'Symbolic links are not allowed for security reasons. Please use actual files instead.',
-    developerMessage: `Symbolic link detected at path: ${filePath}. Symlinks are rejected to prevent reading files outside the project.`,
+    developerMessage: `Symbolic link detected at path: ${sanitizePath(filePath)}. Symlinks are rejected to prevent reading files outside the project.`,
   });
 }
 

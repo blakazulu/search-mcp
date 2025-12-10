@@ -355,12 +355,22 @@ describe('create_index Tool', () => {
       expect(result.duration).toBeDefined();
     });
 
-    it('should proceed when confirmed is undefined (default behavior)', async () => {
+    it('should return cancelled when confirmed is undefined (security: prevent bypass)', async () => {
       const { createIndex } = await import('../../../src/tools/createIndex.js');
 
+      // SECURITY: undefined confirmed should NOT proceed - prevents bypass attacks
       const result = await createIndex({}, { projectPath: projectDir });
 
-      expect(result.status).toBe('success');
+      expect(result.status).toBe('cancelled');
+    });
+
+    it('should return cancelled when confirmed is null (security: prevent bypass)', async () => {
+      const { createIndex } = await import('../../../src/tools/createIndex.js');
+
+      // SECURITY: null confirmed should NOT proceed - prevents bypass attacks
+      const result = await createIndex({}, { projectPath: projectDir, confirmed: null as any });
+
+      expect(result.status).toBe('cancelled');
     });
   });
 

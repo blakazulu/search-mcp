@@ -275,16 +275,34 @@ describe('Embedding Engine', () => {
         const magnitude = Math.sqrt(vector.reduce((sum, val) => sum + val * val, 0));
         expect(magnitude).toBeCloseTo(1, 2);
       });
-    });
 
-    describe('embedBatch', () => {
-      it('should return empty array for empty input', async () => {
+      it('should throw error on dimension mismatch (SMCP-054)', async () => {
+        // Mock pipeline to return wrong dimension
+        mockPipelineInstance.mockImplementation(() => {
+          // Return a 256-dimensional vector instead of 384
+          return { data: new Float32Array(256).fill(0.1) };
+        });
+
         const { EmbeddingEngine } = await import('../../../src/engines/embedding.js');
         const engine = new EmbeddingEngine();
 
-        const vectors = await engine.embedBatch([]);
+        // Should throw an error for dimension mismatch
+        await expect(engine.embed('Test text')).rejects.toThrow(
+          'Invalid embedding dimension: expected 384, got 256'
+        );
+      });
+    });
 
-        expect(vectors).toEqual([]);
+    describe('embedBatch', () => {
+      it('should return empty result for empty input', async () => {
+        const { EmbeddingEngine } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine();
+
+        const result = await engine.embedBatch([]);
+
+        expect(result.vectors).toEqual([]);
+        expect(result.successIndices).toEqual([]);
+        expect(result.failedCount).toBe(0);
       });
 
       it('should embed multiple texts', async () => {
@@ -292,10 +310,10 @@ describe('Embedding Engine', () => {
         const engine = new EmbeddingEngine();
 
         const texts = ['Hello', 'World', 'Test'];
-        const vectors = await engine.embedBatch(texts);
+        const result = await engine.embedBatch(texts);
 
-        expect(vectors.length).toBe(3);
-        vectors.forEach((vector) => {
+        expect(result.vectors.length).toBe(3);
+        result.vectors.forEach((vector) => {
           expect(vector.length).toBe(384);
         });
       });
@@ -314,12 +332,12 @@ describe('Embedding Engine', () => {
         const engine = new EmbeddingEngine();
 
         const texts = ['Text 1', 'Text 2', 'Text 3'];
-        const vectors = await engine.embedBatch(texts);
+        const result = await engine.embedBatch(texts);
 
         // Verify order is preserved
-        expect(vectors[0][0]).toBe(0);
-        expect(vectors[1][0]).toBe(1);
-        expect(vectors[2][0]).toBe(2);
+        expect(result.vectors[0][0]).toBe(0);
+        expect(result.vectors[1][0]).toBe(1);
+        expect(result.vectors[2][0]).toBe(2);
       });
 
       it('should call progress callback with correct values', async () => {
@@ -351,7 +369,7 @@ describe('Embedding Engine', () => {
         expect(mockPipelineInstance).toHaveBeenCalledTimes(texts.length);
       });
 
-      it('should handle errors in individual texts gracefully', async () => {
+      it('should handle errors in individual texts gracefully (SMCP-054)', async () => {
         // Make the third call fail
         let callCount = 0;
         mockPipelineInstance.mockImplementation(() => {
@@ -366,11 +384,19 @@ describe('Embedding Engine', () => {
         const engine = new EmbeddingEngine();
 
         const texts = ['Text 1', 'Text 2', 'Text 3', 'Text 4'];
-        const vectors = await engine.embedBatch(texts);
+        const result = await engine.embedBatch(texts);
 
-        // Should return 4 vectors, with the 3rd being a zero vector
-        expect(vectors.length).toBe(4);
-        expect(vectors[2].every((v) => v === 0)).toBe(true);
+        // SMCP-054: Should return BatchEmbeddingResult with only successful embeddings
+        // No zero vectors should be inserted
+        expect(result.vectors.length).toBe(3); // 4 texts - 1 failure = 3 successful
+        expect(result.successIndices).toEqual([0, 1, 3]); // Index 2 (Text 3) failed
+        expect(result.failedCount).toBe(1);
+
+        // Verify no vectors are all zeros (zero vector check)
+        for (const vector of result.vectors) {
+          const isZeroVector = vector.every((v) => v === 0);
+          expect(isZeroVector).toBe(false);
+        }
       });
 
       it('should handle large batches efficiently', async () => {
@@ -380,13 +406,46 @@ describe('Embedding Engine', () => {
         const texts = Array.from({ length: 100 }, (_, i) => `Text ${i}`);
         const progressCalls: number[] = [];
 
-        const vectors = await engine.embedBatch(texts, (completed) => {
+        const result = await engine.embedBatch(texts, (completed) => {
           progressCalls.push(completed);
         });
 
-        expect(vectors.length).toBe(100);
+        expect(result.vectors.length).toBe(100);
+        expect(result.failedCount).toBe(0);
         expect(progressCalls.length).toBe(100);
         expect(progressCalls[99]).toBe(100);
+      });
+
+      it('should never insert zero vectors (SMCP-054)', async () => {
+        // Make multiple calls fail
+        let callCount = 0;
+        mockPipelineInstance.mockImplementation(() => {
+          callCount++;
+          if (callCount % 3 === 0) {
+            throw new Error('Embedding failed');
+          }
+          return createMockTensorOutput();
+        });
+
+        const { EmbeddingEngine } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine();
+
+        const texts = Array.from({ length: 10 }, (_, i) => `Text ${i}`);
+        const result = await engine.embedBatch(texts);
+
+        // With 10 texts and every 3rd failing: texts 0,1,3,4,6,7,9 succeed (7 total)
+        // texts 2, 5, 8 fail (3 total)
+        expect(result.failedCount).toBe(3);
+        expect(result.vectors.length).toBe(7);
+
+        // Verify no vectors are all zeros
+        for (const vector of result.vectors) {
+          const isZeroVector = vector.every((v) => v === 0);
+          expect(isZeroVector).toBe(false);
+        }
+
+        // Verify success indices are correct (0, 1, 3, 4, 6, 7, 9)
+        expect(result.successIndices).toEqual([0, 1, 3, 4, 6, 7, 9]);
       });
     });
 
@@ -445,10 +504,10 @@ describe('Embedding Engine', () => {
       it('should embed batch using singleton engine', async () => {
         const { embedBatch } = await import('../../../src/engines/embedding.js');
 
-        const vectors = await embedBatch(['Hello', 'World']);
+        const result = await embedBatch(['Hello', 'World']);
 
-        expect(vectors.length).toBe(2);
-        vectors.forEach((v) => expect(v.length).toBe(384));
+        expect(result.vectors.length).toBe(2);
+        result.vectors.forEach((v) => expect(v.length).toBe(384));
       });
 
       it('should support progress callback', async () => {

@@ -239,12 +239,11 @@ export class EmbeddingEngine {
       // Extract the vector from the output tensor
       const vector = Array.from(output!.data as Float32Array);
 
-      // Validate dimension
+      // Validate dimension - enforce strictly (SMCP-054)
       if (vector.length !== EMBEDDING_DIMENSION) {
-        logger.warn('EmbeddingEngine', 'Unexpected embedding dimension', {
-          expected: EMBEDDING_DIMENSION,
-          actual: vector.length,
-        });
+        throw new Error(
+          `Invalid embedding dimension: expected ${EMBEDDING_DIMENSION}, got ${vector.length}`
+        );
       }
 
       return vector;
@@ -273,35 +272,19 @@ export class EmbeddingEngine {
    * Processes texts in batches of BATCH_SIZE (32) to balance
    * speed and memory usage. Reports progress via optional callback.
    *
-   * NOTE: This method includes zero vectors for failed embeddings to maintain
-   * array order for backward compatibility. Use embedBatchWithStats for
-   * explicit failure tracking without zero vectors.
+   * SECURITY (SMCP-054): This method returns ONLY successful embeddings.
+   * Use embedBatchWithStats to get detailed information about which texts
+   * succeeded and which failed. Never inserts zero vectors.
    *
    * @param texts - Array of texts to embed
    * @param onProgress - Optional callback for progress updates
-   * @returns Array of 384-dimensional vectors (same order as input, with zero vectors for failures)
+   * @returns BatchEmbeddingResult with only successful embeddings, their indices, and failure count
    */
   async embedBatch(
     texts: string[],
     onProgress?: EmbeddingProgressCallback
-  ): Promise<number[][]> {
-    const result = await this.embedBatchWithStats(texts, onProgress);
-
-    // For backward compatibility, reconstruct array with zero vectors for failures
-    const vectors: number[][] = [];
-    let successIdx = 0;
-
-    for (let i = 0; i < texts.length; i++) {
-      if (successIdx < result.successIndices.length && result.successIndices[successIdx] === i) {
-        vectors.push(result.vectors[successIdx]);
-        successIdx++;
-      } else {
-        // Insert zero vector for failed embedding
-        vectors.push(new Array(EMBEDDING_DIMENSION).fill(0));
-      }
-    }
-
-    return vectors;
+  ): Promise<BatchEmbeddingResult> {
+    return this.embedBatchWithStats(texts, onProgress);
   }
 
   /**
@@ -402,30 +385,25 @@ export class EmbeddingEngine {
   /**
    * Embed texts and return full results with original text.
    *
+   * SECURITY (SMCP-054): Returns only successful embeddings.
+   * Failed embeddings are excluded from results (no zero vectors).
+   *
    * @param texts - Array of texts to embed
    * @param onProgress - Optional callback for progress updates
-   * @returns Array of EmbeddingResult objects (includes success status)
+   * @returns Array of EmbeddingResult objects for successful embeddings only
    */
   async embedWithResults(
     texts: string[],
     onProgress?: EmbeddingProgressCallback
   ): Promise<EmbeddingResult[]> {
     const batchResult = await this.embedBatchWithStats(texts, onProgress);
-    const successSet = new Set(batchResult.successIndices);
 
-    return texts.map((text, index) => {
-      const success = successSet.has(index);
-      const successIdx = batchResult.successIndices.indexOf(index);
-      const vector = success
-        ? batchResult.vectors[successIdx]
-        : new Array(EMBEDDING_DIMENSION).fill(0);
-
-      return {
-        text,
-        vector,
-        success,
-      };
-    });
+    // Return only successful embeddings (SMCP-054: no zero vectors)
+    return batchResult.successIndices.map((originalIndex, successIdx) => ({
+      text: texts[originalIndex],
+      vector: batchResult.vectors[successIdx],
+      success: true,
+    }));
   }
 }
 
@@ -479,14 +457,17 @@ export async function embedText(text: string): Promise<number[]> {
 /**
  * Embed multiple texts using the singleton engine.
  *
+ * SECURITY (SMCP-054): Returns BatchEmbeddingResult with only successful embeddings.
+ * No zero vectors are inserted for failed embeddings.
+ *
  * @param texts - Array of texts to embed
  * @param onProgress - Optional callback for progress updates
- * @returns Array of 384-dimensional vectors
+ * @returns BatchEmbeddingResult with successful embeddings, their indices, and failure count
  */
 export async function embedBatch(
   texts: string[],
   onProgress?: EmbeddingProgressCallback
-): Promise<number[][]> {
+): Promise<BatchEmbeddingResult> {
   const engine = getEmbeddingEngine();
   return engine.embedBatch(texts, onProgress);
 }

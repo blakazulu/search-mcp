@@ -268,21 +268,36 @@ export async function reindexFile(
       if (chunks.length > 0) {
         // Step 7: Generate embeddings
         const texts = chunks.map((c) => c.text);
-        const vectors = await embeddingEngine.embedBatch(texts);
+        const embeddingResult = await embeddingEngine.embedBatch(texts);
 
-        // Step 8: Create chunk records
-        const records: ChunkRecord[] = chunks.map((chunk, i) => ({
-          id: chunk.id,
-          path: chunk.path,
-          text: chunk.text,
-          vector: vectors[i],
-          start_line: chunk.startLine,
-          end_line: chunk.endLine,
-          content_hash: chunk.contentHash,
-        }));
+        // SECURITY (SMCP-054): Only insert chunks with successful embeddings
+        const records: ChunkRecord[] = [];
+        for (let successIdx = 0; successIdx < embeddingResult.successIndices.length; successIdx++) {
+          const originalIndex = embeddingResult.successIndices[successIdx];
+          const chunk = chunks[originalIndex];
+          records.push({
+            id: chunk.id,
+            path: chunk.path,
+            text: chunk.text,
+            vector: embeddingResult.vectors[successIdx],
+            start_line: chunk.startLine,
+            end_line: chunk.endLine,
+            content_hash: chunk.contentHash,
+          });
+        }
 
-        // Step 9: Insert new chunks
-        await store.insertChunks(records);
+        // Log if any embeddings failed
+        if (embeddingResult.failedCount > 0) {
+          logger.warn('reindexFile', `${embeddingResult.failedCount} chunks failed to embed for file`, {
+            relativePath,
+            failedCount: embeddingResult.failedCount,
+          });
+        }
+
+        // Step 9: Insert new chunks (only successful embeddings)
+        if (records.length > 0) {
+          await store.insertChunks(records);
+        }
         chunksCreated = records.length;
 
         logger.debug('reindexFile', 'Inserted new chunks', { relativePath, chunksCreated });

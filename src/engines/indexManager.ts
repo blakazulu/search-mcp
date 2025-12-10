@@ -279,7 +279,7 @@ export async function scanFiles(
  * @param onProgress - Optional progress callback
  * @param progressOffset - Offset for progress reporting (for batch processing)
  * @param totalFiles - Total files for progress reporting
- * @returns Object with chunks, hashes, and any errors
+ * @returns Object with chunks, hashes, errors, and failed embedding count
  */
 async function processFileBatch(
   files: string[],
@@ -292,6 +292,7 @@ async function processFileBatch(
   chunks: ChunkRecord[];
   hashes: Map<string, string>;
   errors: string[];
+  failedEmbeddingCount: number;
 }> {
   const logger = getLogger();
   const allChunks: ChunkRecord[] = [];
@@ -388,7 +389,7 @@ async function processFileBatch(
       });
     }
 
-    const vectors = await embeddingEngine.embedBatch(texts, (completed, total) => {
+    const embeddingResult = await embeddingEngine.embedBatch(texts, (completed, total) => {
       if (onProgress) {
         onProgress({
           phase: 'embedding',
@@ -398,16 +399,32 @@ async function processFileBatch(
       }
     });
 
-    // Assign vectors to chunks
-    for (let i = 0; i < allChunks.length; i++) {
-      allChunks[i].vector = vectors[i];
+    // SECURITY (SMCP-054): Only keep chunks with successful embeddings
+    // Filter out chunks that failed to embed (no zero vectors inserted)
+    const successfulChunks: ChunkRecord[] = [];
+    for (let successIdx = 0; successIdx < embeddingResult.successIndices.length; successIdx++) {
+      const originalIndex = embeddingResult.successIndices[successIdx];
+      const chunk = allChunks[originalIndex];
+      chunk.vector = embeddingResult.vectors[successIdx];
+      successfulChunks.push(chunk);
+    }
+
+    // Log embedding failures
+    if (embeddingResult.failedCount > 0) {
+      logger.warn('IndexManager', `${embeddingResult.failedCount} chunks failed to embed and were skipped`, {
+        failedCount: embeddingResult.failedCount,
+        successCount: embeddingResult.vectors.length,
+      });
+      errors.push(`${embeddingResult.failedCount} chunks failed to embed`);
     }
 
     // Log memory after embedding phase
-    logMemoryUsage(`Embedding complete: ${vectors.length} vectors`);
+    logMemoryUsage(`Embedding complete: ${embeddingResult.vectors.length} vectors`);
+
+    return { chunks: successfulChunks, hashes: fileHashes, errors, failedEmbeddingCount: embeddingResult.failedCount };
   }
 
-  return { chunks: allChunks, hashes: fileHashes, errors };
+  return { chunks: allChunks, hashes: fileHashes, errors, failedEmbeddingCount: 0 };
 }
 
 /**
@@ -505,6 +522,7 @@ export async function createFullIndex(
 
     // Process files in batches with adaptive sizing (MCP-22)
     let totalChunks = 0;
+    let totalFailedEmbeddings = 0; // SMCP-054: Track failed embeddings
     const allHashes = new Map<string, string>();
 
     // Log memory before starting indexing
@@ -523,7 +541,7 @@ export async function createFullIndex(
         adaptedBatchSize: currentBatchSize,
       });
 
-      const { chunks, hashes, errors: batchErrors } = await processFileBatch(
+      const { chunks, hashes, errors: batchErrors, failedEmbeddingCount } = await processFileBatch(
         batch,
         normalizedProjectPath,
         embeddingEngine,
@@ -533,6 +551,7 @@ export async function createFullIndex(
       );
 
       errors.push(...batchErrors);
+      totalFailedEmbeddings += failedEmbeddingCount; // SMCP-054: Accumulate failures
 
       // Store chunks in LanceDB
       if (chunks.length > 0) {
@@ -573,6 +592,13 @@ export async function createFullIndex(
     // Update metadata with complete state
     const storageSize = await store.getStorageSize();
     metadataManager.updateStats(allHashes.size, totalChunks, storageSize);
+    // SMCP-054: Track failed embeddings in metadata
+    if (totalFailedEmbeddings > 0) {
+      metadataManager.updateFailedEmbeddings(totalFailedEmbeddings);
+      logger.warn('IndexManager', 'Some chunks failed to embed', {
+        failedCount: totalFailedEmbeddings,
+      });
+    }
     metadataManager.markFullIndex();
     metadataManager.setIndexingComplete();
     await metadataManager.save();
@@ -692,19 +718,35 @@ export async function updateFile(
 
       if (chunks.length > 0) {
         const texts = chunks.map((c) => c.text);
-        const vectors = await embeddingEngine.embedBatch(texts);
+        const embeddingResult = await embeddingEngine.embedBatch(texts);
 
-        const records: ChunkRecord[] = chunks.map((chunk, i) => ({
-          id: chunk.id,
-          path: chunk.path,
-          text: chunk.text,
-          vector: vectors[i],
-          start_line: chunk.startLine,
-          end_line: chunk.endLine,
-          content_hash: chunk.contentHash,
-        }));
+        // SECURITY (SMCP-054): Only insert chunks with successful embeddings
+        const records: ChunkRecord[] = [];
+        for (let successIdx = 0; successIdx < embeddingResult.successIndices.length; successIdx++) {
+          const originalIndex = embeddingResult.successIndices[successIdx];
+          const chunk = chunks[originalIndex];
+          records.push({
+            id: chunk.id,
+            path: chunk.path,
+            text: chunk.text,
+            vector: embeddingResult.vectors[successIdx],
+            start_line: chunk.startLine,
+            end_line: chunk.endLine,
+            content_hash: chunk.contentHash,
+          });
+        }
 
-        await store.insertChunks(records);
+        // Log if any embeddings failed
+        if (embeddingResult.failedCount > 0) {
+          logger.warn('IndexManager', `${embeddingResult.failedCount} chunks failed to embed for file`, {
+            relativePath,
+            failedCount: embeddingResult.failedCount,
+          });
+        }
+
+        if (records.length > 0) {
+          await store.insertChunks(records);
+        }
       }
 
       // Update fingerprint

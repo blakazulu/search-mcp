@@ -352,7 +352,7 @@ async function processDocFileBatch(
       });
     }
 
-    const vectors = await embeddingEngine.embedBatch(texts, (completed, total) => {
+    const embeddingResult = await embeddingEngine.embedBatch(texts, (completed, total) => {
       if (onProgress) {
         onProgress({
           phase: 'embedding',
@@ -362,10 +362,26 @@ async function processDocFileBatch(
       }
     });
 
-    // Assign vectors to chunks
-    for (let i = 0; i < allChunks.length; i++) {
-      allChunks[i].vector = vectors[i];
+    // SECURITY (SMCP-054): Only keep chunks with successful embeddings
+    // Filter out chunks that failed to embed (no zero vectors inserted)
+    const successfulChunks: ChunkRecord[] = [];
+    for (let successIdx = 0; successIdx < embeddingResult.successIndices.length; successIdx++) {
+      const originalIndex = embeddingResult.successIndices[successIdx];
+      const chunk = allChunks[originalIndex];
+      chunk.vector = embeddingResult.vectors[successIdx];
+      successfulChunks.push(chunk);
     }
+
+    // Log embedding failures
+    if (embeddingResult.failedCount > 0) {
+      logger.warn('DocsIndexManager', `${embeddingResult.failedCount} doc chunks failed to embed and were skipped`, {
+        failedCount: embeddingResult.failedCount,
+        successCount: embeddingResult.vectors.length,
+      });
+      errors.push(`${embeddingResult.failedCount} doc chunks failed to embed`);
+    }
+
+    return { chunks: successfulChunks, hashes: fileHashes, errors };
   }
 
   return { chunks: allChunks, hashes: fileHashes, errors };
@@ -619,19 +635,35 @@ export async function updateDocFile(
 
       if (chunks.length > 0) {
         const texts = chunks.map((c) => c.text);
-        const vectors = await embeddingEngine.embedBatch(texts);
+        const embeddingResult = await embeddingEngine.embedBatch(texts);
 
-        const records: ChunkRecord[] = chunks.map((chunk, i) => ({
-          id: chunk.id,
-          path: chunk.path,
-          text: chunk.text,
-          vector: vectors[i],
-          start_line: chunk.startLine,
-          end_line: chunk.endLine,
-          content_hash: chunk.contentHash,
-        }));
+        // SECURITY (SMCP-054): Only insert chunks with successful embeddings
+        const records: ChunkRecord[] = [];
+        for (let successIdx = 0; successIdx < embeddingResult.successIndices.length; successIdx++) {
+          const originalIndex = embeddingResult.successIndices[successIdx];
+          const chunk = chunks[originalIndex];
+          records.push({
+            id: chunk.id,
+            path: chunk.path,
+            text: chunk.text,
+            vector: embeddingResult.vectors[successIdx],
+            start_line: chunk.startLine,
+            end_line: chunk.endLine,
+            content_hash: chunk.contentHash,
+          });
+        }
 
-        await store.insertChunks(records);
+        // Log if any embeddings failed
+        if (embeddingResult.failedCount > 0) {
+          logger.warn('DocsIndexManager', `${embeddingResult.failedCount} doc chunks failed to embed for file`, {
+            relativePath,
+            failedCount: embeddingResult.failedCount,
+          });
+        }
+
+        if (records.length > 0) {
+          await store.insertChunks(records);
+        }
       }
 
       // Update fingerprint

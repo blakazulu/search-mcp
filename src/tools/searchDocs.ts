@@ -79,6 +79,8 @@ export interface SearchDocsOutput {
   totalResults: number;
   /** Time taken for search in milliseconds */
   searchTimeMs: number;
+  /** Warning message if index is in an incomplete state (MCP-15) */
+  warning?: string;
 }
 
 /**
@@ -148,6 +150,21 @@ export async function searchDocs(
     throw docsIndexNotFound(indexPath);
   }
 
+  // Check indexing state for stale results warning (MCP-15)
+  let warning: string | undefined;
+  if (metadata.indexingState) {
+    switch (metadata.indexingState.state) {
+      case 'in_progress':
+        warning = 'Warning: Indexing is currently in progress. Search results may be incomplete or stale.';
+        logger.warn('searchDocs', warning);
+        break;
+      case 'failed':
+        warning = 'Warning: Previous indexing operation failed. Search results may be incomplete. Consider running reindex_project.';
+        logger.warn('searchDocs', warning);
+        break;
+    }
+  }
+
   // Open the DocsLanceDB store
   const store = new DocsLanceDBStore(indexPath);
   try {
@@ -192,12 +209,14 @@ export async function searchDocs(
       totalResults: results.length,
       searchTimeMs,
       topScore: results[0]?.score,
+      hasWarning: !!warning,
     });
 
     return {
       results,
       totalResults: results.length,
       searchTimeMs,
+      warning,
     };
   } finally {
     // Always close the store

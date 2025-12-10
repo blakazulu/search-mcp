@@ -254,12 +254,27 @@ export async function calculateDelta(
           return { path: relativePath, status: 'modified' as const };
         }
       } catch (error) {
+        // Distinguish between permission errors and transient errors (Bug #25)
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorCode = (error as NodeJS.ErrnoException).code;
+
+        // Log permission errors at warn level to make them visible
+        if (errorCode === 'EACCES' || errorCode === 'EPERM') {
+          logger.warn('FingerprintsManager', 'Permission denied reading file during delta calculation', {
+            path: relativePath,
+            error: errorMessage,
+            code: errorCode,
+          });
+        } else {
+          // Other errors (e.g., ENOENT from race condition) at debug level
+          logger.debug('FingerprintsManager', 'File read error during delta, treating as added', {
+            path: relativePath,
+            error: errorMessage,
+            code: errorCode,
+          });
+        }
         // If file can't be read, treat as added (will be hashed during indexing)
         // This handles race conditions where file was deleted between listing and hashing
-        logger.debug('FingerprintsManager', 'File read error during delta, treating as added', {
-          path: relativePath,
-          error: error instanceof Error ? error.message : String(error),
-        });
         return { path: relativePath, status: 'added' as const };
       }
     });

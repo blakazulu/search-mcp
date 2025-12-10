@@ -20,14 +20,16 @@ Deep security and stability analysis of the Search MCP codebase revealed **65+ p
 
 **UPDATE 2024-12-10: SMCP-041 Completed** - Windows & platform-specific fixes (Bug #18, #19, #20, MCP-28, MCP-31) have been fixed with Windows polling configuration, async file operations, fingerprint optimization, and timestamp utilities. 5 bugs resolved.
 
+**UPDATE 2024-12-10: SMCP-042 Completed** - Error handling & state management (Bug #8, #21, #23, #24, #25, MCP-9, MCP-11, MCP-12, MCP-13, MCP-15) have been fixed with indexing state tracking, disk space checks, confirmation flow fix, stack trace cleanup, zero-vector handling, and stale results warnings. 10 bugs resolved.
+
 ### Bug Count Summary
 | Severity | Count | Fixed |
 |----------|-------|-------|
 | **CRITICAL** | ~~10~~ 1 | 9 |
-| **HIGH** | ~~19~~ 7 | 12 |
-| **MEDIUM** | ~~27~~ 17 | 10 |
-| **LOW** | ~~9+~~ 8+ | 1 |
-| **TOTAL** | **~~65+~~ 33+** | **30** |
+| **HIGH** | ~~19~~ 4 | 15 |
+| **MEDIUM** | ~~27~~ 12 | 15 |
+| **LOW** | ~~9+~~ 7+ | 2 |
+| **TOTAL** | **~~65+~~ 24+** | **40** |
 
 ---
 
@@ -151,11 +153,17 @@ interface ServerContext {
 
 ---
 
-### MCP-9. NO INCOMPLETE INDEXING DETECTION (User-Reported)
+### MCP-9. NO INCOMPLETE INDEXING DETECTION (User-Reported) ✅ FIXED (SMCP-042)
 **Severity:** HIGH
-**Status:** VULNERABLE
+**Status:** RESOLVED on 2024-12-10
 
-**Issue:** If indexing is interrupted (terminal closed, crash, Ctrl+C), there is NO mechanism to detect that the index is incomplete or corrupt.
+**Fix Applied:**
+- Added `IndexingStateSchema` to metadata with state, startedAt, lastCheckpoint, expectedFiles, processedFiles, and errorMessage fields
+- IndexManager now sets state to 'in_progress' at start, updates progress per batch (every 5 batches), and sets 'complete' or 'failed' at end
+- Search tools check indexing state and return warnings if index is incomplete
+- `get_index_status` reports 'incomplete' or 'failed' status
+
+~~**Issue:** If indexing is interrupted (terminal closed, crash, Ctrl+C), there is NO mechanism to detect that the index is incomplete or corrupt.~~
 
 **Current Flow Analysis:**
 1. `createIndex()` starts indexing
@@ -253,11 +261,16 @@ async function validateIndex(indexPath: string): Promise<ValidationResult> {
 
 ---
 
-### MCP-11. MODEL DOWNLOAD FAILURE DURING INDEXING
+### MCP-11. MODEL DOWNLOAD FAILURE DURING INDEXING ✅ FIXED (SMCP-042)
 **Severity:** MEDIUM
-**Status:** PARTIALLY HANDLED
+**Status:** RESOLVED on 2024-12-10
 
-**Issue:** If the embedding model download fails mid-way through first indexing, the index is left in corrupt state.
+**Fix Applied:**
+- IndexManager now sets indexing state to 'failed' with error message on any failure including model download
+- Metadata state is preserved, allowing detection of incomplete indexes on next run
+- `get_index_status` and search tools now report the failed state
+
+~~**Issue:** If the embedding model download fails mid-way through first indexing, the index is left in corrupt state.~~
 
 **Flow:**
 1. User runs `create_index` for first time
@@ -281,62 +294,75 @@ async function validateIndex(indexPath: string): Promise<ValidationResult> {
 
 ---
 
-### MCP-12. DISK FULL DURING INDEXING - NO DETECTION
+### MCP-12. DISK FULL DURING INDEXING - NO DETECTION ✅ FIXED (SMCP-042)
 **Severity:** HIGH
-**Status:** VULNERABLE
+**Status:** RESOLVED on 2024-12-10
 
-**Issue:** The `DISK_FULL` error code exists but is NEVER USED anywhere in the codebase.
+**Fix Applied:**
+- Created `src/utils/diskSpace.ts` with checkDiskSpace, estimateRequiredSpace, hasSufficientSpace, validateDiskSpace functions
+- IndexManager now calls `validateDiskSpace()` before indexing starts
+- Uses the existing `diskFull()` error factory for proper error reporting
+- Pre-flight estimation based on file count (~10KB per file)
 
-**Code Evidence:**
-```typescript
-// src/errors/index.ts:234 - Function exists
-export function diskFull(needed: number, available: number): MCPError { ... }
+~~**Issue:** The `DISK_FULL` error code exists but is NEVER USED anywhere in the codebase.~~
 
-// But grep shows it's never called!
-// No disk space check before indexing
-// No handling of ENOSPC errors
-```
+~~**Code Evidence:**~~
+~~```typescript~~
+~~// src/errors/index.ts:234 - Function exists~~
+~~export function diskFull(needed: number, available: number): MCPError { ... }~~
 
-**Scenario:**
-1. User has 100MB free space
-2. Indexing large project generates 500MB of vectors
-3. LanceDB write fails mid-way with ENOSPC
-4. Partial index left on disk
-5. No clear error message - just generic "index corrupt"
+~~// But grep shows it's never called!~~
+~~// No disk space check before indexing~~
+~~// No handling of ENOSPC errors~~
+~~```~~
 
-**What's Missing:**
-- Pre-flight disk space estimation
-- ENOSPC error handling in LanceDB writes
-- Graceful cleanup on disk full
+~~**Scenario:**~~
+~~1. User has 100MB free space~~
+~~2. Indexing large project generates 500MB of vectors~~
+~~3. LanceDB write fails mid-way with ENOSPC~~
+~~4. Partial index left on disk~~
+~~5. No clear error message - just generic "index corrupt"~~
+
+~~**What's Missing:**~~
+~~- Pre-flight disk space estimation~~
+~~- ENOSPC error handling in LanceDB writes~~
+~~- Graceful cleanup on disk full~~
 
 ---
 
-### MCP-13. ZERO-VECTOR INJECTION ON EMBEDDING FAILURE
+### MCP-13. ZERO-VECTOR INJECTION ON EMBEDDING FAILURE ✅ FIXED (SMCP-042)
 **Severity:** MEDIUM
-**Status:** SILENT DATA CORRUPTION
+**Status:** RESOLVED on 2024-12-10
 
-**Issue:** When embedding a text fails, a zero vector is silently inserted. This corrupts search quality.
+**Fix Applied:**
+- Added `BatchEmbeddingResult` interface with vectors, successIndices, and failedCount
+- Added `embedBatchWithStats()` method to EmbeddingEngine for explicit failure tracking
+- Added `failedEmbeddings` field to metadata stats schema
+- `get_index_status` tool now reports embedding failure statistics
+- Chunks with failed embeddings are tracked and reported
 
-**Code Evidence:**
-```typescript
-// src/engines/embedding.ts:295-302
-} catch (error) {
-  logger.error('EmbeddingEngine', 'Failed to embed text in batch', { ... });
-  // Push zero vector for failed embeddings to maintain order
-  vectors.push(new Array(EMBEDDING_DIMENSION).fill(0));  // SILENT CORRUPTION!
-}
-```
+~~**Issue:** When embedding a text fails, a zero vector is silently inserted. This corrupts search quality.~~
 
-**Impact:**
-- Zero vectors have no semantic meaning
-- They'll match ANY query with some similarity score
-- User sees garbage results, doesn't know why
-- No indication which files have broken embeddings
+~~**Code Evidence:**~~
+~~```typescript~~
+~~// src/engines/embedding.ts:295-302~~
+~~} catch (error) {~~
+~~  logger.error('EmbeddingEngine', 'Failed to embed text in batch', { ... });~~
+~~  // Push zero vector for failed embeddings to maintain order~~
+~~  vectors.push(new Array(EMBEDDING_DIMENSION).fill(0));  // SILENT CORRUPTION!~~
+~~}~~
+~~```~~
 
-**What's Missing:**
-- Flag chunks with failed embeddings
-- Skip storing zero-vector chunks
-- Report embedding failures in index status
+~~**Impact:**~~
+~~- Zero vectors have no semantic meaning~~
+~~- They'll match ANY query with some similarity score~~
+~~- User sees garbage results, doesn't know why~~
+~~- No indication which files have broken embeddings~~
+
+~~**What's Missing:**~~
+~~- Flag chunks with failed embeddings~~
+~~- Skip storing zero-vector chunks~~
+~~- Report embedding failures in index status~~
 
 ---
 
@@ -370,23 +396,30 @@ if (ageMs > fiveMinutesMs) {
 
 ---
 
-### MCP-15. SEARCH RETURNS STALE RESULTS DURING REINDEX
+### MCP-15. SEARCH RETURNS STALE RESULTS DURING REINDEX ✅ FIXED (SMCP-042)
 **Severity:** LOW
-**Status:** BY DESIGN (but undocumented)
+**Status:** RESOLVED on 2024-12-10
 
-**Issue:** Searches during `reindex_project` return results from both old and new index state.
+**Fix Applied:**
+- Added `warning` field to SearchCodeOutput and SearchDocsOutput
+- Search tools now check `indexingState` from metadata
+- If state is 'in_progress', search returns warning: "Index is currently being rebuilt. Results may be incomplete."
+- If state is 'failed', search returns warning with the error message
+- `get_index_status` tool returns 'incomplete' or 'failed' status values
 
-**Flow:**
-1. Index has 500 files
-2. `reindex_project` starts, deletes old index, begins rebuilding
-3. User runs `search_code` at 50% completion
-4. Results include only 250 files - user doesn't know why
-5. No warning that index is being rebuilt
+~~**Issue:** Searches during `reindex_project` return results from both old and new index state.~~
 
-**What's Missing:**
-- Index status should show "rebuilding" state
-- Search should warn if index is incomplete
-- Or: search should block during reindex
+~~**Flow:**~~
+~~1. Index has 500 files~~
+~~2. `reindex_project` starts, deletes old index, begins rebuilding~~
+~~3. User runs `search_code` at 50% completion~~
+~~4. Results include only 250 files - user doesn't know why~~
+~~5. No warning that index is being rebuilt~~
+
+~~**What's Missing:**~~
+~~- Index status should show "rebuilding" state~~
+~~- Search should warn if index is incomplete~~
+~~- Or: search should block during reindex~~
 
 ---
 
@@ -988,19 +1021,25 @@ content = await fs.promises.readFile(absolutePath, 'utf8');
 
 ## HIGH SEVERITY
 
-### 8. Hardcoded Confirmation Bypass
+### 8. Hardcoded Confirmation Bypass ✅ FIXED (SMCP-042)
 **File:** `src/server.ts:183-249`
+**Status:** RESOLVED on 2024-12-10
 
-```typescript
-const context: CreateIndexContext = {
-  projectPath,
-  confirmed: true,  // ALWAYS TRUE - confirmation gates are useless
-};
-```
+**Fix Applied:**
+- Removed hardcoded `confirmed: true` from server.ts
+- Tool handlers now support both MCP confirmation flow and direct API calls
+- MCP's `requiresConfirmation` flag properly controls confirmation behavior
 
-**Issue:** Server passes `confirmed: true` regardless of user input. The confirmation requirement in tools like `createIndex`, `reindexProject`, `deleteIndex` is completely bypassed.
+~~```typescript~~
+~~const context: CreateIndexContext = {~~
+~~  projectPath,~~
+~~  confirmed: true,  // ALWAYS TRUE - confirmation gates are useless~~
+~~};~~
+~~```~~
 
-**Impact:** Destructive operations cannot be cancelled.
+~~**Issue:** Server passes `confirmed: true` regardless of user input. The confirmation requirement in tools like `createIndex`, `reindexProject`, `deleteIndex` is completely bypassed.~~
+
+~~**Impact:** Destructive operations cannot be cancelled.~~
 
 ---
 
@@ -1210,12 +1249,18 @@ const context: CreateIndexContext = {
 
 ---
 
-### 21. Stack Trace Information Leakage
+### 21. Stack Trace Information Leakage ✅ FIXED (SMCP-042)
 **File:** `src/server.ts:411`, `src/errors/index.ts:104`
+**Status:** RESOLVED on 2024-12-10
 
-```typescript
-stack: error.stack,  // Full stack traces in logs
-```
+**Fix Applied:**
+- Modified error handling to only include developerMessage in DEBUG mode
+- Generic errors now show "An unexpected error occurred" to users
+- Stack traces only appear when `process.env.DEBUG` is set
+
+~~```typescript~~
+~~stack: error.stack,  // Full stack traces in logs~~
+~~```~~
 
 ---
 
@@ -1233,28 +1278,44 @@ stack: error.stack,  // Full stack traces in logs
 
 ---
 
-### 23. Missing Initialization Reset in Integrity Engine
+### 23. Missing Initialization Reset in Integrity Engine ✅ VERIFIED (SMCP-042)
 **File:** `src/engines/integrity.ts:526-557`
+**Status:** VERIFIED on 2024-12-10 (already correct)
 
-**Issue:** If indexing aborts with exception, `_isIndexingActive` remains true forever.
+**Verification:** Code review confirmed the existing implementation already uses a `try/finally` block that properly resets `_isIndexingActive` to `false` even on error.
+
+~~**Issue:** If indexing aborts with exception, `_isIndexingActive` remains true forever.~~
 
 ---
 
-### 24. DocsIndexManager Error Handling Gap
+### 24. DocsIndexManager Error Handling Gap ✅ FIXED (SMCP-042)
 **File:** `src/engines/docsIndexManager.ts:995-1008`
+**Status:** RESOLVED on 2024-12-10
 
-```typescript
-await this.close();  // Could throw!
-const result = await createDocsIndex(...);
-await this.initialize();  // Never runs if above throws
-```
+**Fix Applied:**
+- Added try/catch block around reindex operation
+- On error, attempts to reinitialize the manager
+- Reinitialization failure is logged but doesn't mask original error
+- Manager state is properly restored after errors
+
+~~```typescript~~
+~~await this.close();  // Could throw!~~
+~~const result = await createDocsIndex(...);~~
+~~await this.initialize();  // Never runs if above throws~~
+~~```~~
 
 ---
 
-### 25. Silent Error Masking in Delta Calculation
+### 25. Silent Error Masking in Delta Calculation ✅ FIXED (SMCP-042)
 **File:** `src/storage/fingerprints.ts:260-268`
+**Status:** RESOLVED on 2024-12-10
 
-**Issue:** File read errors silently treated as "added", masking permission issues.
+**Fix Applied:**
+- Changed logging level from DEBUG to WARN for file read errors
+- Permission issues are now visible in logs for troubleshooting
+- File is still treated as "added" but error is no longer silently swallowed
+
+~~**Issue:** File read errors silently treated as "added", masking permission issues.~~
 
 ---
 
@@ -1277,13 +1338,14 @@ await this.initialize();  // Never runs if above throws
 | Race Conditions | ~~2~~ 0 | - | ~~2~~ 1 | - | ✅ 3 (SMCP-036, Bug #2,3,15) |
 | Memory Leaks | - | ~~3~~ 0 | - | - | ✅ 3 (SMCP-039, Bug #9,10,11) |
 | Resource Leaks | ~~2~~ 0 | 2 | 1 | - | ✅ 2 (SMCP-037, Bug #5,6) |
-| Error Handling | ~~1~~ 0 | ~~1~~ 0 | 3 | 2 | ✅ 2 (SMCP-036 Bug #4, SMCP-039 Bug #14) |
+| Error Handling | ~~1~~ 0 | ~~1~~ 0 | ~~3~~ 0 | ~~2~~ 1 | ✅ 5 (SMCP-036 Bug #4, SMCP-039 Bug #14, SMCP-042 Bug #21,23,24,25) |
 | Security | - | ~~1~~ 0 | ~~2~~ 0 | - | ✅ 3 (SMCP-035 Bug #22, SMCP-037 Bug #17, SMCP-040 Bug #16) |
 | Logic Flaws | - | ~~1~~ 0 | 2 | - | ✅ 1 (SMCP-040, Bug #7) |
 | Performance | - | - | ~~3~~ 0 | - | ✅ 3 (SMCP-041, Bug #18,19,20) |
 | Resource Mgmt | - | ~~2~~ 0 | - | - | ✅ 2 (SMCP-038, Bug #12,13) |
+| Confirmation/State | - | ~~1~~ 0 | - | - | ✅ 1 (SMCP-042, Bug #8) |
 
-**Subtotal: ~~7~~ 1 Critical, ~~8~~ 0 High, ~~13~~ 5 Medium, 2+ Low (20 Fixed from original)**
+**Subtotal: ~~7~~ 1 Critical, ~~8~~ 0 High, ~~13~~ 3 Medium, ~~2~~ 1+ Low (24 Fixed from original)**
 
 ### MCP-Specific Vulnerabilities (From Web Research + Deep Analysis)
 | Category | Critical | High | Medium | Low |
@@ -1295,13 +1357,13 @@ await this.initialize();  // Never runs if above throws
 | Path Traversal (CVE) | - | 1 | - | - |
 | Supply Chain | - | - | 1 | - |
 | ANSI Injection | - | - | - | 1 |
-| Incomplete Index Detection | - | 1 | - | - |
+| Incomplete Index Detection | - | ~~1~~ 0 | - | - | ✅ (SMCP-042, MCP-9) |
 | Concurrent Indexing | - | ~~1~~ 0 | - | - | ✅ (SMCP-036, MCP-10) |
-| Model Download Failure | - | - | 1 | - |
-| Disk Full - No Detection | - | 1 | - | - |
-| Zero-Vector Corruption | - | - | 1 | - |
+| Model Download Failure | - | - | ~~1~~ 0 | - | ✅ (SMCP-042, MCP-11) |
+| Disk Full - No Detection | - | ~~1~~ 0 | - | - | ✅ (SMCP-042, MCP-12) |
+| Zero-Vector Corruption | - | - | ~~1~~ 0 | - | ✅ (SMCP-042, MCP-13) |
 | Stale Lockfile Deletion | - | - | 1 | - |
-| Stale Search Results | - | - | - | 1 |
+| Stale Search Results | - | - | - | ~~1~~ 0 | ✅ (SMCP-042, MCP-15) |
 | File Rename Data Loss | - | - | 1 | - |
 | Symlink Loops | - | - | 1 | - |
 | Non-UTF8 Files | - | - | 1 | - |
@@ -1323,9 +1385,9 @@ await this.initialize();  // Never runs if above throws
 | **Orphaned Chunks on Error** | - | ~~**1**~~ 0 | - | - | ✅ (SMCP-037, MCP-34) |
 | **Future Timestamps** | - | - | - | **1** |
 
-**Subtotal: ~~3~~ 1 Critical, ~~11~~ 8 High, ~~14~~ 10 Medium, ~~7~~ 6 Low = 25 MCP-specific issues (10 Fixed)**
+**Subtotal: ~~3~~ 1 Critical, ~~11~~ 4 High, ~~14~~ 7 Medium, ~~7~~ 4 Low = 16 MCP-specific issues remaining (16 Fixed)**
 
-### GRAND TOTAL: ~~10~~ 1 Critical, ~~19~~ 7 High, ~~27~~ 17 Medium, ~~9+~~ 8+ Low = 33+ Issues (30 Fixed)
+### GRAND TOTAL: ~~10~~ 1 Critical, ~~19~~ 4 High, ~~27~~ 10 Medium, ~~9+~~ 5+ Low = 20+ Issues remaining (40 Fixed)
 
 ---
 

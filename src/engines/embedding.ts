@@ -44,6 +44,20 @@ export interface EmbeddingResult {
   text: string;
   /** The 384-dimensional embedding vector */
   vector: number[];
+  /** Whether embedding succeeded */
+  success: boolean;
+}
+
+/**
+ * Result of batch embedding operation
+ */
+export interface BatchEmbeddingResult {
+  /** Successfully embedded vectors in order (skips failures) */
+  vectors: number[][];
+  /** Indices of texts that successfully embedded */
+  successIndices: number[];
+  /** Number of embeddings that failed */
+  failedCount: number;
 }
 
 /**
@@ -259,16 +273,53 @@ export class EmbeddingEngine {
    * Processes texts in batches of BATCH_SIZE (32) to balance
    * speed and memory usage. Reports progress via optional callback.
    *
+   * NOTE: This method includes zero vectors for failed embeddings to maintain
+   * array order for backward compatibility. Use embedBatchWithStats for
+   * explicit failure tracking without zero vectors.
+   *
    * @param texts - Array of texts to embed
    * @param onProgress - Optional callback for progress updates
-   * @returns Array of 384-dimensional vectors (same order as input)
+   * @returns Array of 384-dimensional vectors (same order as input, with zero vectors for failures)
    */
   async embedBatch(
     texts: string[],
     onProgress?: EmbeddingProgressCallback
   ): Promise<number[][]> {
+    const result = await this.embedBatchWithStats(texts, onProgress);
+
+    // For backward compatibility, reconstruct array with zero vectors for failures
+    const vectors: number[][] = [];
+    let successIdx = 0;
+
+    for (let i = 0; i < texts.length; i++) {
+      if (successIdx < result.successIndices.length && result.successIndices[successIdx] === i) {
+        vectors.push(result.vectors[successIdx]);
+        successIdx++;
+      } else {
+        // Insert zero vector for failed embedding
+        vectors.push(new Array(EMBEDDING_DIMENSION).fill(0));
+      }
+    }
+
+    return vectors;
+  }
+
+  /**
+   * Embed multiple texts with failure tracking (MCP-13)
+   *
+   * Unlike embedBatch, this method returns detailed statistics about failures
+   * and only includes successfully embedded vectors.
+   *
+   * @param texts - Array of texts to embed
+   * @param onProgress - Optional callback for progress updates
+   * @returns BatchEmbeddingResult with vectors, success indices, and failure count
+   */
+  async embedBatchWithStats(
+    texts: string[],
+    onProgress?: EmbeddingProgressCallback
+  ): Promise<BatchEmbeddingResult> {
     if (texts.length === 0) {
-      return [];
+      return { vectors: [], successIndices: [], failedCount: 0 };
     }
 
     // Ensure model is initialized
@@ -285,7 +336,10 @@ export class EmbeddingEngine {
     });
 
     const vectors: number[][] = [];
+    const successIndices: number[] = [];
+    let failedCount = 0;
     const totalBatches = Math.ceil(texts.length / BATCH_SIZE);
+    let processedCount = 0;
 
     for (let i = 0; i < texts.length; i += BATCH_SIZE) {
       const batch = texts.slice(i, i + BATCH_SIZE);
@@ -296,8 +350,11 @@ export class EmbeddingEngine {
       });
 
       // Process each text in the batch
-      for (const text of batch) {
+      for (let j = 0; j < batch.length; j++) {
+        const text = batch[j];
+        const originalIndex = i + j;
         let output: { data: unknown; dispose?: () => void } | null = null;
+
         try {
           output = await this.pipeline(text, {
             pooling: 'mean',
@@ -305,14 +362,16 @@ export class EmbeddingEngine {
           });
           const vector = Array.from(output!.data as Float32Array);
           vectors.push(vector);
+          successIndices.push(originalIndex);
         } catch (error) {
           const err = error instanceof Error ? error : new Error(String(error));
           logger.error('EmbeddingEngine', 'Failed to embed text in batch', {
             error: err.message,
             textLength: text.length,
+            textIndex: originalIndex,
           });
-          // Push zero vector for failed embeddings to maintain order
-          vectors.push(new Array(EMBEDDING_DIMENSION).fill(0));
+          // Track failure but don't add zero vector (MCP-13)
+          failedCount++;
         } finally {
           // Dispose tensor to free memory (Bug #10)
           if (output && typeof output.dispose === 'function') {
@@ -324,18 +383,20 @@ export class EmbeddingEngine {
           }
         }
 
+        processedCount++;
         // Report progress
         if (onProgress) {
-          onProgress(vectors.length, texts.length);
+          onProgress(processedCount, texts.length);
         }
       }
     }
 
     logger.info('EmbeddingEngine', 'Batch embedding complete', {
       totalVectors: vectors.length,
+      failedCount,
     });
 
-    return vectors;
+    return { vectors, successIndices, failedCount };
   }
 
   /**
@@ -343,17 +404,28 @@ export class EmbeddingEngine {
    *
    * @param texts - Array of texts to embed
    * @param onProgress - Optional callback for progress updates
-   * @returns Array of EmbeddingResult objects
+   * @returns Array of EmbeddingResult objects (includes success status)
    */
   async embedWithResults(
     texts: string[],
     onProgress?: EmbeddingProgressCallback
   ): Promise<EmbeddingResult[]> {
-    const vectors = await this.embedBatch(texts, onProgress);
-    return texts.map((text, index) => ({
-      text,
-      vector: vectors[index],
-    }));
+    const batchResult = await this.embedBatchWithStats(texts, onProgress);
+    const successSet = new Set(batchResult.successIndices);
+
+    return texts.map((text, index) => {
+      const success = successSet.has(index);
+      const successIdx = batchResult.successIndices.indexOf(index);
+      const vector = success
+        ? batchResult.vectors[successIdx]
+        : new Array(EMBEDDING_DIMENSION).fill(0);
+
+      return {
+        text,
+        vector,
+        success,
+      };
+    });
   }
 }
 

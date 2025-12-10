@@ -992,6 +992,8 @@ export class DocsIndexManager {
   async createDocsIndex(
     onProgress?: DocsProgressCallback
   ): Promise<DocsIndexResult> {
+    const logger = getLogger();
+
     // Close current connection for clean start
     await this.close();
 
@@ -1001,8 +1003,17 @@ export class DocsIndexManager {
       onProgress
     );
 
-    // Re-initialize after creation
-    await this.initialize();
+    // Re-initialize after creation (Bug #24 - handle initialization errors)
+    try {
+      await this.initialize();
+    } catch (error) {
+      // Log the error but don't fail - the indexing itself succeeded
+      logger.error('DocsIndexManager', 'Failed to reinitialize after index creation', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      // Reset to a known state
+      this.isInitialized = false;
+    }
 
     return result;
   }

@@ -181,9 +181,10 @@ async function executeTool(
 
     switch (toolName as ToolName) {
       case 'create_index': {
+        // MCP handles confirmation via requiresConfirmation flag on the tool definition
+        // When we reach this point, the user has already confirmed (if required)
         const context: CreateIndexContext = {
           projectPath,
-          confirmed: true, // MCP handles confirmation via requiresConfirmation flag
         };
         result = await createIndex({}, context);
         break;
@@ -226,9 +227,10 @@ async function executeTool(
       }
 
       case 'reindex_project': {
+        // MCP handles confirmation via requiresConfirmation flag on the tool definition
+        // When we reach this point, the user has already confirmed (if required)
         const context: ReindexProjectContext = {
           projectPath,
-          confirmed: true, // MCP handles confirmation via requiresConfirmation flag
         };
         result = await reindexProject({}, context);
         break;
@@ -244,9 +246,10 @@ async function executeTool(
       }
 
       case 'delete_index': {
+        // MCP handles confirmation via requiresConfirmation flag on the tool definition
+        // When we reach this point, the user has already confirmed (if required)
         const context: DeleteIndexContext = {
           projectPath,
-          confirmed: true, // MCP handles confirmation via requiresConfirmation flag
         };
         result = await deleteIndex({}, context);
         break;
@@ -274,12 +277,14 @@ async function executeTool(
       error: error instanceof Error ? error.message : String(error),
     });
 
-    // Re-throw MCP errors with proper formatting
+    // Re-throw MCP errors with user-friendly message (Bug #21 - don't leak implementation details)
     if (isMCPError(error)) {
+      // Only include technical details in debug mode
+      const debugMode = process.env.DEBUG === 'true' || process.env.DEBUG === '1';
       throw new McpError(
         McpErrorCode.InternalError,
         error.userMessage,
-        { code: error.code, developerMessage: error.developerMessage }
+        debugMode ? { code: error.code, developerMessage: error.developerMessage } : { code: error.code }
       );
     }
 
@@ -296,9 +301,13 @@ async function executeTool(
       throw error;
     }
 
-    // Wrap unexpected errors
+    // Wrap unexpected errors (Bug #21 - don't leak implementation details)
+    const debugMode = process.env.DEBUG === 'true' || process.env.DEBUG === '1';
     const message = error instanceof Error ? error.message : String(error);
-    throw new McpError(McpErrorCode.InternalError, message);
+    throw new McpError(
+      McpErrorCode.InternalError,
+      debugMode ? message : 'An unexpected error occurred. Please try again.'
+    );
   }
 }
 

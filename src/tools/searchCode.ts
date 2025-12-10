@@ -74,6 +74,8 @@ export interface SearchCodeOutput {
   totalResults: number;
   /** Time taken for search in milliseconds */
   searchTimeMs: number;
+  /** Warning message if index is in an incomplete state (MCP-15) */
+  warning?: string;
 }
 
 /**
@@ -143,6 +145,21 @@ export async function searchCode(
     throw indexNotFound(indexPath);
   }
 
+  // Check indexing state for stale results warning (MCP-15)
+  let warning: string | undefined;
+  if (metadata.indexingState) {
+    switch (metadata.indexingState.state) {
+      case 'in_progress':
+        warning = 'Warning: Indexing is currently in progress. Search results may be incomplete or stale.';
+        logger.warn('searchCode', warning);
+        break;
+      case 'failed':
+        warning = 'Warning: Previous indexing operation failed. Search results may be incomplete. Consider running reindex_project.';
+        logger.warn('searchCode', warning);
+        break;
+    }
+  }
+
   // Open the LanceDB store
   const store = new LanceDBStore(indexPath);
   try {
@@ -187,12 +204,14 @@ export async function searchCode(
       totalResults: results.length,
       searchTimeMs,
       topScore: results[0]?.score,
+      hasWarning: !!warning,
     });
 
     return {
       results,
       totalResults: results.length,
       searchTimeMs,
+      warning,
     };
   } finally {
     // Always close the store

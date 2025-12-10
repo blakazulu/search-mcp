@@ -33,6 +33,7 @@ import { toRelativePath, toAbsolutePath, normalizePath, getIndexPath } from '../
 import { hashFile } from '../utils/hash.js';
 import { getLogger } from '../utils/logger.js';
 import { logMemoryUsage, getAdaptiveBatchSize, isMemoryCritical } from '../utils/memory.js';
+import { validateDiskSpace } from '../utils/diskSpace.js';
 import { MCPError, ErrorCode, fileLimitWarning, isMCPError } from '../errors/index.js';
 
 // ============================================================================
@@ -432,6 +433,9 @@ export async function createFullIndex(
   await embeddingEngine.initialize();
 
   try {
+    // Check disk space before starting (MCP-12)
+    await validateDiskSpace(indexPath);
+
     // Delete existing data for clean start
     await store.delete();
     await store.open();
@@ -445,10 +449,11 @@ export async function createFullIndex(
     if (files.length === 0) {
       logger.warn('IndexManager', 'No files to index');
 
-      // Save empty metadata
+      // Save empty metadata with complete state
       metadataManager.initialize(normalizedProjectPath);
       metadataManager.updateStats(0, 0, 0);
       metadataManager.markFullIndex();
+      metadataManager.setIndexingComplete();
       await metadataManager.save();
       await fingerprintsManager.save();
 
@@ -459,6 +464,14 @@ export async function createFullIndex(
         durationMs: Date.now() - startTime,
       };
     }
+
+    // Validate disk space with file count estimate (MCP-12)
+    await validateDiskSpace(indexPath, files.length);
+
+    // Set indexing state to in_progress
+    metadataManager.initialize(normalizedProjectPath);
+    metadataManager.setIndexingInProgress(files.length);
+    await metadataManager.save();
 
     // Process files in batches with adaptive sizing (MCP-22)
     let totalChunks = 0;
@@ -510,6 +523,13 @@ export async function createFullIndex(
         allHashes.set(path, hash);
       }
 
+      // Update progress checkpoint periodically
+      metadataManager.updateIndexingProgress(allHashes.size);
+      // Save checkpoint every few batches for recovery
+      if (batchNum % 5 === 0) {
+        await metadataManager.save();
+      }
+
       i += currentBatchSize;
     }
 
@@ -520,11 +540,11 @@ export async function createFullIndex(
     fingerprintsManager.setAll(allHashes);
     await fingerprintsManager.save();
 
-    // Update metadata
+    // Update metadata with complete state
     const storageSize = await store.getStorageSize();
-    metadataManager.initialize(normalizedProjectPath);
     metadataManager.updateStats(allHashes.size, totalChunks, storageSize);
     metadataManager.markFullIndex();
+    metadataManager.setIndexingComplete();
     await metadataManager.save();
 
     await store.close();
@@ -545,6 +565,15 @@ export async function createFullIndex(
       errors: errors.length > 0 ? errors : undefined,
     };
   } catch (error) {
+    // Mark indexing as failed before closing store
+    try {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      metadataManager.setIndexingFailed(errorMsg);
+      await metadataManager.save();
+    } catch {
+      // Ignore save errors during error handling
+    }
+
     await store.close();
 
     // Re-throw MCPErrors

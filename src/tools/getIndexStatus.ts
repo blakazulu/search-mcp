@@ -43,7 +43,7 @@ export type GetIndexStatusInput = z.infer<typeof GetIndexStatusInputSchema>;
 /**
  * Index status enum values
  */
-export type IndexStatus = 'ready' | 'indexing' | 'not_found';
+export type IndexStatus = 'ready' | 'indexing' | 'not_found' | 'incomplete' | 'failed';
 
 /**
  * Output structure for get_index_status tool
@@ -63,6 +63,16 @@ export interface GetIndexStatusOutput {
   storageSize?: string;
   /** Whether the file watcher is currently active */
   watcherActive?: boolean;
+  /** Warning message if index is in a problematic state */
+  warning?: string;
+  /** Number of failed embeddings (if any) */
+  failedEmbeddings?: number;
+  /** Indexing progress info (if in progress) */
+  indexingProgress?: {
+    expectedFiles?: number;
+    processedFiles?: number;
+    startedAt?: string;
+  };
 }
 
 // ============================================================================
@@ -216,15 +226,45 @@ export async function collectStatus(
   // For now, set to undefined as we don't have a file watcher yet
   const watcherActive: boolean | undefined = undefined;
 
+  // Determine status based on indexing state
+  let status: IndexStatus = 'ready';
+  let warning: string | undefined;
+  let indexingProgress: GetIndexStatusOutput['indexingProgress'] | undefined;
+
+  const indexingState = metadata.indexingState;
+  if (indexingState) {
+    switch (indexingState.state) {
+      case 'in_progress':
+        status = 'indexing';
+        warning = 'Index is currently being built. Search results may be incomplete.';
+        indexingProgress = {
+          expectedFiles: indexingState.expectedFiles,
+          processedFiles: indexingState.processedFiles,
+          startedAt: indexingState.startedAt,
+        };
+        break;
+      case 'failed':
+        status = 'failed';
+        warning = `Indexing failed${indexingState.errorMessage ? `: ${indexingState.errorMessage}` : '. Please try reindexing.'}`;
+        break;
+      case 'complete':
+        status = 'ready';
+        break;
+    }
+  }
+
   // Build the output
   const output: GetIndexStatusOutput = {
-    status: 'ready',
+    status,
     projectPath: metadata.projectPath,
     totalFiles: metadata.stats.totalFiles,
     totalChunks: metadata.stats.totalChunks,
     lastUpdated,
     storageSize: formatStorageSize(storageSizeBytes),
     watcherActive,
+    warning,
+    failedEmbeddings: metadata.stats.failedEmbeddings,
+    indexingProgress,
   };
 
   logger.debug('getIndexStatus', 'Status collected', {
@@ -232,6 +272,7 @@ export async function collectStatus(
     totalFiles: output.totalFiles,
     totalChunks: output.totalChunks,
     storageSize: output.storageSize,
+    warning: output.warning,
   });
 
   return output;

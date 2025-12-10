@@ -43,6 +43,37 @@ export const StatsSchema = z.object({
 
   /** Total storage size in bytes (includes LanceDB directory) */
   storageSizeBytes: z.number().int().nonnegative(),
+
+  /** Number of chunks that failed to generate embeddings */
+  failedEmbeddings: z.number().int().nonnegative().optional(),
+});
+
+/**
+ * Indexing state values
+ */
+export type IndexingState = 'complete' | 'in_progress' | 'failed';
+
+/**
+ * Schema for indexing state tracking
+ */
+export const IndexingStateSchema = z.object({
+  /** Current state of the indexing operation */
+  state: z.enum(['complete', 'in_progress', 'failed']),
+
+  /** ISO 8601 timestamp when indexing started */
+  startedAt: z.string().datetime().optional(),
+
+  /** ISO 8601 timestamp of last checkpoint */
+  lastCheckpoint: z.string().datetime().optional(),
+
+  /** Total expected files to process (set at scan time) */
+  expectedFiles: z.number().int().nonnegative().optional(),
+
+  /** Number of files processed so far */
+  processedFiles: z.number().int().nonnegative().optional(),
+
+  /** Error message if indexing failed */
+  errorMessage: z.string().optional(),
 });
 
 /**
@@ -88,6 +119,9 @@ export const MetadataSchema = z.object({
 
   /** ISO 8601 timestamp of last documentation index operation (optional) */
   lastDocsIndex: z.string().datetime().optional(),
+
+  /** Indexing state tracking for detecting incomplete indexes */
+  indexingState: IndexingStateSchema.optional(),
 });
 
 /**
@@ -104,6 +138,11 @@ export type Stats = z.infer<typeof StatsSchema>;
  * Inferred DocsStats type from the schema
  */
 export type DocsStats = z.infer<typeof DocsStatsSchema>;
+
+/**
+ * Inferred IndexingStateInfo type from the schema
+ */
+export type IndexingStateInfo = z.infer<typeof IndexingStateSchema>;
 
 // ============================================================================
 // Metadata I/O Functions
@@ -523,5 +562,154 @@ export class MetadataManager {
    */
   getDocsStats(): DocsStats | null {
     return this.cachedMetadata?.docsStats ?? null;
+  }
+
+  // ==========================================================================
+  // Indexing State Management
+  // ==========================================================================
+
+  /**
+   * Set the indexing state to in_progress
+   *
+   * Call this at the start of indexing operations.
+   * Call save() to persist changes.
+   *
+   * @param expectedFiles - Total number of files to be indexed (optional)
+   */
+  setIndexingInProgress(expectedFiles?: number): void {
+    if (this.cachedMetadata === null) {
+      throw new Error(
+        'Metadata not loaded. Call load() or initialize() first.'
+      );
+    }
+
+    this.cachedMetadata.indexingState = {
+      state: 'in_progress',
+      startedAt: new Date().toISOString(),
+      expectedFiles,
+      processedFiles: 0,
+    };
+  }
+
+  /**
+   * Update indexing progress
+   *
+   * Call this periodically during indexing to track progress.
+   * Call save() to persist changes.
+   *
+   * @param processedFiles - Number of files processed so far
+   */
+  updateIndexingProgress(processedFiles: number): void {
+    if (this.cachedMetadata === null) {
+      throw new Error(
+        'Metadata not loaded. Call load() or initialize() first.'
+      );
+    }
+
+    if (!this.cachedMetadata.indexingState) {
+      this.cachedMetadata.indexingState = {
+        state: 'in_progress',
+        startedAt: new Date().toISOString(),
+      };
+    }
+
+    this.cachedMetadata.indexingState.processedFiles = processedFiles;
+    this.cachedMetadata.indexingState.lastCheckpoint = new Date().toISOString();
+  }
+
+  /**
+   * Set the indexing state to complete
+   *
+   * Call this when indexing finishes successfully.
+   * Call save() to persist changes.
+   */
+  setIndexingComplete(): void {
+    if (this.cachedMetadata === null) {
+      throw new Error(
+        'Metadata not loaded. Call load() or initialize() first.'
+      );
+    }
+
+    this.cachedMetadata.indexingState = {
+      state: 'complete',
+      lastCheckpoint: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Set the indexing state to failed
+   *
+   * Call this when indexing fails.
+   * Call save() to persist changes.
+   *
+   * @param errorMessage - Description of the failure (optional)
+   */
+  setIndexingFailed(errorMessage?: string): void {
+    if (this.cachedMetadata === null) {
+      throw new Error(
+        'Metadata not loaded. Call load() or initialize() first.'
+      );
+    }
+
+    const existing = this.cachedMetadata.indexingState;
+    this.cachedMetadata.indexingState = {
+      state: 'failed',
+      startedAt: existing?.startedAt,
+      lastCheckpoint: new Date().toISOString(),
+      expectedFiles: existing?.expectedFiles,
+      processedFiles: existing?.processedFiles,
+      errorMessage,
+    };
+  }
+
+  /**
+   * Get the current indexing state
+   *
+   * @returns IndexingStateInfo object or null if metadata not loaded or no state
+   */
+  getIndexingState(): IndexingStateInfo | null {
+    return this.cachedMetadata?.indexingState ?? null;
+  }
+
+  /**
+   * Check if the index is in a complete state
+   *
+   * @returns true if the indexing state is 'complete' or undefined (legacy indexes)
+   */
+  isIndexComplete(): boolean {
+    if (this.cachedMetadata === null) {
+      return false;
+    }
+
+    // Legacy indexes without indexingState are considered complete
+    if (!this.cachedMetadata.indexingState) {
+      return true;
+    }
+
+    return this.cachedMetadata.indexingState.state === 'complete';
+  }
+
+  /**
+   * Check if indexing is currently in progress
+   *
+   * @returns true if the indexing state is 'in_progress'
+   */
+  isIndexingInProgress(): boolean {
+    return this.cachedMetadata?.indexingState?.state === 'in_progress';
+  }
+
+  /**
+   * Update the failed embeddings count
+   *
+   * @param count - Number of failed embeddings
+   */
+  updateFailedEmbeddings(count: number): void {
+    if (this.cachedMetadata === null) {
+      throw new Error(
+        'Metadata not loaded. Call load() or initialize() first.'
+      );
+    }
+
+    this.cachedMetadata.stats.failedEmbeddings = count;
   }
 }

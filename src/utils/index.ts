@@ -114,3 +114,16 @@ export {
   createPerfTimer,
   measureDuration,
 } from './timestamp.js';
+
+// Disk space utilities exports
+export {
+  type DiskSpaceInfo,
+  type DiskSpaceValidation,
+  MIN_REQUIRED_SPACE_BYTES,
+  SPACE_BUFFER_MULTIPLIER,
+  ESTIMATED_BYTES_PER_FILE,
+  checkDiskSpace,
+  estimateRequiredSpace,
+  hasSufficientSpace,
+  validateDiskSpace,
+} from './diskSpace.js';

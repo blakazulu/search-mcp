@@ -201,9 +201,8 @@ export async function reindexProject(
     confirmed: context.confirmed,
   });
 
-  // Check if operation is confirmed (MCP confirmation flow)
-  // In MCP, requiresConfirmation tools need explicit user approval
-  // The context.confirmed flag indicates the user has approved
+  // Support explicit confirmation for direct API calls (e.g., tests)
+  // MCP server handles confirmation via requiresConfirmation flag
   if (context.confirmed === false) {
     logger.info('reindexProject', 'Reindex cancelled by user');
     return { status: 'cancelled' };

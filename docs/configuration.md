@@ -52,7 +52,32 @@ The config file is **auto-generated** on first indexing with sensible defaults. 
   "enhancedToolDescriptions": false,
 
   "indexingStrategy": "realtime",
-  "lazyIdleThreshold": 30
+  "lazyIdleThreshold": 30,
+
+  "_hardcodedExcludes": [
+    "// These patterns are ALWAYS excluded and cannot be overridden:",
+    "// - node_modules/, jspm_packages/, bower_components/  (dependencies)",
+    "// - .git/, .hg/, .svn/  (version control)",
+    "// - dist/, build/, out/, target/  (build artifacts)",
+    "// - .env, .env.*, *.pem, *.key  (secrets)",
+    "// - *.log, *.lock, package-lock.json, yarn.lock  (logs/locks)",
+    "// - .idea/, .vscode/, .DS_Store  (IDE config)",
+    "// - coverage/  (test coverage)",
+    "// - Binary files (images, videos, etc.) are auto-detected and skipped"
+  ],
+
+  "_availableOptions": {
+    "include": "Glob patterns for files to index. Default: all files.",
+    "exclude": "Glob patterns to skip (in addition to hardcoded excludes).",
+    "respectGitignore": "If true, also excludes files matching .gitignore.",
+    "maxFileSize": "Skip files larger than this. Supports: '500KB', '1MB', '2MB'.",
+    "maxFiles": "Warn if project exceeds this many files.",
+    "docPatterns": "Glob patterns for documentation files.",
+    "indexDocs": "If true, index docs separately with prose-optimized chunking.",
+    "enhancedToolDescriptions": "If true, add AI hints to tool descriptions.",
+    "indexingStrategy": "Indexing strategy: 'realtime' (immediate), 'lazy' (on idle/search), 'git' (on commit)",
+    "lazyIdleThreshold": "Seconds of inactivity before lazy indexing triggers (default: 30)"
+  }
 }
 ```
 

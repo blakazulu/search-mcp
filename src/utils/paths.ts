@@ -499,6 +499,18 @@ export function getDocsLanceDbPath(indexPath: string): string {
   return path.join(indexPath, 'docs.lancedb');
 }
 
+/**
+ * Get the dirty files JSON path for an index
+ *
+ * Used by the lazy indexing strategy to track files pending indexing.
+ *
+ * @param indexPath - Absolute path to the index directory
+ * @returns Absolute path to dirty-files.json
+ */
+export function getDirtyFilesPath(indexPath: string): string {
+  return path.join(indexPath, 'dirty-files.json');
+}
+
 // ============================================================================
 // Utility Exports
 // ============================================================================

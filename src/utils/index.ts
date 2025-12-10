@@ -62,6 +62,7 @@ export {
   getLanceDbPath,
   getDocsFingerprintsPath,
   getDocsLanceDbPath,
+  getDirtyFilesPath,
   // Utility functions
   expandTilde,
   getExtension,

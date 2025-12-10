@@ -101,3 +101,12 @@ export {
   // Class
   DocsLanceDBStore,
 } from './docsLancedb.js';
+
+// Dirty Files Management (for lazy indexing strategy)
+export {
+  // Constants
+  DIRTY_FILES_VERSION,
+  DELETED_PREFIX,
+  // Class
+  DirtyFilesManager,
+} from './dirtyFiles.js';

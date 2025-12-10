@@ -9,7 +9,7 @@ Add user-configurable indexing strategies to reduce performance overhead from co
 | Phase | Task ID | Description | Status |
 |-------|---------|-------------|--------|
 | 1 | SMCP-043 | Config Schema Changes | COMPLETED |
-| 2 | SMCP-044 | Dirty Files Manager | Not Started |
+| 2 | SMCP-044 | Dirty Files Manager | COMPLETED |
 | 3 | SMCP-045 | Strategy Interface | Not Started |
 | 4 | SMCP-046 | Realtime Strategy | Not Started |
 | 5 | SMCP-047 | Lazy Strategy | Not Started |
@@ -77,211 +77,45 @@ _availableOptions: {
 
 ---
 
-## Phase 2: Dirty Files Manager
+## Phase 2: Dirty Files Manager (COMPLETED - SMCP-044)
 
 ### New File: `src/storage/dirtyFiles.ts`
 
 Track files that need indexing for lazy mode. Pattern follows `fingerprints.ts`.
 
-```typescript
-/**
- * Dirty Files Manager Module
- *
- * Tracks files pending indexing for lazy/deferred indexing strategies.
- * Persists to disk to survive server restarts.
- */
+**Implemented exports:**
+- `DIRTY_FILES_VERSION` - Version constant ('1.0.0')
+- `DELETED_PREFIX` - Prefix for deletion markers ('__deleted__:')
+- `DirtyFilesManager` - Main class
 
-import * as fs from 'node:fs';
-import { getDirtyFilesPath } from '../utils/paths.js';
-import { getLogger } from '../utils/logger.js';
-import { atomicWriteJson } from '../utils/atomicWrite.js';
+**DirtyFilesManager API:**
+- `load()` - Load from disk (starts fresh on missing/corrupt/version mismatch)
+- `save()` - Atomic write to disk (only if modified)
+- `add(relativePath)` - Mark file as dirty (removes deletion marker if present)
+- `remove(relativePath)` - Remove from dirty set and deletion markers
+- `markDeleted(relativePath)` - Track deletion (removes from dirty set)
+- `getAll()` - Get dirty files (excluding deletions)
+- `getDeleted()` - Get deleted files (without prefix)
+- `clear()` - Clear all entries
+- `count()` - Total count (dirty + deleted)
+- `dirtyCount()` - Count of dirty files only
+- `deletedCount()` - Count of deleted files only
+- `isEmpty()` - Check if empty
+- `isLoaded()` - Check if loaded
+- `hasUnsavedChanges()` - Check for unsaved changes
+- `has(relativePath)` - Check if file is dirty
+- `isDeleted(relativePath)` - Check if file is marked deleted
+- `delete()` - Delete dirty-files.json from disk
+- `getDirtyFilesPath()` - Get path to dirty files
+- `getIndexPath()` - Get index path
 
-// ============================================================================
-// Types
-// ============================================================================
+**Tests:** 57 tests in `tests/unit/storage/dirtyFiles.test.ts`
 
-interface DirtyFilesJSON {
-  version: string;
-  dirtyFiles: string[];      // Array of relative paths
-  lastModified: string;      // ISO timestamp
-}
-
-// ============================================================================
-// Constants
-// ============================================================================
-
-export const DIRTY_FILES_VERSION = '1.0.0';
-
-// ============================================================================
-// DirtyFilesManager Class
-// ============================================================================
-
-export class DirtyFilesManager {
-  private readonly indexPath: string;
-  private dirtyFiles: Set<string> = new Set();
-  private loaded: boolean = false;
-  private modified: boolean = false;
-
-  constructor(indexPath: string) {
-    this.indexPath = indexPath;
-  }
-
-  /**
-   * Load dirty files from disk
-   */
-  async load(): Promise<void> {
-    const logger = getLogger();
-    const filePath = getDirtyFilesPath(this.indexPath);
-
-    try {
-      if (!fs.existsSync(filePath)) {
-        this.dirtyFiles = new Set();
-        this.loaded = true;
-        return;
-      }
-
-      const content = await fs.promises.readFile(filePath, 'utf-8');
-      const data = JSON.parse(content) as DirtyFilesJSON;
-
-      // Version check for future migrations
-      if (data.version !== DIRTY_FILES_VERSION) {
-        logger.warn('DirtyFilesManager', 'Version mismatch, starting fresh', {
-          expected: DIRTY_FILES_VERSION,
-          found: data.version,
-        });
-        this.dirtyFiles = new Set();
-      } else {
-        this.dirtyFiles = new Set(data.dirtyFiles);
-      }
-
-      this.loaded = true;
-      logger.debug('DirtyFilesManager', 'Loaded dirty files', {
-        count: this.dirtyFiles.size,
-      });
-    } catch (error) {
-      logger.warn('DirtyFilesManager', 'Failed to load dirty files', { error });
-      this.dirtyFiles = new Set();
-      this.loaded = true;
-    }
-  }
-
-  /**
-   * Save dirty files to disk (if modified)
-   */
-  async save(): Promise<void> {
-    if (!this.modified) return;
-
-    const logger = getLogger();
-    const filePath = getDirtyFilesPath(this.indexPath);
-
-    const data: DirtyFilesJSON = {
-      version: DIRTY_FILES_VERSION,
-      dirtyFiles: Array.from(this.dirtyFiles),
-      lastModified: new Date().toISOString(),
-    };
-
-    await atomicWriteJson(filePath, data);
-    this.modified = false;
-
-    logger.debug('DirtyFilesManager', 'Saved dirty files', {
-      count: this.dirtyFiles.size,
-    });
-  }
-
-  /**
-   * Add a file to the dirty set
-   */
-  add(relativePath: string): void {
-    if (!this.dirtyFiles.has(relativePath)) {
-      this.dirtyFiles.add(relativePath);
-      this.modified = true;
-    }
-  }
-
-  /**
-   * Remove a file from the dirty set
-   */
-  remove(relativePath: string): void {
-    if (this.dirtyFiles.has(relativePath)) {
-      this.dirtyFiles.delete(relativePath);
-      this.modified = true;
-    }
-  }
-
-  /**
-   * Mark a file as deleted (for tracking removals)
-   */
-  markDeleted(relativePath: string): void {
-    // Prefix with special marker for deletions
-    this.add(`__deleted__:${relativePath}`);
-  }
-
-  /**
-   * Get all dirty files (excluding deletion markers)
-   */
-  getAll(): string[] {
-    return Array.from(this.dirtyFiles).filter(p => !p.startsWith('__deleted__:'));
-  }
-
-  /**
-   * Get all deleted files
-   */
-  getDeleted(): string[] {
-    return Array.from(this.dirtyFiles)
-      .filter(p => p.startsWith('__deleted__:'))
-      .map(p => p.replace('__deleted__:', ''));
-  }
-
-  /**
-   * Clear all dirty files
-   */
-  clear(): void {
-    if (this.dirtyFiles.size > 0) {
-      this.dirtyFiles.clear();
-      this.modified = true;
-    }
-  }
-
-  /**
-   * Get count of dirty files
-   */
-  count(): number {
-    return this.dirtyFiles.size;
-  }
-
-  /**
-   * Check if there are any dirty files
-   */
-  isEmpty(): boolean {
-    return this.dirtyFiles.size === 0;
-  }
-
-  /**
-   * Check if loaded
-   */
-  isLoaded(): boolean {
-    return this.loaded;
-  }
-
-  /**
-   * Delete the dirty files from disk
-   */
-  async delete(): Promise<void> {
-    const filePath = getDirtyFilesPath(this.indexPath);
-    try {
-      await fs.promises.unlink(filePath);
-    } catch {
-      // Ignore if doesn't exist
-    }
-  }
-}
-```
-
-### Add to `src/utils/paths.ts`:
+### Added to `src/utils/paths.ts`:
 
 ```typescript
 /**
- * Get the path to the dirty files JSON for an index
+ * Get the dirty files JSON path for an index
  */
 export function getDirtyFilesPath(indexPath: string): string {
   return path.join(indexPath, 'dirty-files.json');

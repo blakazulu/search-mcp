@@ -153,4 +153,7 @@ export {
   RealtimeStrategy,
   createRealtimeStrategy,
   type RealtimeStrategyOptions,
+  LazyStrategy,
+  createLazyStrategy,
+  type LazyStrategyOptions,
 } from './strategies/index.js';

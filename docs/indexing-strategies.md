@@ -12,7 +12,7 @@ Add user-configurable indexing strategies to reduce performance overhead from co
 | 2 | SMCP-044 | Dirty Files Manager | COMPLETED |
 | 3 | SMCP-045 | Strategy Interface | COMPLETED |
 | 4 | SMCP-046 | Realtime Strategy | COMPLETED |
-| 5 | SMCP-047 | Lazy Strategy | Not Started |
+| 5 | SMCP-047 | Lazy Strategy | COMPLETED |
 | 6 | SMCP-048 | Git Strategy | Not Started |
 | 7 | SMCP-049 | Strategy Orchestrator | Not Started |
 | 8 | SMCP-050 | Tool Integrations | Not Started |
@@ -381,9 +381,16 @@ Comprehensive tests covering:
 
 ---
 
-## Phase 5: Lazy Strategy
+## Phase 5: Lazy Strategy (COMPLETED - SMCP-047)
 
 ### New File: `src/engines/strategies/lazyStrategy.ts`
+
+**Implementation completed 2025-12-10**
+
+Key exports:
+- `LazyStrategy` - Main class implementing `IndexingStrategy`
+- `createLazyStrategy()` - Factory function
+- `LazyStrategyOptions` - Configuration interface
 
 ```typescript
 /**
@@ -395,14 +402,20 @@ Comprehensive tests covering:
  */
 
 import chokidar from 'chokidar';
-import { IndexingStrategy, FileEvent, StrategyStats } from '../indexingStrategy.js';
+import { IndexingStrategy, StrategyFileEvent, StrategyStats } from '../indexingStrategy.js';
 import { IndexManager } from '../indexManager.js';
 import { DocsIndexManager } from '../docsIndexManager.js';
-import { IndexingPolicy } from '../indexPolicy.js';
+import { IndexingPolicy, isHardDenied } from '../indexPolicy.js';
+import { isDocFile } from '../docsChunking.js';
 import { DirtyFilesManager } from '../../storage/dirtyFiles.js';
 import { WATCHER_OPTIONS } from '../fileWatcher.js';
-import { isDocFile } from '../../utils/paths.js';
+import { toRelativePath, normalizePath } from '../../utils/paths.js';
 import { getLogger } from '../../utils/logger.js';
+import { registerCleanup, unregisterCleanup, isShutdownInProgress, CleanupHandler } from '../../utils/cleanup.js';
+
+export interface LazyStrategyOptions {
+  idleThresholdSeconds?: number;  // default: 30
+}
 
 export class LazyStrategy implements IndexingStrategy {
   readonly name = 'lazy' as const;
@@ -418,132 +431,45 @@ export class LazyStrategy implements IndexingStrategy {
   // Flush lock to prevent concurrent flushes
   private flushing: boolean = false;
 
+  // Cleanup handler
+  private cleanupHandler: CleanupHandler | null = null;
+
   constructor(
-    private readonly projectPath: string,
-    private readonly indexManager: IndexManager,
-    private readonly docsIndexManager: DocsIndexManager | null,
-    private readonly policy: IndexingPolicy,
-    private readonly dirtyFiles: DirtyFilesManager,
-    private readonly idleThreshold: number = 30, // seconds
-  ) {}
+    projectPath: string,
+    indexManager: IndexManager,
+    docsIndexManager: DocsIndexManager | null,
+    policy: IndexingPolicy,
+    dirtyFiles: DirtyFilesManager,
+    idleThresholdSeconds: number = 30,
+  ) { /* ... */ }
 
   async initialize(): Promise<void> {
-    if (!this.dirtyFiles.isLoaded()) {
-      await this.dirtyFiles.load();
-    }
-    if (!this.policy.isInitialized()) {
-      await this.policy.initialize();
-    }
+    // Load dirty files from disk
+    // Initialize policy
   }
 
   async start(): Promise<void> {
-    const logger = getLogger();
-
-    this.watcher = chokidar.watch(this.projectPath, WATCHER_OPTIONS);
-
-    this.watcher.on('add', (path) => this.handleEvent('add', path));
-    this.watcher.on('change', (path) => this.handleEvent('change', path));
-    this.watcher.on('unlink', (path) => this.handleEvent('unlink', path));
-    this.watcher.on('error', (error) => this.handleError(error));
-
-    await new Promise<void>((resolve) => {
-      this.watcher!.on('ready', () => {
-        logger.info('LazyStrategy', 'File watcher ready (lazy mode)');
-        resolve();
-      });
-    });
-
-    this.active = true;
-
-    // If there are pending dirty files from previous session, start idle timer
-    if (!this.dirtyFiles.isEmpty()) {
-      this.resetIdleTimer();
-    }
+    // Create chokidar watcher, bind events, register cleanup handler
+    // If dirty files exist from previous session, start idle timer
   }
 
   async stop(): Promise<void> {
-    // Clear idle timer
-    if (this.idleTimer) {
-      clearTimeout(this.idleTimer);
-      this.idleTimer = null;
-    }
-
-    // Save dirty files before stopping
-    await this.dirtyFiles.save();
-
-    // Close watcher
-    if (this.watcher) {
-      await this.watcher.close();
-      this.watcher = null;
-    }
-
-    this.active = false;
+    // Clear idle timer, save dirty files, close watcher, unregister cleanup
   }
 
   isActive(): boolean {
     return this.active;
   }
 
-  async onFileEvent(event: FileEvent): Promise<void> {
-    // Just mark as dirty, don't process
-    if (event.type === 'unlink') {
-      this.dirtyFiles.markDeleted(event.relativePath);
-    } else {
-      this.dirtyFiles.add(event.relativePath);
-    }
-
-    this.lastActivity = new Date();
-    this.resetIdleTimer();
+  async onFileEvent(event: StrategyFileEvent): Promise<void> {
+    // Queue to dirty files (don't process immediately)
+    // Reset idle timer
   }
 
-  /**
-   * Process all pending dirty files
-   */
   async flush(): Promise<void> {
-    if (this.flushing || this.dirtyFiles.isEmpty()) {
-      return;
-    }
-
-    const logger = getLogger();
-    this.flushing = true;
-
-    try {
-      logger.info('LazyStrategy', 'Flushing dirty files', {
-        count: this.dirtyFiles.count(),
-      });
-
-      // Process deletions first
-      const deleted = this.dirtyFiles.getDeleted();
-      for (const relativePath of deleted) {
-        if (isDocFile(relativePath) && this.docsIndexManager) {
-          await this.docsIndexManager.removeDocFile(relativePath);
-        } else {
-          await this.indexManager.removeFile(relativePath);
-        }
-        this.processedCount++;
-      }
-
-      // Process adds/changes
-      const dirty = this.dirtyFiles.getAll();
-      for (const relativePath of dirty) {
-        if (isDocFile(relativePath) && this.docsIndexManager) {
-          await this.docsIndexManager.updateDocFile(relativePath);
-        } else {
-          await this.indexManager.updateFile(relativePath);
-        }
-        this.processedCount++;
-      }
-
-      // Clear dirty files and save
-      this.dirtyFiles.clear();
-      await this.dirtyFiles.save();
-
-      logger.info('LazyStrategy', 'Flush complete', {
-        processed: deleted.length + dirty.length,
-      });
-    } finally {
-      this.flushing = false;
-    }
+    // Check flushing lock
+    // Process deletions first, then adds/changes
+    // Clear dirty files and save to disk
   }
 
   getStats(): StrategyStats {
@@ -556,56 +482,68 @@ export class LazyStrategy implements IndexingStrategy {
     };
   }
 
-  // --- Private methods ---
+  // Private methods handle:
+  // - handleChokidarEvent() - Convert path, check hardcoded deny, queue event
+  // - resetIdleTimer() - Clear and set new idle timer
+  // - handleError() - Log watcher errors
 
-  private handleEvent(type: 'add' | 'change' | 'unlink', absolutePath: string): void {
-    const logger = getLogger();
-
-    // Convert to relative path
-    const relativePath = this.toRelativePath(absolutePath);
-    if (!relativePath) return;
-
-    // Check policy
-    if (!this.policy.shouldIndex(relativePath)) {
-      return;
-    }
-
-    // Queue the event (don't process yet)
-    this.onFileEvent({
-      type,
-      relativePath,
-      absolutePath,
-    }).catch((error) => {
-      logger.error('LazyStrategy', 'Error queuing event', { error, relativePath });
-    });
-  }
-
-  private toRelativePath(absolutePath: string): string | null {
-    // Implementation to convert absolute to relative path
-    // Return null if outside project
-  }
-
-  private resetIdleTimer(): void {
-    // Clear existing timer
-    if (this.idleTimer) {
-      clearTimeout(this.idleTimer);
-    }
-
-    // Set new timer
-    this.idleTimer = setTimeout(() => {
-      this.flush().catch((error) => {
-        const logger = getLogger();
-        logger.error('LazyStrategy', 'Error during idle flush', { error });
-      });
-    }, this.idleThreshold * 1000);
-  }
-
-  private handleError(error: Error): void {
-    const logger = getLogger();
-    logger.error('LazyStrategy', 'Watcher error', { error });
-  }
+  // Public accessors
+  getProjectPath(): string;
+  getDirtyCount(): number;
+  getIdleThreshold(): number;
+  isFlushing(): boolean;
 }
+
+// Factory function
+export function createLazyStrategy(
+  projectPath: string,
+  indexManager: IndexManager,
+  docsIndexManager: DocsIndexManager | null,
+  policy: IndexingPolicy,
+  dirtyFiles: DirtyFilesManager,
+  options?: LazyStrategyOptions,
+): LazyStrategy;
 ```
+
+### Updated: `src/engines/strategies/index.ts`
+
+Added exports:
+```typescript
+export {
+  LazyStrategy,
+  createLazyStrategy,
+  type LazyStrategyOptions,
+} from './lazyStrategy.js';
+```
+
+### Updated: `src/engines/index.ts`
+
+Added exports:
+```typescript
+export {
+  LazyStrategy,
+  createLazyStrategy,
+  type LazyStrategyOptions,
+} from './strategies/index.js';
+```
+
+### Tests: `tests/unit/engines/strategies/lazyStrategy.test.ts`
+
+Comprehensive tests covering (45 tests total):
+- Interface compliance
+- Constructor options (default and custom idle threshold)
+- Lifecycle management (initialize, start, stop, isActive)
+- File event queuing (add, change, unlink not processed immediately)
+- Dirty files persistence on stop
+- Deletion tracking and processing order
+- Flush behavior (clears dirty files, saves to disk)
+- Concurrent flush prevention (flushing lock)
+- Idle timer (auto-flush after threshold)
+- Timer reset on new events
+- Timer cleanup on stop
+- getStats() return values
+- Public accessors
+- Factory function
 
 ---
 

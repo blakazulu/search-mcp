@@ -113,6 +113,8 @@ describe('Config Manager', () => {
         docPatterns: ['**/*.md', '**/*.rst'],
         indexDocs: false,
         enhancedToolDescriptions: true,
+        indexingStrategy: 'lazy' as const,
+        lazyIdleThreshold: 60,
       };
 
       const result = ConfigSchema.safeParse(config);
@@ -134,6 +136,8 @@ describe('Config Manager', () => {
         expect(result.data.docPatterns).toEqual(['**/*.md', '**/*.txt']);
         expect(result.data.indexDocs).toBe(true);
         expect(result.data.enhancedToolDescriptions).toBe(false);
+        expect(result.data.indexingStrategy).toBe('realtime');
+        expect(result.data.lazyIdleThreshold).toBe(30);
       }
     });
 
@@ -188,6 +192,58 @@ describe('Config Manager', () => {
       expect(result.success).toBe(false);
     });
 
+    it('should accept valid indexingStrategy values', () => {
+      // Test all valid enum values
+      const strategies = ['realtime', 'lazy', 'git'] as const;
+      for (const strategy of strategies) {
+        const result = ConfigSchema.safeParse({
+          indexingStrategy: strategy,
+        });
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data.indexingStrategy).toBe(strategy);
+        }
+      }
+    });
+
+    it('should reject invalid indexingStrategy value', () => {
+      const result = ConfigSchema.safeParse({
+        indexingStrategy: 'invalid',
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('should accept valid lazyIdleThreshold', () => {
+      const result = ConfigSchema.safeParse({
+        lazyIdleThreshold: 60,
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.lazyIdleThreshold).toBe(60);
+      }
+    });
+
+    it('should reject zero lazyIdleThreshold', () => {
+      const result = ConfigSchema.safeParse({
+        lazyIdleThreshold: 0,
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject negative lazyIdleThreshold', () => {
+      const result = ConfigSchema.safeParse({
+        lazyIdleThreshold: -10,
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject non-number lazyIdleThreshold', () => {
+      const result = ConfigSchema.safeParse({
+        lazyIdleThreshold: '30',
+      });
+      expect(result.success).toBe(false);
+    });
+
     it('should reject invalid maxFileSize format', () => {
       const result = ConfigSchema.safeParse({
         maxFileSize: '1GB',
@@ -238,6 +294,8 @@ describe('Config Manager', () => {
       expect(DEFAULT_CONFIG.docPatterns).toBeDefined();
       expect(DEFAULT_CONFIG.indexDocs).toBeDefined();
       expect(DEFAULT_CONFIG.enhancedToolDescriptions).toBeDefined();
+      expect(DEFAULT_CONFIG.indexingStrategy).toBeDefined();
+      expect(DEFAULT_CONFIG.lazyIdleThreshold).toBeDefined();
     });
 
     it('should have correct enhancedToolDescriptions default', () => {
@@ -250,6 +308,14 @@ describe('Config Manager', () => {
 
     it('should have correct indexDocs default', () => {
       expect(DEFAULT_CONFIG.indexDocs).toBe(true);
+    });
+
+    it('should have correct indexingStrategy default', () => {
+      expect(DEFAULT_CONFIG.indexingStrategy).toBe('realtime');
+    });
+
+    it('should have correct lazyIdleThreshold default', () => {
+      expect(DEFAULT_CONFIG.lazyIdleThreshold).toBe(30);
     });
 
     it('should match schema defaults', () => {
@@ -299,6 +365,8 @@ describe('Config Manager', () => {
         docPatterns: ['docs/**/*.md'],
         indexDocs: false,
         enhancedToolDescriptions: true,
+        indexingStrategy: 'lazy',
+        lazyIdleThreshold: 45,
       };
 
       const configPath = path.join(indexPath, 'config.json');
@@ -366,6 +434,33 @@ describe('Config Manager', () => {
       expect(loaded.maxFiles).toBe(50000);
       expect(loaded.docPatterns).toEqual(['**/*.md', '**/*.txt']);
       expect(loaded.indexDocs).toBe(true);
+      expect(loaded.indexingStrategy).toBe('realtime');
+      expect(loaded.lazyIdleThreshold).toBe(30);
+    });
+
+    it('should apply defaults for new fields in existing configs (backward compatibility)', async () => {
+      // Simulate an old config without the new indexing strategy fields
+      const oldConfig = {
+        include: ['**/*'],
+        exclude: [],
+        respectGitignore: true,
+        maxFileSize: '1MB',
+        maxFiles: 50000,
+        docPatterns: ['**/*.md', '**/*.txt'],
+        indexDocs: true,
+        enhancedToolDescriptions: false,
+      };
+
+      const configPath = path.join(indexPath, 'config.json');
+      await fs.promises.writeFile(configPath, JSON.stringify(oldConfig));
+
+      const loaded = await loadConfig(indexPath);
+      // Old fields should be preserved
+      expect(loaded.include).toEqual(['**/*']);
+      expect(loaded.maxFileSize).toBe('1MB');
+      // New fields should get defaults
+      expect(loaded.indexingStrategy).toBe('realtime');
+      expect(loaded.lazyIdleThreshold).toBe(30);
     });
 
     it('should load custom docPatterns and indexDocs', async () => {
@@ -528,6 +623,8 @@ describe('Config Manager', () => {
       expect(config._availableOptions.docPatterns).toBeDefined();
       expect(config._availableOptions.indexDocs).toBeDefined();
       expect(config._availableOptions.enhancedToolDescriptions).toBeDefined();
+      expect(config._availableOptions.indexingStrategy).toBeDefined();
+      expect(config._availableOptions.lazyIdleThreshold).toBeDefined();
     });
 
     it('should include docPatterns and indexDocs fields', async () => {
@@ -549,6 +646,26 @@ describe('Config Manager', () => {
       const config = JSON.parse(content);
 
       expect(config.enhancedToolDescriptions).toBe(false);
+    });
+
+    it('should include indexingStrategy field with default realtime', async () => {
+      await generateDefaultConfig(indexPath);
+
+      const configPath = path.join(indexPath, 'config.json');
+      const content = await fs.promises.readFile(configPath, 'utf-8');
+      const config = JSON.parse(content);
+
+      expect(config.indexingStrategy).toBe('realtime');
+    });
+
+    it('should include lazyIdleThreshold field with default 30', async () => {
+      await generateDefaultConfig(indexPath);
+
+      const configPath = path.join(indexPath, 'config.json');
+      const content = await fs.promises.readFile(configPath, 'utf-8');
+      const config = JSON.parse(content);
+
+      expect(config.lazyIdleThreshold).toBe(30);
     });
   });
 
@@ -580,6 +697,8 @@ describe('Config Manager', () => {
           docPatterns: ['**/*.md'],
           indexDocs: false,
           enhancedToolDescriptions: true,
+          indexingStrategy: 'git',
+          lazyIdleThreshold: 120,
         };
 
         const configPath = path.join(indexPath, 'config.json');

@@ -16,6 +16,7 @@ A local-first Model Context Protocol (MCP) server that provides semantic search 
   - [Example Use Cases](#example-use-cases)
   - [Best Practices](#best-practices)
 - [For Developers (Technical Details)](#for-developers-technical-details)
+  - [Indexing Strategies](#indexing-strategies)
 - [Troubleshooting](#troubleshooting)
 
 ---
@@ -544,7 +545,7 @@ This section covers architecture, configuration, and advanced usage.
 | `search_code` | Semantic search for relevant code chunks | No |
 | `search_docs` | Semantic search for documentation files (.md, .txt) | No |
 | `search_by_path` | Find files by name/glob pattern | No |
-| `get_index_status` | Show index statistics (files, chunks, size) | No |
+| `get_index_status` | Show index statistics (files, chunks, size, strategy, pending) | No |
 | `reindex_project` | Rebuild the entire index from scratch | Yes |
 | `reindex_file` | Re-index a single specific file | No |
 | `delete_index` | Remove the index for current project | Yes |
@@ -601,6 +602,9 @@ Auto-generated at `~/.mcp/search/indexes/<hash>/config.json`:
   "indexDocs": true,
   "enhancedToolDescriptions": false,
 
+  "indexingStrategy": "realtime",
+  "lazyIdleThreshold": 30,
+
   "_hardcodedExcludes": [
     "// These patterns are ALWAYS excluded and cannot be overridden:",
     "// - node_modules/, jspm_packages/, bower_components/  (dependencies)",
@@ -621,7 +625,9 @@ Auto-generated at `~/.mcp/search/indexes/<hash>/config.json`:
     "maxFiles": "Warn if project exceeds this many files.",
     "docPatterns": "Glob patterns for documentation files.",
     "indexDocs": "If true, index docs with prose-optimized chunking.",
-    "enhancedToolDescriptions": "If true, add AI hints to tool descriptions."
+    "enhancedToolDescriptions": "If true, add AI hints to tool descriptions.",
+    "indexingStrategy": "Indexing strategy: 'realtime' (immediate), 'lazy' (on idle/search), 'git' (on commit)",
+    "lazyIdleThreshold": "Seconds of inactivity before lazy indexing triggers (default: 30)"
   }
 }
 ```
@@ -638,6 +644,8 @@ Auto-generated at `~/.mcp/search/indexes/<hash>/config.json`:
 | `docPatterns` | `string[]` | `["**/*.md", "**/*.txt"]` | Glob patterns for documentation files |
 | `indexDocs` | `boolean` | `true` | Enable documentation indexing |
 | `enhancedToolDescriptions` | `boolean` | `false` | Add AI hints to tool descriptions (see below) |
+| `indexingStrategy` | `string` | `"realtime"` | When to index: `"realtime"`, `"lazy"`, or `"git"` (see [Indexing Strategies](#indexing-strategies)) |
+| `lazyIdleThreshold` | `number` | `30` | Seconds of inactivity before lazy strategy indexes |
 
 ### Enhanced Tool Descriptions
 
@@ -656,6 +664,108 @@ re-reading the entire file - more precise results, less context usage."
 ```
 
 This helps the AI make smarter decisions about when to use search vs. reading from context, especially for the [hybrid approach](#hybrid-approach-when-you-already-dragged-a-doc) described above.
+
+### Indexing Strategies
+
+Control when and how file changes are indexed. Choose based on your project size and freshness needs.
+
+| Strategy | File Watching | When Indexing Happens | Best For |
+|----------|---------------|----------------------|----------|
+| `realtime` | All files continuously | Immediately on change | Small projects, instant freshness |
+| `lazy` | All files continuously | On idle (30s) or before search | Large projects, reduce CPU |
+| `git` | Only `.git/logs/HEAD` | After each git commit | Minimal overhead, committed-only search |
+
+---
+
+#### Realtime Strategy (Default)
+
+```json
+{
+  "indexingStrategy": "realtime"
+}
+```
+
+**How it works:**
+- Watches all project files using chokidar
+- Indexes changes immediately (with ~300ms debounce)
+- Search results always reflect the latest saved file
+
+**Best for:**
+- Small to medium projects (< 5,000 files)
+- When you need instant search freshness
+- Active development with frequent searches
+
+**Tradeoff:** Higher CPU usage during active file editing
+
+---
+
+#### Lazy Strategy
+
+```json
+{
+  "indexingStrategy": "lazy",
+  "lazyIdleThreshold": 30
+}
+```
+
+**How it works:**
+- Watches all project files (same as realtime)
+- Queues changes instead of processing immediately
+- Indexes when:
+  1. System is idle for `lazyIdleThreshold` seconds (default: 30), OR
+  2. Before any search executes (auto-flush)
+
+**Best for:**
+- Large projects (5,000+ files)
+- Reducing CPU usage during active editing
+- When slight search delay is acceptable
+
+**Tradeoff:** First search after edits may take slightly longer (while flushing)
+
+---
+
+#### Git Strategy
+
+```json
+{
+  "indexingStrategy": "git"
+}
+```
+
+**How it works:**
+- Only watches `.git/logs/HEAD` (updated on every commit)
+- No file watchers on project files (minimal overhead)
+- Reconciles entire index after each commit using integrity engine
+
+**Best for:**
+- Very large projects where file watching is expensive
+- When you only need to search committed code
+- CI/CD environments
+- Projects with many generated/temporary files
+
+**Tradeoff:** Uncommitted changes are not searchable
+
+**Requirement:** Project must be a git repository
+
+---
+
+#### Choosing a Strategy
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Which strategy?                          │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  Small project (< 5K files)?                                │
+│    └── YES → Use "realtime" (default)                       │
+│    └── NO  ↓                                                │
+│                                                             │
+│  Need to search uncommitted code?                           │
+│    └── YES → Use "lazy"                                     │
+│    └── NO  → Use "git"                                      │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ## Hardcoded Deny List
 

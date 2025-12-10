@@ -4,6 +4,22 @@ Add user-configurable indexing strategies to reduce performance overhead from co
 
 ---
 
+## Implementation Progress
+
+| Phase | Task ID | Description | Status |
+|-------|---------|-------------|--------|
+| 1 | SMCP-043 | Config Schema Changes | COMPLETED |
+| 2 | SMCP-044 | Dirty Files Manager | Not Started |
+| 3 | SMCP-045 | Strategy Interface | Not Started |
+| 4 | SMCP-046 | Realtime Strategy | Not Started |
+| 5 | SMCP-047 | Lazy Strategy | Not Started |
+| 6 | SMCP-048 | Git Strategy | Not Started |
+| 7 | SMCP-049 | Strategy Orchestrator | Not Started |
+| 8 | SMCP-050 | Tool Integrations | Not Started |
+| 9 | SMCP-051 | Server Integration | Not Started |
+
+---
+
 ## Summary
 
 Three indexing strategies for users to choose based on their needs:
@@ -16,21 +32,21 @@ Three indexing strategies for users to choose based on their needs:
 
 ---
 
-## Phase 1: Config Schema Changes
+## Phase 1: Config Schema Changes (COMPLETED - SMCP-043)
 
 ### File: `src/storage/config.ts`
 
-**Add to ConfigSchema (around line 88):**
+**Added to ConfigSchema (lines 117-121):**
 
 ```typescript
-/** Indexing strategy - controls when files are indexed */
+/** Indexing strategy: 'realtime' (immediate), 'lazy' (on idle/search), 'git' (on commit) */
 indexingStrategy: z.enum(['realtime', 'lazy', 'git']).default('realtime'),
 
 /** Idle threshold in seconds for lazy strategy (default: 30) */
 lazyIdleThreshold: z.number().positive().default(30),
 ```
 
-**Update DEFAULT_CONFIG (around line 146):**
+**Updated DEFAULT_CONFIG (lines 161-162):**
 
 ```typescript
 export const DEFAULT_CONFIG: Config = {
@@ -40,7 +56,7 @@ export const DEFAULT_CONFIG: Config = {
 };
 ```
 
-**Update _availableOptions in generateDefaultConfig (around line 315):**
+**Updated _availableOptions in generateDefaultConfig (lines 340-343):**
 
 ```typescript
 _availableOptions: {
@@ -49,6 +65,15 @@ _availableOptions: {
   lazyIdleThreshold: 'Seconds of inactivity before lazy indexing triggers (default: 30)',
 },
 ```
+
+**Tests Added (tests/unit/storage/config.test.ts):**
+- Schema validation for all valid indexingStrategy values
+- Schema rejection of invalid indexingStrategy values
+- Schema validation for positive lazyIdleThreshold
+- Schema rejection of zero/negative/non-number lazyIdleThreshold
+- DEFAULT_CONFIG tests for new fields
+- Backward compatibility test for old configs without new fields
+- Generated config tests for new fields and documentation
 
 ---
 

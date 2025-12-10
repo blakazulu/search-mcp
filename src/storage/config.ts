@@ -113,6 +113,12 @@ export const ConfigSchema = z
 
     /** Whether to add AI guidance hints to tool descriptions */
     enhancedToolDescriptions: z.boolean().default(false),
+
+    /** Indexing strategy: 'realtime' (immediate), 'lazy' (on idle/search), 'git' (on commit) */
+    indexingStrategy: z.enum(['realtime', 'lazy', 'git']).default('realtime'),
+
+    /** Idle threshold in seconds for lazy strategy (default: 30) */
+    lazyIdleThreshold: z.number().positive().default(30),
   })
   .strict()
   .passthrough(); // Allow underscore-prefixed documentation fields
@@ -152,6 +158,8 @@ export const DEFAULT_CONFIG: Config = {
   docPatterns: ['**/*.md', '**/*.txt'],
   indexDocs: true,
   enhancedToolDescriptions: false,
+  indexingStrategy: 'realtime',
+  lazyIdleThreshold: 30,
 };
 
 /**
@@ -329,6 +337,10 @@ export async function generateDefaultConfig(indexPath: string): Promise<void> {
         'Whether to index documentation files separately (default: true)',
       enhancedToolDescriptions:
         'Whether to add AI guidance hints to tool descriptions (default: false)',
+      indexingStrategy:
+        'Indexing strategy: "realtime" (immediate), "lazy" (on idle/search), "git" (on commit)',
+      lazyIdleThreshold:
+        'Seconds of inactivity before lazy indexing triggers (default: 30)',
     },
     ...DEFAULT_CONFIG,
   };

@@ -15,6 +15,7 @@ import { getLogger } from '../utils/logger.js';
 import { atomicWriteJson } from '../utils/atomicWrite.js';
 import { ErrorCode, MCPError, isMCPError } from '../errors/index.js';
 import { isSymlink } from '../utils/secureFileAccess.js';
+import { safeLoadJSON, MAX_JSON_FILE_SIZE, ResourceLimitError } from '../utils/limits.js';
 
 // ============================================================================
 // Types
@@ -96,9 +97,8 @@ export async function loadFingerprints(indexPath: string): Promise<Fingerprints>
       return new Map();
     }
 
-    // Read and parse the fingerprints file
-    const content = await fs.promises.readFile(fingerprintsPath, 'utf-8');
-    const rawData = JSON.parse(content) as FingerprintsJSON;
+    // DoS Protection: Use safe JSON loading with size limit
+    const rawData = await safeLoadJSON<FingerprintsJSON>(fingerprintsPath, MAX_JSON_FILE_SIZE);
 
     // Validate structure
     if (!rawData.fingerprints || typeof rawData.fingerprints !== 'object') {
@@ -125,6 +125,17 @@ export async function loadFingerprints(indexPath: string): Promise<Fingerprints>
     // Re-throw MCPErrors
     if (isMCPError(error)) {
       throw error;
+    }
+
+    // Handle size limit exceeded as corruption
+    if (error instanceof ResourceLimitError) {
+      throw new MCPError({
+        code: ErrorCode.INDEX_CORRUPT,
+        userMessage:
+          'The fingerprints file is too large. Please rebuild the index using the reindex_project tool.',
+        developerMessage: `Fingerprints file exceeds size limit: ${error.message}`,
+        cause: error,
+      });
     }
 
     // Handle JSON parse errors as corruption

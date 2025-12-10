@@ -22,6 +22,7 @@ import {
   chunkFileSync,
 } from '../../../src/engines/chunking.js';
 import { ErrorCode } from '../../../src/errors/index.js';
+import { ResourceLimitError, MAX_CHUNKS_PER_FILE } from '../../../src/utils/limits.js';
 
 // ============================================================================
 // Test Utilities
@@ -402,6 +403,66 @@ export function getUser(id: string): User {
         expect(Number.isInteger(chunk.endLine)).toBe(true);
         expect(chunk.contentHash).toMatch(/^[0-9a-f]{64}$/);
       }
+    });
+  });
+
+  // ============================================================================
+  // DoS Protection: Chunk Limit Enforcement Tests
+  // ============================================================================
+
+  describe('DoS Protection: Chunk Limits', () => {
+    describe('splitText', () => {
+      it('should throw ResourceLimitError when chunk count exceeds limit', () => {
+        // Create text that would produce many chunks with very small chunk size
+        const text = 'a\n'.repeat(100);
+
+        // Use a very small chunk size and a low maxChunks limit
+        expect(() => splitText(text, { chunkSize: 5, chunkOverlap: 0 }, 5))
+          .toThrow(ResourceLimitError);
+      });
+
+      it('should accept text producing chunks under the limit', () => {
+        const text = 'Hello world';
+        const result = splitText(text, { chunkSize: 100 }, 10);
+        expect(result).toHaveLength(1);
+      });
+
+      it('should use MAX_CHUNKS_PER_FILE as default limit', () => {
+        // This should not throw since we're using default limit (1000)
+        const text = 'a\n'.repeat(50);
+        const result = splitText(text, { chunkSize: 10, chunkOverlap: 0 });
+        expect(result.length).toBeLessThanOrEqual(MAX_CHUNKS_PER_FILE);
+      });
+
+      it('should include limit details in error message', () => {
+        const text = 'a\n'.repeat(20);
+
+        try {
+          splitText(text, { chunkSize: 3, chunkOverlap: 0 }, 5);
+          expect.fail('Should have thrown');
+        } catch (error) {
+          expect(error).toBeInstanceOf(ResourceLimitError);
+          const rle = error as ResourceLimitError;
+          expect(rle.limitName).toBe('CHUNKS_PER_FILE');
+          expect(rle.maxValue).toBe(5);
+          expect(rle.actualValue).toBeGreaterThan(5);
+        }
+      });
+    });
+
+    describe('splitWithLineNumbers', () => {
+      it('should throw ResourceLimitError when chunk count exceeds limit', () => {
+        const text = 'a\n'.repeat(100);
+
+        expect(() => splitWithLineNumbers(text, { chunkSize: 5, chunkOverlap: 0 }, 5))
+          .toThrow(ResourceLimitError);
+      });
+
+      it('should accept text producing chunks under the limit', () => {
+        const text = 'Line 1\nLine 2\nLine 3';
+        const result = splitWithLineNumbers(text, { chunkSize: 100 }, 10);
+        expect(result).toHaveLength(1);
+      });
     });
   });
 });

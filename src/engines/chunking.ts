@@ -16,6 +16,11 @@ import { hashString } from '../utils/hash.js';
 import { fileNotFound, MCPError, ErrorCode } from '../errors/index.js';
 import { getLogger } from '../utils/logger.js';
 import { isSymlink } from '../utils/secureFileAccess.js';
+import {
+  MAX_CHUNKS_PER_FILE,
+  CHUNKS_WARNING_THRESHOLD,
+  ResourceLimitError,
+} from '../utils/limits.js';
 
 // ============================================================================
 // Types and Interfaces
@@ -98,7 +103,9 @@ export const MAX_IN_MEMORY_SIZE = 10 * 1024 * 1024; // 10MB
  *
  * @param text - The text to split
  * @param options - Split configuration options
+ * @param maxChunks - Maximum number of chunks allowed (default: MAX_CHUNKS_PER_FILE)
  * @returns Array of text chunks
+ * @throws ResourceLimitError if chunk count exceeds maxChunks
  *
  * @example
  * ```typescript
@@ -108,8 +115,10 @@ export const MAX_IN_MEMORY_SIZE = 10 * 1024 * 1024; // 10MB
  */
 export function splitText(
   text: string,
-  options?: Partial<SplitOptions>
+  options?: Partial<SplitOptions>,
+  maxChunks: number = MAX_CHUNKS_PER_FILE
 ): string[] {
+  const logger = getLogger();
   const opts = { ...DEFAULT_SPLIT_OPTIONS, ...options };
 
   // Handle edge cases
@@ -123,7 +132,28 @@ export function splitText(
   }
 
   // Recursively split the text
-  return recursiveSplit(text, opts.separators, opts.chunkSize, opts.chunkOverlap);
+  const chunks = recursiveSplit(text, opts.separators, opts.chunkSize, opts.chunkOverlap);
+
+  // Check chunk count limit
+  if (chunks.length > maxChunks) {
+    throw new ResourceLimitError(
+      'CHUNKS_PER_FILE',
+      chunks.length,
+      maxChunks,
+      `File produces too many chunks: ${chunks.length} > ${maxChunks}. This may indicate a malformed or excessively large file.`
+    );
+  }
+
+  // Warn if approaching limit
+  if (chunks.length > CHUNKS_WARNING_THRESHOLD) {
+    logger.warn('Chunking', 'File produces many chunks, approaching limit', {
+      chunkCount: chunks.length,
+      maxChunks,
+      warningThreshold: CHUNKS_WARNING_THRESHOLD,
+    });
+  }
+
+  return chunks;
 }
 
 /**
@@ -325,7 +355,9 @@ function splitAtCharacterBoundary(
  *
  * @param text - The text to split
  * @param options - Split configuration options
+ * @param maxChunks - Maximum number of chunks allowed (default: MAX_CHUNKS_PER_FILE)
  * @returns Array of chunks with line number information
+ * @throws ResourceLimitError if chunk count exceeds maxChunks
  *
  * @example
  * ```typescript
@@ -336,15 +368,16 @@ function splitAtCharacterBoundary(
  */
 export function splitWithLineNumbers(
   text: string,
-  options?: Partial<SplitOptions>
+  options?: Partial<SplitOptions>,
+  maxChunks: number = MAX_CHUNKS_PER_FILE
 ): ChunkWithLines[] {
   // Handle edge cases
   if (!text || text.length === 0) {
     return [];
   }
 
-  // Get text chunks
-  const textChunks = splitText(text, options);
+  // Get text chunks (limit is enforced in splitText)
+  const textChunks = splitText(text, options, maxChunks);
 
   if (textChunks.length === 0) {
     return [];
@@ -463,13 +496,16 @@ function countLinesUntilPosition(text: string, position: number): number {
  * @param relativePath - Relative path from project root (stored in chunk)
  * @param fileSize - Size of the file in bytes
  * @param options - Optional split configuration
+ * @param maxChunks - Maximum number of chunks allowed (default: MAX_CHUNKS_PER_FILE)
  * @returns Promise resolving to array of chunks with IDs and metadata
+ * @throws ResourceLimitError if chunk count exceeds maxChunks
  */
 async function chunkLargeFile(
   absolutePath: string,
   relativePath: string,
   fileSize: number,
-  options?: Partial<SplitOptions>
+  options?: Partial<SplitOptions>,
+  maxChunks: number = MAX_CHUNKS_PER_FILE
 ): Promise<Chunk[]> {
   const logger = getLogger();
   const opts = { ...DEFAULT_SPLIT_OPTIONS, ...options };
@@ -494,6 +530,8 @@ async function chunkLargeFile(
   let currentChunkStartLine = 1;
   let currentLine = 1;
   let overlapText = '';
+  let limitExceeded = false;
+  let warningLogged = false;
 
   return new Promise<Chunk[]>((resolve, reject) => {
     const fileStream = fs.createReadStream(absolutePath, { encoding: 'utf8' });
@@ -503,6 +541,12 @@ async function chunkLargeFile(
     });
 
     rl.on('line', (line) => {
+      // If limit already exceeded, just update hash (for consistency)
+      if (limitExceeded) {
+        hash.update(line + '\n');
+        return;
+      }
+
       // Update hash
       hash.update(line + '\n');
 
@@ -517,6 +561,26 @@ async function chunkLargeFile(
       } else {
         // Chunk is full, save it and start a new one
         if (currentChunkText.length > 0) {
+          // DoS Protection: Check chunk limit BEFORE adding
+          if (chunks.length >= maxChunks) {
+            limitExceeded = true;
+            logger.error('Chunking', 'Chunk limit exceeded during streaming', {
+              path: relativePath,
+              chunkCount: chunks.length,
+              maxChunks,
+            });
+            // Close the stream early
+            rl.close();
+            fileStream.destroy();
+            reject(new ResourceLimitError(
+              'CHUNKS_PER_FILE',
+              chunks.length + 1,
+              maxChunks,
+              `File produces too many chunks during streaming: ${chunks.length + 1} > ${maxChunks}. This may indicate a malformed or excessively large file.`
+            ));
+            return;
+          }
+
           chunks.push({
             id: uuidv4(),
             text: currentChunkText,
@@ -525,6 +589,17 @@ async function chunkLargeFile(
             endLine: currentLine - 1,
             contentHash: '', // Will be updated after file is fully read
           });
+
+          // DoS Protection: Warn when approaching limit
+          if (!warningLogged && chunks.length > CHUNKS_WARNING_THRESHOLD) {
+            warningLogged = true;
+            logger.warn('Chunking', 'Streaming file approaching chunk limit', {
+              path: relativePath,
+              chunkCount: chunks.length,
+              maxChunks,
+              warningThreshold: CHUNKS_WARNING_THRESHOLD,
+            });
+          }
 
           // Calculate overlap for next chunk
           overlapText = calculateOverlapFromText(currentChunkText, opts.chunkOverlap);
@@ -540,8 +615,24 @@ async function chunkLargeFile(
     });
 
     rl.on('close', () => {
+      // Skip if we already rejected due to limit exceeded
+      if (limitExceeded) {
+        return;
+      }
+
       // Handle the last chunk
       if (currentChunkText.length > 0) {
+        // DoS Protection: Final check for chunk limit
+        if (chunks.length >= maxChunks) {
+          reject(new ResourceLimitError(
+            'CHUNKS_PER_FILE',
+            chunks.length + 1,
+            maxChunks,
+            `File produces too many chunks during streaming: ${chunks.length + 1} > ${maxChunks}. This may indicate a malformed or excessively large file.`
+          ));
+          return;
+        }
+
         chunks.push({
           id: uuidv4(),
           text: currentChunkText,

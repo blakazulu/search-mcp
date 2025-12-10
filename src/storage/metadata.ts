@@ -14,6 +14,7 @@ import { getMetadataPath } from '../utils/paths.js';
 import { getLogger } from '../utils/logger.js';
 import { atomicWriteJson } from '../utils/atomicWrite.js';
 import { ErrorCode, MCPError } from '../errors/index.js';
+import { safeLoadJSON, MAX_JSON_FILE_SIZE, ResourceLimitError } from '../utils/limits.js';
 
 // ============================================================================
 // Version Constant
@@ -178,9 +179,8 @@ export async function loadMetadata(indexPath: string): Promise<Metadata | null> 
       return null;
     }
 
-    // Read and parse the metadata file
-    const content = await fs.promises.readFile(metadataPath, 'utf-8');
-    const rawMetadata = JSON.parse(content);
+    // DoS Protection: Use safe JSON loading with size limit
+    const rawMetadata = await safeLoadJSON<unknown>(metadataPath, MAX_JSON_FILE_SIZE);
 
     // Validate against schema
     const result = MetadataSchema.safeParse(rawMetadata);
@@ -206,6 +206,17 @@ export async function loadMetadata(indexPath: string): Promise<Metadata | null> 
     // Re-throw MCPErrors
     if (error instanceof MCPError) {
       throw error;
+    }
+
+    // Handle size limit exceeded as corruption
+    if (error instanceof ResourceLimitError) {
+      throw new MCPError({
+        code: ErrorCode.INDEX_CORRUPT,
+        userMessage:
+          'The search index metadata file is too large. Please rebuild it using the reindex_project tool.',
+        developerMessage: `Metadata file exceeds size limit: ${error.message}`,
+        cause: error,
+      });
     }
 
     // Handle JSON parse errors as corruption

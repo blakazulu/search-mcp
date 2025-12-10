@@ -13,6 +13,7 @@ import { z } from 'zod';
 import { getConfigPath } from '../utils/paths.js';
 import { getLogger } from '../utils/logger.js';
 import { atomicWriteJson } from '../utils/atomicWrite.js';
+import { safeLoadJSON, MAX_JSON_FILE_SIZE, ResourceLimitError } from '../utils/limits.js';
 
 // ============================================================================
 // File Size Parser
@@ -208,9 +209,16 @@ export async function loadConfig(indexPath: string): Promise<Config> {
   const configPath = getConfigPath(indexPath);
 
   try {
-    // Try to read directly - this avoids TOCTOU by not checking existence first
-    const content = await fs.promises.readFile(configPath, 'utf-8');
-    const rawConfig = JSON.parse(content);
+    // Check if file exists first
+    if (!fs.existsSync(configPath)) {
+      logger.debug('ConfigManager', 'No config file found, using defaults', {
+        configPath,
+      });
+      return { ...DEFAULT_CONFIG };
+    }
+
+    // DoS Protection: Use safe JSON loading with size limit
+    const rawConfig = await safeLoadJSON<Record<string, unknown>>(configPath, MAX_JSON_FILE_SIZE);
 
     // Strip documentation fields before validation
     const configWithoutDocs = stripDocumentationFields(rawConfig);
@@ -241,6 +249,16 @@ export async function loadConfig(indexPath: string): Promise<Config> {
       logger.debug('ConfigManager', 'No config file found, using defaults', {
         configPath,
       });
+      return { ...DEFAULT_CONFIG };
+    }
+
+    // Handle size limit exceeded
+    if (error instanceof ResourceLimitError) {
+      logger.error('ConfigManager', 'Config file exceeds size limit', {
+        configPath,
+        error: error.message,
+      });
+      // Still return defaults for safety
       return { ...DEFAULT_CONFIG };
     }
 

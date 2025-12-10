@@ -8,9 +8,14 @@
  * - ReDoS pattern detection
  * - Brace expansion limits
  * - isPatternSafe validation function
+ * - Resource exhaustion limits (DoS protection)
+ * - Safe JSON loading
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
 import {
   MAX_QUERY_LENGTH,
   MAX_GLOB_PATTERN_LENGTH,
@@ -19,6 +24,19 @@ import {
   MAX_GLOB_BRACE_ITEMS,
   REDOS_PATTERNS,
   isPatternSafe,
+  // Resource exhaustion limits
+  MAX_CHUNKS_PER_FILE,
+  CHUNKS_WARNING_THRESHOLD,
+  MAX_PENDING_FILE_EVENTS,
+  PENDING_EVENTS_WARNING_THRESHOLD,
+  MAX_DIRECTORY_DEPTH,
+  MAX_GLOB_RESULTS,
+  GLOB_TIMEOUT_MS,
+  MAX_JSON_FILE_SIZE,
+  // Safe JSON loading
+  ResourceLimitError,
+  safeLoadJSON,
+  safeLoadJSONSync,
 } from '../../../src/utils/limits.js';
 
 // ============================================================================
@@ -226,6 +244,194 @@ describe('Input Validation Limits', () => {
         const result = isPatternSafe('*.{ts,{js,jsx}}');
         expect(result.valid).toBe(true);
       });
+    });
+  });
+});
+
+// ============================================================================
+// Resource Exhaustion Limits Tests (DoS Protection)
+// ============================================================================
+
+describe('Resource Exhaustion Limits (DoS Protection)', () => {
+  describe('Constants', () => {
+    it('should have reasonable MAX_CHUNKS_PER_FILE', () => {
+      expect(MAX_CHUNKS_PER_FILE).toBe(1000);
+      expect(MAX_CHUNKS_PER_FILE).toBeGreaterThan(0);
+    });
+
+    it('should have CHUNKS_WARNING_THRESHOLD at 80% of max', () => {
+      expect(CHUNKS_WARNING_THRESHOLD).toBe(Math.floor(MAX_CHUNKS_PER_FILE * 0.8));
+    });
+
+    it('should have reasonable MAX_PENDING_FILE_EVENTS', () => {
+      expect(MAX_PENDING_FILE_EVENTS).toBe(1000);
+      expect(MAX_PENDING_FILE_EVENTS).toBeGreaterThan(0);
+    });
+
+    it('should have PENDING_EVENTS_WARNING_THRESHOLD at 80% of max', () => {
+      expect(PENDING_EVENTS_WARNING_THRESHOLD).toBe(Math.floor(MAX_PENDING_FILE_EVENTS * 0.8));
+    });
+
+    it('should have reasonable MAX_DIRECTORY_DEPTH', () => {
+      expect(MAX_DIRECTORY_DEPTH).toBe(20);
+      expect(MAX_DIRECTORY_DEPTH).toBeGreaterThan(0);
+    });
+
+    it('should have reasonable MAX_GLOB_RESULTS', () => {
+      expect(MAX_GLOB_RESULTS).toBe(100000);
+      expect(MAX_GLOB_RESULTS).toBeGreaterThan(0);
+    });
+
+    it('should have reasonable GLOB_TIMEOUT_MS', () => {
+      expect(GLOB_TIMEOUT_MS).toBe(30000);
+      expect(GLOB_TIMEOUT_MS).toBeGreaterThan(0);
+    });
+
+    it('should have reasonable MAX_JSON_FILE_SIZE (10MB)', () => {
+      expect(MAX_JSON_FILE_SIZE).toBe(10 * 1024 * 1024);
+      expect(MAX_JSON_FILE_SIZE).toBeGreaterThan(0);
+    });
+  });
+
+  describe('ResourceLimitError', () => {
+    it('should create error with limit details', () => {
+      const error = new ResourceLimitError('TEST_LIMIT', 100, 50);
+      expect(error.name).toBe('ResourceLimitError');
+      expect(error.limitName).toBe('TEST_LIMIT');
+      expect(error.actualValue).toBe(100);
+      expect(error.maxValue).toBe(50);
+      expect(error.message).toContain('TEST_LIMIT');
+      expect(error.message).toContain('100');
+      expect(error.message).toContain('50');
+    });
+
+    it('should use custom message when provided', () => {
+      const error = new ResourceLimitError('TEST', 10, 5, 'Custom error message');
+      expect(error.message).toBe('Custom error message');
+    });
+  });
+});
+
+// ============================================================================
+// Safe JSON Loading Tests
+// ============================================================================
+
+describe('Safe JSON Loading', () => {
+  let tempDir: string;
+  let testFile: string;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'limits-test-'));
+    testFile = path.join(tempDir, 'test.json');
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  });
+
+  describe('safeLoadJSON', () => {
+    it('should load valid JSON file', async () => {
+      const data = { name: 'test', value: 42 };
+      fs.writeFileSync(testFile, JSON.stringify(data));
+
+      const result = await safeLoadJSON<typeof data>(testFile);
+      expect(result).toEqual(data);
+    });
+
+    it('should throw ResourceLimitError for oversized file', async () => {
+      // Create a file larger than the custom limit
+      const smallLimit = 100;
+      const largeData = 'x'.repeat(smallLimit + 1);
+      fs.writeFileSync(testFile, largeData);
+
+      await expect(safeLoadJSON(testFile, smallLimit))
+        .rejects
+        .toThrow(ResourceLimitError);
+    });
+
+    it('should throw ResourceLimitError with correct details', async () => {
+      const smallLimit = 50;
+      const data = { key: 'a'.repeat(100) };
+      fs.writeFileSync(testFile, JSON.stringify(data));
+
+      try {
+        await safeLoadJSON(testFile, smallLimit);
+        expect.fail('Should have thrown');
+      } catch (error) {
+        expect(error).toBeInstanceOf(ResourceLimitError);
+        const rle = error as ResourceLimitError;
+        expect(rle.limitName).toBe('JSON_FILE_SIZE');
+        expect(rle.maxValue).toBe(smallLimit);
+        expect(rle.actualValue).toBeGreaterThan(smallLimit);
+      }
+    });
+
+    it('should throw for non-existent file', async () => {
+      await expect(safeLoadJSON('/nonexistent/file.json'))
+        .rejects
+        .toThrow();
+    });
+
+    it('should throw for invalid JSON', async () => {
+      fs.writeFileSync(testFile, 'not valid json {');
+
+      await expect(safeLoadJSON(testFile))
+        .rejects
+        .toThrow(SyntaxError);
+    });
+
+    it('should accept file at exactly max size', async () => {
+      const limit = 100;
+      // Create JSON that is exactly the limit size
+      const exactData = JSON.stringify({ a: 'x'.repeat(limit - 10) });
+      // Adjust to exactly match the limit
+      const padding = limit - exactData.length;
+      if (padding > 0) {
+        fs.writeFileSync(testFile, exactData.slice(0, -1) + ' '.repeat(padding) + '}');
+      } else {
+        fs.writeFileSync(testFile, exactData.slice(0, limit));
+      }
+
+      // This should not throw since it's at or under the limit
+      const stats = fs.statSync(testFile);
+      if (stats.size <= limit) {
+        await expect(safeLoadJSON(testFile, limit)).resolves.toBeDefined();
+      }
+    });
+  });
+
+  describe('safeLoadJSONSync', () => {
+    it('should load valid JSON file synchronously', () => {
+      const data = { name: 'test', value: 42 };
+      fs.writeFileSync(testFile, JSON.stringify(data));
+
+      const result = safeLoadJSONSync<typeof data>(testFile);
+      expect(result).toEqual(data);
+    });
+
+    it('should throw ResourceLimitError for oversized file', () => {
+      const smallLimit = 100;
+      const largeData = 'x'.repeat(smallLimit + 1);
+      fs.writeFileSync(testFile, largeData);
+
+      expect(() => safeLoadJSONSync(testFile, smallLimit))
+        .toThrow(ResourceLimitError);
+    });
+
+    it('should throw for non-existent file', () => {
+      expect(() => safeLoadJSONSync('/nonexistent/file.json'))
+        .toThrow();
+    });
+
+    it('should throw for invalid JSON', () => {
+      fs.writeFileSync(testFile, 'not valid json {');
+
+      expect(() => safeLoadJSONSync(testFile))
+        .toThrow(SyntaxError);
     });
   });
 });

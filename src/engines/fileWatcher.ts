@@ -24,6 +24,10 @@ import { toRelativePath, toAbsolutePath, normalizePath } from '../utils/paths.js
 import { hashFile } from '../utils/hash.js';
 import { getLogger } from '../utils/logger.js';
 import { registerCleanup, unregisterCleanup, isShutdownInProgress, CleanupHandler } from '../utils/cleanup.js';
+import {
+  MAX_PENDING_FILE_EVENTS,
+  PENDING_EVENTS_WARNING_THRESHOLD,
+} from '../utils/limits.js';
 
 // ============================================================================
 // Types
@@ -593,6 +597,11 @@ export class FileWatcher {
    * Fixes:
    * - Bug #2: Race condition in processingQueue check is fixed by atomic check-and-add
    * - Bug #4: Unhandled promise rejection is fixed by wrapping in IIFE with try/catch
+   *
+   * DoS Protection:
+   * - Limits the number of pending events to prevent memory exhaustion
+   * - Warns when approaching limit
+   * - Rejects new events when limit is exceeded
    */
   private debounceEvent(
     relativePath: string,
@@ -600,10 +609,36 @@ export class FileWatcher {
   ): void {
     const logger = getLogger();
 
-    // Cancel any existing pending event for this file
+    // Cancel any existing pending event for this file (this doesn't add to the count)
     const existing = this.pendingEvents.get(relativePath);
     if (existing) {
       clearTimeout(existing);
+    } else {
+      // DoS Protection: Check pending events limit for NEW events
+      const currentCount = this.pendingEvents.size;
+
+      if (currentCount >= MAX_PENDING_FILE_EVENTS) {
+        // Limit exceeded - reject this event
+        logger.error('FileWatcher', 'Pending events limit exceeded, rejecting event', {
+          relativePath,
+          pendingCount: currentCount,
+          maxPending: MAX_PENDING_FILE_EVENTS,
+        });
+        this.stats.eventsSkipped++;
+        return;
+      }
+
+      // Warn when approaching limit (only on first warning per session)
+      if (currentCount >= PENDING_EVENTS_WARNING_THRESHOLD) {
+        // Log at warn level (debounced to avoid log spam)
+        if (currentCount === PENDING_EVENTS_WARNING_THRESHOLD) {
+          logger.warn('FileWatcher', 'Pending events approaching limit', {
+            pendingCount: currentCount,
+            maxPending: MAX_PENDING_FILE_EVENTS,
+            warningThreshold: PENDING_EVENTS_WARNING_THRESHOLD,
+          });
+        }
+      }
     }
 
     // Schedule the handler

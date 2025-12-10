@@ -27,6 +27,7 @@ import { minimatch } from 'minimatch';
 import { Config, parseFileSize } from '../storage/config.js';
 import { toRelativePath, normalizePath } from '../utils/paths.js';
 import { getLogger } from '../utils/logger.js';
+import { MAX_DIRECTORY_DEPTH } from '../utils/limits.js';
 
 // Import the CommonJS 'ignore' module using createRequire
 const require = createRequire(import.meta.url);
@@ -228,15 +229,45 @@ async function loadGitignoreFile(
 /**
  * Recursively find and load nested .gitignore files
  *
+ * DoS Protection:
+ * - Limits recursion depth to MAX_DIRECTORY_DEPTH to prevent stack overflow
+ * - Logs warning when approaching depth limit
+ *
  * @param basePath - Project root path
  * @param currentPath - Current directory being scanned
  * @param ig - Ignore instance to add rules to
+ * @param depth - Current recursion depth (default: 0)
+ * @param maxDepth - Maximum allowed depth (default: MAX_DIRECTORY_DEPTH)
  */
 async function loadNestedGitignores(
   basePath: string,
   currentPath: string,
-  ig: Ignore
+  ig: Ignore,
+  depth: number = 0,
+  maxDepth: number = MAX_DIRECTORY_DEPTH
 ): Promise<void> {
+  const logger = getLogger();
+
+  // DoS Protection: Check depth limit
+  if (depth >= maxDepth) {
+    logger.warn('IndexPolicy', 'Maximum directory depth reached for gitignore loading', {
+      currentPath,
+      depth,
+      maxDepth,
+    });
+    return;
+  }
+
+  // Warn when approaching limit (at 80% of max depth)
+  const warningDepth = Math.floor(maxDepth * 0.8);
+  if (depth === warningDepth) {
+    logger.debug('IndexPolicy', 'Approaching maximum directory depth for gitignore loading', {
+      currentPath,
+      depth,
+      maxDepth,
+    });
+  }
+
   try {
     const entries = await fs.promises.readdir(currentPath, { withFileTypes: true });
 
@@ -272,8 +303,8 @@ async function loadNestedGitignores(
       const gitignorePath = path.join(subDirPath, '.gitignore');
       await loadGitignoreFile(ig, gitignorePath, relativeDirPath);
 
-      // Recursively scan subdirectories
-      await loadNestedGitignores(basePath, subDirPath, ig);
+      // Recursively scan subdirectories with incremented depth
+      await loadNestedGitignores(basePath, subDirPath, ig, depth + 1, maxDepth);
     }
   } catch {
     // Ignore errors when scanning directories (permission issues, etc.)

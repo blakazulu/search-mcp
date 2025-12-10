@@ -22,6 +22,12 @@ import { toRelativePath, toAbsolutePath, normalizePath } from '../utils/paths.js
 import { hashFile } from '../utils/hash.js';
 import { getLogger } from '../utils/logger.js';
 import { registerCleanup, unregisterCleanup, CleanupHandler } from '../utils/cleanup.js';
+import {
+  MAX_GLOB_RESULTS,
+  MAX_DIRECTORY_DEPTH,
+  GLOB_TIMEOUT_MS,
+  ResourceLimitError,
+} from '../utils/limits.js';
 
 // ============================================================================
 // Types
@@ -109,38 +115,94 @@ const HASH_BATCH_SIZE = 50;
  * Returns a map of relative paths to their content hashes for all files
  * that pass the indexing policy.
  *
+ * DoS Protection:
+ * - Limits glob results to MAX_GLOB_RESULTS
+ * - Limits directory depth to MAX_DIRECTORY_DEPTH
+ * - Applies timeout to glob operations (GLOB_TIMEOUT_MS)
+ *
  * @param projectPath - Absolute path to the project root
  * @param policy - Initialized IndexingPolicy instance
+ * @param maxResults - Maximum number of files to return (default: MAX_GLOB_RESULTS)
+ * @param maxDepth - Maximum directory depth (default: MAX_DIRECTORY_DEPTH)
  * @returns Map of relative path to SHA256 content hash
+ * @throws ResourceLimitError if glob returns too many files
  */
 export async function scanCurrentState(
   projectPath: string,
-  policy: IndexingPolicy
+  policy: IndexingPolicy,
+  maxResults: number = MAX_GLOB_RESULTS,
+  maxDepth: number = MAX_DIRECTORY_DEPTH
 ): Promise<Map<string, string>> {
   const logger = getLogger();
   const normalizedProjectPath = normalizePath(projectPath);
   const currentState = new Map<string, string>();
 
-  logger.debug('IntegrityEngine', 'Starting filesystem scan', { projectPath: normalizedProjectPath });
+  logger.debug('IntegrityEngine', 'Starting filesystem scan', {
+    projectPath: normalizedProjectPath,
+    maxResults,
+    maxDepth,
+  });
 
   // Ensure policy is initialized
   if (!policy.isInitialized()) {
     await policy.initialize();
   }
 
-  // Get all files using glob
+  // Get all files using glob with DoS protection
   const globPattern = '**/*';
   let allFiles: string[];
 
   try {
-    const files = await glob(globPattern, {
+    // DoS Protection: Use timeout and depth limit for glob
+    const globPromise = glob(globPattern, {
       cwd: normalizedProjectPath,
       nodir: true,
       dot: true,
       absolute: false,
+      maxDepth: maxDepth,
     });
+
+    // Apply timeout
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(`Glob operation timed out after ${GLOB_TIMEOUT_MS}ms`));
+      }, GLOB_TIMEOUT_MS);
+    });
+
+    const files = await Promise.race([globPromise, timeoutPromise]);
     allFiles = files.map(f => f.replace(/\\/g, '/'));
+
+    // DoS Protection: Check result count
+    if (allFiles.length > maxResults) {
+      logger.error('IntegrityEngine', 'Glob returned too many files', {
+        projectPath: normalizedProjectPath,
+        fileCount: allFiles.length,
+        maxResults,
+      });
+      throw new ResourceLimitError(
+        'GLOB_RESULTS',
+        allFiles.length,
+        maxResults,
+        `Glob returned too many files: ${allFiles.length} > ${maxResults}. Consider adding exclusion patterns.`
+      );
+    }
+
+    // Warn when approaching limit (80%)
+    const warningThreshold = Math.floor(maxResults * 0.8);
+    if (allFiles.length > warningThreshold) {
+      logger.warn('IntegrityEngine', 'Glob approaching result limit', {
+        projectPath: normalizedProjectPath,
+        fileCount: allFiles.length,
+        maxResults,
+        warningThreshold,
+      });
+    }
   } catch (error) {
+    // Re-throw ResourceLimitError
+    if (error instanceof ResourceLimitError) {
+      throw error;
+    }
+
     logger.error('IntegrityEngine', 'Failed to scan directory', {
       projectPath: normalizedProjectPath,
       error: error instanceof Error ? error.message : String(error),

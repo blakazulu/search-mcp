@@ -5,6 +5,9 @@
  * These limits help prevent DoS attacks via malformed or excessive inputs.
  */
 
+import * as fs from 'node:fs';
+import { getLogger } from './logger.js';
+
 // ============================================================================
 // Query Length Limits
 // ============================================================================
@@ -138,4 +141,198 @@ export function isPatternSafe(pattern: string): { valid: boolean; error?: string
   }
 
   return { valid: true };
+}
+
+// ============================================================================
+// Resource Exhaustion Limits (DoS Protection)
+// ============================================================================
+
+/**
+ * Maximum number of chunks that can be generated from a single file.
+ *
+ * Prevents memory exhaustion from maliciously crafted files that would
+ * generate an excessive number of chunks. 1000 chunks is sufficient for
+ * files up to ~4MB with default chunking settings.
+ */
+export const MAX_CHUNKS_PER_FILE = 1000;
+
+/**
+ * Warning threshold for chunks per file (80% of max).
+ *
+ * When reached, a warning is logged to help identify files that
+ * may be approaching the limit.
+ */
+export const CHUNKS_WARNING_THRESHOLD = Math.floor(MAX_CHUNKS_PER_FILE * 0.8);
+
+/**
+ * Maximum number of pending file watcher events.
+ *
+ * Prevents memory exhaustion from rapid file changes that could
+ * overwhelm the event queue. 1000 events is generous for normal
+ * development workflows.
+ */
+export const MAX_PENDING_FILE_EVENTS = 1000;
+
+/**
+ * Warning threshold for pending file events (80% of max).
+ */
+export const PENDING_EVENTS_WARNING_THRESHOLD = Math.floor(MAX_PENDING_FILE_EVENTS * 0.8);
+
+/**
+ * Maximum directory traversal depth for gitignore loading.
+ *
+ * Prevents stack overflow and excessive recursion from deeply nested
+ * directory structures. 20 levels is more than sufficient for any
+ * reasonable project structure.
+ */
+export const MAX_DIRECTORY_DEPTH = 20;
+
+/**
+ * Maximum number of files returned from glob operations.
+ *
+ * Prevents memory exhaustion from glob patterns that match too many files.
+ * 100,000 files is a generous limit for even very large projects.
+ */
+export const MAX_GLOB_RESULTS = 100000;
+
+/**
+ * Timeout for glob operations in milliseconds.
+ *
+ * Prevents indefinite hangs from glob operations on slow filesystems
+ * or extremely large directory trees.
+ */
+export const GLOB_TIMEOUT_MS = 30000;
+
+/**
+ * Maximum size for JSON configuration/metadata files in bytes.
+ *
+ * Prevents memory exhaustion from parsing maliciously large JSON files.
+ * 10MB is generous for any reasonable configuration file.
+ */
+export const MAX_JSON_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
+// ============================================================================
+// Resource Limit Errors
+// ============================================================================
+
+/**
+ * Error thrown when a resource limit is exceeded
+ */
+export class ResourceLimitError extends Error {
+  constructor(
+    public readonly limitName: string,
+    public readonly actualValue: number,
+    public readonly maxValue: number,
+    message?: string
+  ) {
+    super(message || `Resource limit exceeded: ${limitName} (${actualValue} > ${maxValue})`);
+    this.name = 'ResourceLimitError';
+  }
+}
+
+// ============================================================================
+// Safe JSON Loading
+// ============================================================================
+
+/**
+ * Safely load and parse a JSON file with size limits.
+ *
+ * Checks file size before reading to prevent memory exhaustion from
+ * maliciously large JSON files.
+ *
+ * @param filePath - Absolute path to the JSON file
+ * @param maxSize - Maximum allowed file size in bytes (default: MAX_JSON_FILE_SIZE)
+ * @returns Parsed JSON content
+ * @throws ResourceLimitError if file exceeds size limit
+ * @throws Error if file doesn't exist or can't be parsed
+ *
+ * @example
+ * ```typescript
+ * const config = await safeLoadJSON<Config>('/path/to/config.json');
+ * ```
+ */
+export async function safeLoadJSON<T>(
+  filePath: string,
+  maxSize: number = MAX_JSON_FILE_SIZE
+): Promise<T> {
+  const logger = getLogger();
+
+  // Check file size before reading
+  const stats = await fs.promises.stat(filePath);
+
+  if (stats.size > maxSize) {
+    logger.error('SafeLoadJSON', 'JSON file exceeds size limit', {
+      path: filePath,
+      size: stats.size,
+      maxSize,
+    });
+    throw new ResourceLimitError(
+      'JSON_FILE_SIZE',
+      stats.size,
+      maxSize,
+      `JSON file exceeds size limit: ${stats.size} bytes > ${maxSize} bytes (${filePath})`
+    );
+  }
+
+  // Warn if file is approaching limit (80%)
+  const warningThreshold = Math.floor(maxSize * 0.8);
+  if (stats.size > warningThreshold) {
+    logger.warn('SafeLoadJSON', 'JSON file approaching size limit', {
+      path: filePath,
+      size: stats.size,
+      maxSize,
+      percentUsed: Math.round((stats.size / maxSize) * 100),
+    });
+  }
+
+  // Read and parse
+  const content = await fs.promises.readFile(filePath, 'utf-8');
+  return JSON.parse(content) as T;
+}
+
+/**
+ * Synchronous version of safeLoadJSON.
+ *
+ * @param filePath - Absolute path to the JSON file
+ * @param maxSize - Maximum allowed file size in bytes (default: MAX_JSON_FILE_SIZE)
+ * @returns Parsed JSON content
+ * @throws ResourceLimitError if file exceeds size limit
+ */
+export function safeLoadJSONSync<T>(
+  filePath: string,
+  maxSize: number = MAX_JSON_FILE_SIZE
+): T {
+  const logger = getLogger();
+
+  // Check file size before reading
+  const stats = fs.statSync(filePath);
+
+  if (stats.size > maxSize) {
+    logger.error('SafeLoadJSON', 'JSON file exceeds size limit', {
+      path: filePath,
+      size: stats.size,
+      maxSize,
+    });
+    throw new ResourceLimitError(
+      'JSON_FILE_SIZE',
+      stats.size,
+      maxSize,
+      `JSON file exceeds size limit: ${stats.size} bytes > ${maxSize} bytes (${filePath})`
+    );
+  }
+
+  // Warn if file is approaching limit (80%)
+  const warningThreshold = Math.floor(maxSize * 0.8);
+  if (stats.size > warningThreshold) {
+    logger.warn('SafeLoadJSON', 'JSON file approaching size limit', {
+      path: filePath,
+      size: stats.size,
+      maxSize,
+      percentUsed: Math.round((stats.size / maxSize) * 100),
+    });
+  }
+
+  // Read and parse
+  const content = fs.readFileSync(filePath, 'utf-8');
+  return JSON.parse(content) as T;
 }

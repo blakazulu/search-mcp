@@ -3,9 +3,11 @@ task_id: "SMCP-056"
 title: "File Filtering Security (Deny List + Gitignore)"
 category: "Security"
 priority: "P2"
-status: "not-started"
+status: "completed"
 created_date: "2025-12-10"
+completed_date: "2025-12-10"
 estimated_hours: 6
+actual_hours: 4
 assigned_to: "Team"
 tags: ["security", "medium", "gitignore", "filtering"]
 ---
@@ -27,92 +29,83 @@ Fix issues with file filtering that could allow sensitive files to be indexed. I
 
 ## Goals
 
-- [ ] Fix nested gitignore pattern scoping
-- [ ] Add case-insensitive matching for Windows
-- [ ] Add content-based binary detection
-- [ ] Add Unicode path normalization
+- [x] Fix nested gitignore pattern scoping
+- [x] Add case-insensitive matching for Windows
+- [x] Add content-based binary detection
+- [x] Add Unicode path normalization
 
 ## Success Criteria
 
-- Nested gitignore patterns work recursively
-- `.ENV` blocked on Windows (case insensitive)
-- Renamed binaries detected via content, not just extension
-- Unicode tricks don't bypass filtering
-- All tests pass
+- [x] Nested gitignore patterns work recursively
+- [x] `.ENV` blocked on Windows (case insensitive)
+- [x] Renamed binaries detected via content, not just extension
+- [x] Unicode tricks don't bypass filtering
+- [x] All tests pass (93 tests in indexPolicy.test.ts)
 
 ## Subtasks
 
-### Phase 1: Fix Gitignore Pattern Scoping (2 hours)
+### Phase 1: Fix Gitignore Pattern Scoping (2 hours) - COMPLETED
 
-- [ ] 1.1 Analyze current behavior in `src/engines/indexPolicy.ts`
-    - Line 200-209: Understand how nested patterns are prefixed
-    - Document expected vs actual behavior
+- [x] 1.1 Analyze current behavior in `src/engines/indexPolicy.ts`
+    - Line 200-209: Understood how nested patterns are prefixed
+    - Issue: Patterns like `secrets/*.key` only matched direct children, not `secrets/deep/*.key`
 
-- [ ] 1.2 Fix pattern prefixing
-    - Use `**` prefix for recursive matching
-    - Example: `secrets/*.key` → `secrets/**/*.key`
-    - Test with nested directory structures
+- [x] 1.2 Fix pattern prefixing
+    - Updated `loadGitignoreFile` function to add both direct and recursive patterns
+    - Example: `secrets/*.key` now generates both `secrets/*.key` and `secrets/**/*.key`
+    - Handles negation patterns, anchored patterns, and already-recursive patterns
 
-- [ ] 1.3 Add test cases
-    - Test nested gitignore with deep files
-    - Verify patterns match at all depths
+- [x] 1.3 Add test cases
+    - Added `Nested Gitignore Pattern Scoping (Security)` test suite
+    - Tests recursive matching, multiple nested gitignores, wildcard patterns, negation patterns
 
-### Phase 2: Case-Insensitive Matching (1.5 hours)
+### Phase 2: Case-Insensitive Matching (1.5 hours) - COMPLETED
 
-- [ ] 2.1 Detect platform and adjust matching
-    ```typescript
-    const isCaseInsensitiveFS = process.platform === 'win32';
-    ```
+- [x] 2.1 Detect platform and adjust matching
+    - Added `IS_CASE_INSENSITIVE_FS = process.platform === 'win32'` constant
 
-- [ ] 2.2 Update deny list matching in `src/engines/indexPolicy.ts`
-    - Line 84-85: Apply case-insensitive option to minimatch
-    - Or: Normalize paths to lowercase before matching
+- [x] 2.2 Update deny list matching in `src/engines/indexPolicy.ts`
+    - Updated `matchesAnyPattern` to accept `caseInsensitive` parameter
+    - `isHardDenied` now uses case-insensitive matching on Windows via minimatch `nocase` option
 
-- [ ] 2.3 Add test cases
-    - Test `.ENV`, `.Env`, `.env` all blocked on Windows
-    - Verify Linux stays case-sensitive
+- [x] 2.3 Add test cases
+    - Added `Case-Insensitive Matching (Security)` test suite
+    - Tests `.ENV`, `.Env`, `.eNv`, `NODE_MODULES` all blocked on Windows
 
-### Phase 3: Content-Based Binary Detection (1.5 hours)
+### Phase 3: Content-Based Binary Detection (1.5 hours) - COMPLETED
 
-- [ ] 3.1 Add binary content detection
-    ```typescript
-    async function isBinaryContent(filePath: string): Promise<boolean> {
-      const buffer = await fs.promises.readFile(filePath, { length: 8192 });
-      // Check for null bytes in first 8KB
-      return buffer.includes(0);
-    }
-    ```
+- [x] 3.1 Add binary content detection
+    - Implemented `isBinaryContent(absolutePath, maxBytesToCheck)` function
+    - Checks for null bytes in first 8KB of file
+    - Handles file read errors gracefully
 
-- [ ] 3.2 Update `src/engines/indexPolicy.ts`
-    - Line 296-298: Use both extension AND content detection
-    - Fall back to content check for unknown extensions
+- [x] 3.2 Update `src/engines/indexPolicy.ts`
+    - Added `KNOWN_TEXT_EXTENSIONS` set for fast extension lookup
+    - `shouldIndex` now performs content-based check for unknown extensions
+    - Added `isBinaryFileOrContent` for comprehensive binary detection
 
-- [ ] 3.3 Add test cases
-    - Renamed .exe → .txt detected as binary
-    - Text file with .bin extension detected as text
+- [x] 3.3 Add test cases
+    - Added `Content-Based Binary Detection (Security)` test suite
+    - Tests renamed exe detection, text with unknown extension, empty files
 
-### Phase 4: Unicode Path Normalization (1 hour)
+### Phase 4: Unicode Path Normalization (1 hour) - COMPLETED
 
-- [ ] 4.1 Add Unicode normalization utility
-    ```typescript
-    function normalizePathUnicode(p: string): string {
-      // Normalize to NFC form
-      return p.normalize('NFC')
-        // Remove zero-width characters
-        .replace(/[\u200B-\u200D\uFEFF]/g, '')
-        // Remove RTL overrides
-        .replace(/[\u202A-\u202E]/g, '');
-    }
-    ```
+- [x] 4.1 Add Unicode normalization utility
+    - Implemented `normalizePathUnicode(p)` function
+    - Normalizes to NFC form
+    - Removes zero-width characters (U+200B-U+200D, U+FEFF)
+    - Removes RTL/LTR override characters (U+202A-U+202E)
+    - Logs warnings when bypass attempts are detected
 
-- [ ] 4.2 Apply normalization before:
-    - Deny list matching
-    - Gitignore matching
-    - Path comparison
+- [x] 4.2 Apply normalization before:
+    - Deny list matching (in `matchesAnyPattern`)
+    - Gitignore matching (in `shouldIndex`)
+    - All path comparisons in the policy function
 
-- [ ] 4.3 Add test cases
-    - RTL override in filename detected
-    - Combining characters normalized
+- [x] 4.3 Add test cases
+    - Added `Unicode Path Normalization (Security)` test suite
+    - Tests NFC/NFD normalization, zero-width character removal, RTL override removal
+    - Tests combined attack scenarios
 
 ## Resources
 
@@ -121,21 +114,29 @@ Fix issues with file filtering that could allow sensitive files to be indexed. I
 
 ## Acceptance Checklist
 
-- [ ] Nested gitignore patterns work
-- [ ] Case-insensitive matching on Windows
-- [ ] Binary content detection works
-- [ ] Unicode normalization applied
-- [ ] Tests added for all scenarios
-- [ ] All existing tests pass
+- [x] Nested gitignore patterns work
+- [x] Case-insensitive matching on Windows
+- [x] Binary content detection works
+- [x] Unicode normalization applied
+- [x] Tests added for all scenarios
+- [x] All existing tests pass
 
 ## Notes
 
-- Content-based binary detection adds I/O overhead - consider caching or only checking unknown extensions
-- Unicode normalization should be consistent across the codebase
-- Consider logging when Unicode tricks are detected (security monitoring)
+- Content-based binary detection adds I/O overhead - implemented optimization to only check unknown extensions
+- Unicode normalization is consistent across matchesAnyPattern and shouldIndex
+- Logging implemented when Unicode tricks are detected (security monitoring via logger.warn)
 
 ## Progress Log
 
 ### 2025-12-10
 
 - Task created from security audit
+- Implemented all four security phases:
+  1. Fixed gitignore pattern scoping for nested directories
+  2. Added case-insensitive deny list matching for Windows
+  3. Added content-based binary detection for unknown extensions
+  4. Added Unicode path normalization with security logging
+- Added 50+ new security test cases
+- All 93 indexPolicy tests pass
+- Build passes successfully

@@ -5,10 +5,15 @@
  * - Hardcoded deny list patterns
  * - User include/exclude patterns
  * - Gitignore integration (including nested .gitignore)
- * - Binary file detection
+ * - Binary file detection (extension and content-based)
  * - File size limits
  * - Priority order of policy rules
  * - IndexingPolicy class
+ * - Security features:
+ *   - Case-insensitive matching on Windows
+ *   - Unicode path normalization
+ *   - Content-based binary detection
+ *   - Nested gitignore pattern scoping
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -20,11 +25,15 @@ import {
   ALL_DENY_PATTERNS,
   loadGitignore,
   isBinaryFile,
+  isBinaryContent,
+  isBinaryFileOrContent,
   checkFileSize,
   matchesAnyPattern,
   isHardDenied,
   shouldIndex,
   IndexingPolicy,
+  normalizePathUnicode,
+  IS_CASE_INSENSITIVE_FS,
   type PolicyResult,
   type Ignore,
 } from '../../../src/engines/indexPolicy.js';
@@ -829,6 +838,389 @@ describe('Indexing Policy Engine', () => {
       );
 
       expect(result.shouldIndex).toBe(true);
+    });
+  });
+
+  // ============================================================================
+  // Security Tests: Unicode Path Normalization (SMCP-056)
+  // ============================================================================
+
+  describe('Unicode Path Normalization (Security)', () => {
+    it('should normalize NFC/NFD Unicode forms', () => {
+      // The character "e" can be composed (NFC) or decomposed (NFD)
+      const nfc = 'caf\u00e9.ts'; // cafe with composed e
+      const nfd = 'cafe\u0301.ts'; // cafe with e + combining acute accent
+
+      const normalizedNfc = normalizePathUnicode(nfc);
+      const normalizedNfd = normalizePathUnicode(nfd);
+
+      // Both should normalize to the same NFC form
+      expect(normalizedNfc).toBe(normalizedNfd);
+    });
+
+    it('should remove zero-width characters', () => {
+      // Zero-width space could be used to bypass filters
+      const withZeroWidth = 'file\u200B.env'; // file + zero-width space + .env
+      const normalized = normalizePathUnicode(withZeroWidth);
+
+      expect(normalized).toBe('file.env');
+    });
+
+    it('should remove RTL override characters', () => {
+      // RTL override could disguise "txt.exe" as "exe.txt" visually
+      const withRtl = '\u202Efile.txt'; // RTL override + file.txt
+      const normalized = normalizePathUnicode(withRtl);
+
+      expect(normalized).toBe('file.txt');
+    });
+
+    it('should remove multiple dangerous Unicode characters', () => {
+      // Combined attack: zero-width + RTL
+      const malicious = '\u202Afile\u200B\u200C\u200D.env\u202E';
+      const normalized = normalizePathUnicode(malicious);
+
+      expect(normalized).toBe('file.env');
+    });
+
+    it('should block .env with zero-width character bypass attempt', () => {
+      // Attempt to bypass .env block with zero-width character
+      const bypassAttempt = '.env\u200B'; // .env + zero-width space
+
+      // isHardDenied normalizes Unicode internally
+      expect(isHardDenied(bypassAttempt)).toBe(true);
+    });
+  });
+
+  // ============================================================================
+  // Security Tests: Case-Insensitive Matching (SMCP-056)
+  // ============================================================================
+
+  describe('Case-Insensitive Matching (Security)', () => {
+    it('should report correct platform case sensitivity', () => {
+      // This test verifies the constant is set correctly
+      if (process.platform === 'win32') {
+        expect(IS_CASE_INSENSITIVE_FS).toBe(true);
+      } else {
+        expect(IS_CASE_INSENSITIVE_FS).toBe(false);
+      }
+    });
+
+    describe('on Windows (case-insensitive)', () => {
+      // These tests verify case-insensitive matching behavior
+      // The actual behavior depends on IS_CASE_INSENSITIVE_FS
+
+      it('should block .ENV variant on Windows', () => {
+        // On Windows, .ENV should be blocked same as .env
+        if (process.platform === 'win32') {
+          expect(isHardDenied('.ENV')).toBe(true);
+          expect(isHardDenied('.Env')).toBe(true);
+          expect(isHardDenied('.eNv')).toBe(true);
+        }
+      });
+
+      it('should block .ENV.local variant on Windows', () => {
+        if (process.platform === 'win32') {
+          expect(isHardDenied('.ENV.local')).toBe(true);
+          expect(isHardDenied('.ENV.LOCAL')).toBe(true);
+        }
+      });
+
+      it('should block NODE_MODULES on Windows', () => {
+        if (process.platform === 'win32') {
+          expect(isHardDenied('NODE_MODULES/test.js')).toBe(true);
+          expect(isHardDenied('Node_Modules/test.js')).toBe(true);
+        }
+      });
+    });
+
+    describe('matchesAnyPattern with case sensitivity', () => {
+      it('should respect case-insensitive flag', () => {
+        const patterns = ['*.ENV', 'secret.*'];
+
+        // Case-sensitive (default)
+        expect(matchesAnyPattern('test.env', patterns, false)).toBe(false);
+        expect(matchesAnyPattern('test.ENV', patterns, false)).toBe(true);
+
+        // Case-insensitive
+        expect(matchesAnyPattern('test.env', patterns, true)).toBe(true);
+        expect(matchesAnyPattern('test.ENV', patterns, true)).toBe(true);
+        expect(matchesAnyPattern('SECRET.txt', patterns, true)).toBe(true);
+      });
+    });
+  });
+
+  // ============================================================================
+  // Security Tests: Content-Based Binary Detection (SMCP-056)
+  // ============================================================================
+
+  describe('Content-Based Binary Detection (Security)', () => {
+    let tempDir: string;
+
+    beforeEach(async () => {
+      tempDir = await createTempDir('binary-content-');
+    });
+
+    afterEach(async () => {
+      await removeTempDir(tempDir);
+    });
+
+    it('should detect binary content via null bytes', async () => {
+      // Create a file with binary content (null bytes)
+      const binaryContent = Buffer.from([0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x00, 0x57, 0x6f, 0x72, 0x6c, 0x64]);
+      const filePath = path.join(tempDir, 'hidden-binary.txt');
+      await fs.promises.writeFile(filePath, binaryContent);
+
+      const isBinary = await isBinaryContent(filePath);
+      expect(isBinary).toBe(true);
+    });
+
+    it('should detect renamed executable as binary', async () => {
+      // Simulate an exe file renamed to .txt
+      // Executables typically have null bytes in their header
+      const exeHeader = Buffer.from([0x4d, 0x5a, 0x00, 0x00]); // MZ header with nulls
+      const filePath = path.join(tempDir, 'renamed.txt');
+      await fs.promises.writeFile(filePath, exeHeader);
+
+      const isBinary = await isBinaryContent(filePath);
+      expect(isBinary).toBe(true);
+    });
+
+    it('should allow text file with unusual extension', async () => {
+      // A text file with .bin extension should be detected as text
+      const textContent = 'This is plain text content without null bytes.';
+      const filePath = path.join(tempDir, 'text.bin');
+      await fs.promises.writeFile(filePath, textContent);
+
+      const isBinary = await isBinaryContent(filePath);
+      expect(isBinary).toBe(false);
+    });
+
+    it('should handle empty files', async () => {
+      const filePath = path.join(tempDir, 'empty.unknown');
+      await fs.promises.writeFile(filePath, '');
+
+      const isBinary = await isBinaryContent(filePath);
+      expect(isBinary).toBe(false);
+    });
+
+    it('should handle non-existent files gracefully', async () => {
+      const filePath = path.join(tempDir, 'nonexistent.file');
+
+      const isBinary = await isBinaryContent(filePath);
+      expect(isBinary).toBe(false);
+    });
+
+    it('should use comprehensive check with isBinaryFileOrContent', async () => {
+      // Known text extension - should skip content check
+      const tsFile = path.join(tempDir, 'code.ts');
+      await fs.promises.writeFile(tsFile, 'const x = 1;');
+      expect(await isBinaryFileOrContent('code.ts', tsFile)).toBe(false);
+
+      // Known binary extension - should return true without content check
+      expect(await isBinaryFileOrContent('image.png', '/fake/path')).toBe(true);
+
+      // Unknown extension with binary content
+      const binaryContent = Buffer.from([0x00, 0x01, 0x02]);
+      const unknownFile = path.join(tempDir, 'data.xyz');
+      await fs.promises.writeFile(unknownFile, binaryContent);
+      expect(await isBinaryFileOrContent('data.xyz', unknownFile)).toBe(true);
+
+      // Unknown extension with text content
+      const textFile = path.join(tempDir, 'readme.xyz');
+      await fs.promises.writeFile(textFile, 'Plain text');
+      expect(await isBinaryFileOrContent('readme.xyz', textFile)).toBe(false);
+    });
+  });
+
+  // ============================================================================
+  // Security Tests: Nested Gitignore Pattern Scoping (SMCP-056)
+  // ============================================================================
+
+  describe('Nested Gitignore Pattern Scoping (Security)', () => {
+    let tempDir: string;
+
+    beforeEach(async () => {
+      tempDir = await createTempDir('nested-gitignore-');
+    });
+
+    afterEach(async () => {
+      await removeTempDir(tempDir);
+    });
+
+    it('should match nested gitignore patterns recursively', async () => {
+      // Create nested directory structure
+      await createDirectory(tempDir, 'secrets');
+      await createDirectory(tempDir, 'secrets/deep');
+      await createDirectory(tempDir, 'secrets/deep/nested');
+
+      // Create gitignore in secrets/ with *.key pattern
+      await createFile(tempDir, 'secrets/.gitignore', '*.key\n');
+
+      const ig = await loadGitignore(tempDir);
+
+      // Pattern should match at all depths within secrets/
+      expect(ig.ignores('secrets/api.key')).toBe(true);
+      expect(ig.ignores('secrets/deep/private.key')).toBe(true);
+      expect(ig.ignores('secrets/deep/nested/root.key')).toBe(true);
+
+      // But not outside secrets/
+      expect(ig.ignores('other/file.key')).toBe(false);
+    });
+
+    it('should handle multiple nested gitignore files', async () => {
+      // Create structure: project/src/components/
+      await createDirectory(tempDir, 'src');
+      await createDirectory(tempDir, 'src/components');
+      await createDirectory(tempDir, 'src/components/private');
+
+      // Root gitignore
+      await createFile(tempDir, '.gitignore', '*.log\n');
+
+      // src/.gitignore
+      await createFile(tempDir, 'src/.gitignore', '*.tmp\n');
+
+      // src/components/.gitignore
+      await createFile(tempDir, 'src/components/.gitignore', '*.bak\n');
+
+      const ig = await loadGitignore(tempDir);
+
+      // Root pattern applies everywhere
+      expect(ig.ignores('app.log')).toBe(true);
+      expect(ig.ignores('src/debug.log')).toBe(true);
+      expect(ig.ignores('src/components/trace.log')).toBe(true);
+
+      // src pattern applies within src/
+      expect(ig.ignores('src/cache.tmp')).toBe(true);
+      expect(ig.ignores('src/components/cache.tmp')).toBe(true);
+      expect(ig.ignores('cache.tmp')).toBe(false); // Not in src/
+
+      // components pattern applies within components/
+      expect(ig.ignores('src/components/file.bak')).toBe(true);
+      expect(ig.ignores('src/components/private/file.bak')).toBe(true);
+      expect(ig.ignores('src/file.bak')).toBe(false); // Not in components/
+    });
+
+    it('should handle patterns with wildcards correctly', async () => {
+      await createDirectory(tempDir, 'config');
+      await createDirectory(tempDir, 'config/env');
+
+      // Gitignore with wildcard pattern
+      await createFile(tempDir, 'config/.gitignore', 'env/*.secret\n');
+
+      const ig = await loadGitignore(tempDir);
+
+      // Should match in env/ subdirectory
+      expect(ig.ignores('config/env/db.secret')).toBe(true);
+      expect(ig.ignores('config/env/api.secret')).toBe(true);
+    });
+
+    it('should handle negation patterns in nested gitignore', async () => {
+      await createDirectory(tempDir, 'data');
+
+      // Ignore all json except schema.json
+      await createFile(tempDir, 'data/.gitignore', '*.json\n!schema.json\n');
+
+      const ig = await loadGitignore(tempDir);
+
+      expect(ig.ignores('data/config.json')).toBe(true);
+      expect(ig.ignores('data/schema.json')).toBe(false);
+    });
+
+    it('should block sensitive files in deeply nested directories', async () => {
+      // Critical security test: ensure *.key in nested gitignore blocks keys everywhere
+      await createDirectory(tempDir, 'credentials');
+      await createDirectory(tempDir, 'credentials/production');
+      await createDirectory(tempDir, 'credentials/production/aws');
+
+      await createFile(tempDir, 'credentials/.gitignore', '*.pem\n*.key\n');
+
+      const ig = await loadGitignore(tempDir);
+
+      // All of these should be blocked
+      expect(ig.ignores('credentials/server.pem')).toBe(true);
+      expect(ig.ignores('credentials/production/server.pem')).toBe(true);
+      expect(ig.ignores('credentials/production/aws/private.key')).toBe(true);
+    });
+  });
+
+  // ============================================================================
+  // Security Integration Tests
+  // ============================================================================
+
+  describe('Security Integration Tests', () => {
+    let tempDir: string;
+    let config: Config;
+
+    beforeEach(async () => {
+      tempDir = await createTempDir('security-integration-');
+      config = { ...DEFAULT_CONFIG };
+    });
+
+    afterEach(async () => {
+      await removeTempDir(tempDir);
+    });
+
+    it('should block .env with Unicode bypass attempt', async () => {
+      // Create a file that looks like .env but has hidden Unicode
+      const maliciousName = '.env\u200B'; // .env with zero-width space
+      await createFile(tempDir, '.env', 'SECRET=value'); // Create the actual normalized file
+
+      const policy = new IndexingPolicy(tempDir, config);
+      const result = await policy.shouldIndex(
+        maliciousName,
+        path.join(tempDir, '.env')
+      );
+
+      expect(result.shouldIndex).toBe(false);
+      expect(result.category).toBe('hardcoded');
+    });
+
+    it('should detect renamed binary in shouldIndex', async () => {
+      // Create a binary file disguised as .unknown extension
+      const binaryContent = Buffer.from([0x4d, 0x5a, 0x00, 0x00, 0x00]);
+      const filePath = path.join(tempDir, 'malware.unknown');
+      await fs.promises.writeFile(filePath, binaryContent);
+
+      const policy = new IndexingPolicy(tempDir, config);
+      const result = await policy.shouldIndex('malware.unknown', filePath);
+
+      expect(result.shouldIndex).toBe(false);
+      expect(result.category).toBe('binary');
+    });
+
+    it('should allow legitimate text file with unknown extension', async () => {
+      const textContent = 'This is legitimate text content without any null bytes.';
+      const filePath = path.join(tempDir, 'readme.xyz');
+      await fs.promises.writeFile(filePath, textContent);
+
+      const policy = new IndexingPolicy(tempDir, config);
+      const result = await policy.shouldIndex('readme.xyz', filePath);
+
+      expect(result.shouldIndex).toBe(true);
+    });
+
+    it('should apply all security checks in correct order', async () => {
+      // Test that security checks don't interfere with each other
+      await createFile(tempDir, 'src/index.ts', 'const x = 1;');
+      await createFile(tempDir, '.gitignore', '*.generated.ts\n');
+
+      const policy = new IndexingPolicy(tempDir, config);
+      await policy.initialize();
+
+      // Normal file should be indexed
+      const normalResult = await policy.shouldIndex(
+        'src/index.ts',
+        path.join(tempDir, 'src/index.ts')
+      );
+      expect(normalResult.shouldIndex).toBe(true);
+
+      // Gitignored file should be blocked
+      const gitignoreResult = await policy.shouldIndex(
+        'src/types.generated.ts',
+        path.join(tempDir, 'src/types.generated.ts')
+      );
+      expect(gitignoreResult.shouldIndex).toBe(false);
+      expect(gitignoreResult.category).toBe('gitignore');
     });
   });
 });

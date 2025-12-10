@@ -15,6 +15,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { hashString } from '../utils/hash.js';
 import { fileNotFound, MCPError, ErrorCode } from '../errors/index.js';
 import { getLogger } from '../utils/logger.js';
+import { isSymlink } from '../utils/secureFileAccess.js';
 
 // ============================================================================
 // Types and Interfaces
@@ -478,6 +479,12 @@ async function chunkLargeFile(
     size: fileSize,
   });
 
+  // SECURITY: Check for symlinks before streaming
+  if (await isSymlink(absolutePath)) {
+    logger.warn('Chunking', 'Skipping symlink during chunking', { path: absolutePath });
+    return []; // Skip symlinks during indexing
+  }
+
   // Create hash for streaming computation
   const hash = crypto.createHash('sha256');
 
@@ -651,10 +658,10 @@ export async function chunkFile(
 ): Promise<Chunk[]> {
   const logger = getLogger();
 
-  // Check file size first (MCP-26)
+  // SECURITY: Check for symlinks using lstat before any file operations
   let stats: fs.Stats;
   try {
-    stats = await fs.promises.stat(absolutePath);
+    stats = await fs.promises.lstat(absolutePath);
   } catch (error) {
     const nodeError = error as NodeJS.ErrnoException;
     if (nodeError.code === 'ENOENT') {
@@ -674,6 +681,15 @@ export async function chunkFile(
       developerMessage: `Failed to stat file ${absolutePath}: ${nodeError.message}`,
       cause: nodeError,
     });
+  }
+
+  // SECURITY: Skip symlinks during indexing (don't follow them)
+  if (stats.isSymbolicLink()) {
+    logger.warn('Chunking', 'Skipping symlink during chunking', {
+      path: absolutePath,
+      relativePath,
+    });
+    return []; // Return empty chunks for symlinks
   }
 
   // Use streaming for large files
@@ -752,6 +768,42 @@ export function chunkFileSync(
   relativePath: string,
   options?: Partial<SplitOptions>
 ): Chunk[] {
+  const logger = getLogger();
+
+  // SECURITY: Check for symlinks using lstat before any file operations
+  let stats: fs.Stats;
+  try {
+    stats = fs.lstatSync(absolutePath);
+  } catch (error) {
+    const nodeError = error as NodeJS.ErrnoException;
+    if (nodeError.code === 'ENOENT') {
+      throw fileNotFound(absolutePath);
+    }
+    if (nodeError.code === 'EACCES') {
+      throw new MCPError({
+        code: ErrorCode.PERMISSION_DENIED,
+        userMessage: 'Access denied. Please check that you have permission to access this file.',
+        developerMessage: `Permission denied accessing file: ${absolutePath}`,
+        cause: nodeError,
+      });
+    }
+    throw new MCPError({
+      code: ErrorCode.FILE_NOT_FOUND,
+      userMessage: 'Failed to access the file.',
+      developerMessage: `Failed to stat file ${absolutePath}: ${nodeError.message}`,
+      cause: nodeError,
+    });
+  }
+
+  // SECURITY: Skip symlinks during indexing (don't follow them)
+  if (stats.isSymbolicLink()) {
+    logger.warn('Chunking', 'Skipping symlink during sync chunking', {
+      path: absolutePath,
+      relativePath,
+    });
+    return []; // Return empty chunks for symlinks
+  }
+
   // Read file content
   let content: string;
   try {

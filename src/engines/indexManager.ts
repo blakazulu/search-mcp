@@ -29,12 +29,13 @@ import { chunkFile, Chunk } from './chunking.js';
 import { getEmbeddingEngine, EmbeddingEngine } from './embedding.js';
 
 // Utility imports
-import { toRelativePath, toAbsolutePath, normalizePath, getIndexPath } from '../utils/paths.js';
+import { toRelativePath, toAbsolutePath, normalizePath, getIndexPath, safeJoin } from '../utils/paths.js';
 import { hashFile } from '../utils/hash.js';
 import { getLogger } from '../utils/logger.js';
 import { logMemoryUsage, getAdaptiveBatchSize, isMemoryCritical } from '../utils/memory.js';
 import { validateDiskSpace } from '../utils/diskSpace.js';
 import { MCPError, ErrorCode, fileLimitWarning, isMCPError } from '../errors/index.js';
+import { isSymlink } from '../utils/secureFileAccess.js';
 
 // ============================================================================
 // Constants
@@ -196,7 +197,27 @@ export async function scanFiles(
       });
     }
 
-    const absolutePath = toAbsolutePath(relativePath, normalizedProjectPath);
+    // SECURITY: Use safeJoin to prevent path traversal attacks
+    const absolutePath = safeJoin(normalizedProjectPath, relativePath);
+    if (absolutePath === null) {
+      logger.warn('IndexManager', 'Skipping file with invalid path (traversal attempt)', {
+        file: relativePath,
+      });
+      continue;
+    }
+
+    // SECURITY: Skip symlinks during indexing
+    try {
+      if (await isSymlink(absolutePath)) {
+        logger.debug('IndexManager', 'Skipping symlink during file scan', {
+          file: relativePath,
+        });
+        continue;
+      }
+    } catch {
+      // If we can't check, skip it
+      continue;
+    }
 
     try {
       const result = await policy.shouldIndex(relativePath, absolutePath);
@@ -282,7 +303,16 @@ async function processFileBatch(
 
   for (let i = 0; i < files.length; i++) {
     const relativePath = files[i];
-    const absolutePath = toAbsolutePath(relativePath, projectPath);
+
+    // SECURITY: Use safeJoin to prevent path traversal attacks
+    const absolutePath = safeJoin(projectPath, relativePath);
+    if (absolutePath === null) {
+      logger.warn('IndexManager', 'Skipping file with invalid path in batch', {
+        file: relativePath,
+      });
+      errors.push(`${relativePath}: Invalid path (potential traversal attempt)`);
+      continue;
+    }
 
     // Report chunking progress
     if (onProgress) {
@@ -305,7 +335,7 @@ async function processFileBatch(
     }
 
     try {
-      // Chunk the file
+      // Chunk the file (symlink check is done inside chunkFile)
       const chunks = await chunkFile(absolutePath, relativePath);
 
       if (chunks.length === 0) {

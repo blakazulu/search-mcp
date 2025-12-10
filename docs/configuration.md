@@ -16,6 +16,10 @@ Complete reference for customizing Search MCP behavior.
   - [Lazy](#lazy)
   - [Git](#git)
   - [Choosing a Strategy](#choosing-a-strategy)
+- [Security Features](#security-features)
+  - [Symlink Protection](#symlink-protection)
+  - [Path Traversal Protection](#path-traversal-protection)
+  - [Secure File Access](#secure-file-access)
 - [Hardcoded Deny List](#hardcoded-deny-list)
 - [Enhanced Tool Descriptions](#enhanced-tool-descriptions)
 
@@ -201,6 +205,41 @@ Control when and how file changes are indexed. Choose based on your project size
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Security Features
+
+Search MCP includes built-in security protections that cannot be disabled:
+
+### Symlink Protection
+
+Symbolic links are automatically detected and handled securely:
+
+- **During indexing**: Symlinks are silently skipped with a warning logged
+- **For explicit file access**: Symlinks return a `SYMLINK_NOT_ALLOWED` error
+
+This prevents symlink attacks where a malicious symlink could point to sensitive files outside your project (e.g., `ln -s /etc/passwd malicious.txt`).
+
+**Supported symlink types:**
+- Unix symbolic links
+- Windows symbolic links
+- Windows junction points
+
+### Path Traversal Protection
+
+All file paths are validated to prevent directory traversal attacks:
+
+- Paths like `../../../etc/passwd` are rejected
+- All path operations use `safeJoin()` validation
+- Paths must stay within the project directory
+
+### Secure File Access
+
+All file read operations use secure utilities that combine:
+1. Path traversal prevention via `safeJoin()`
+2. Symlink detection via `lstat()`
+3. Proper error handling
 
 ---
 

@@ -11,7 +11,7 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { getLogger } from './logger.js';
-import { MCPError, ErrorCode, fileNotFound } from '../errors/index.js';
+import { MCPError, ErrorCode, fileNotFound, symlinkNotAllowed } from '../errors/index.js';
 
 /**
  * Compute SHA256 hash of a string
@@ -49,9 +49,10 @@ export function hashString(input: string): string {
 export async function hashFile(filePath: string): Promise<string> {
   const logger = getLogger();
 
-  // Verify file exists
+  // SECURITY: Use lstat to check file exists AND detect symlinks
+  let stats: fs.Stats;
   try {
-    await fs.promises.access(filePath, fs.constants.R_OK);
+    stats = await fs.promises.lstat(filePath);
   } catch (error) {
     const nodeError = error as NodeJS.ErrnoException;
     if (nodeError.code === 'ENOENT') {
@@ -73,8 +74,33 @@ export async function hashFile(filePath: string): Promise<string> {
     });
   }
 
-  // Get file stats to decide between streaming and direct read
-  const stats = await fs.promises.stat(filePath);
+  // SECURITY: Reject symlinks to prevent reading files outside project
+  if (stats.isSymbolicLink()) {
+    logger.warn('hash', `Rejecting symlink: ${filePath}`);
+    throw symlinkNotAllowed(filePath);
+  }
+
+  // Verify file is readable
+  try {
+    await fs.promises.access(filePath, fs.constants.R_OK);
+  } catch (error) {
+    const nodeError = error as NodeJS.ErrnoException;
+    if (nodeError.code === 'EACCES') {
+      throw new MCPError({
+        code: ErrorCode.PERMISSION_DENIED,
+        userMessage: 'Access denied. Please check that you have permission to access this file.',
+        developerMessage: `Permission denied reading file: ${filePath}`,
+        cause: nodeError,
+      });
+    }
+    throw new MCPError({
+      code: ErrorCode.FILE_NOT_FOUND,
+      userMessage: 'Failed to access the file.',
+      developerMessage: `Failed to access file ${filePath}: ${nodeError.message}`,
+      cause: nodeError,
+    });
+  }
+
   const STREAMING_THRESHOLD = 10 * 1024 * 1024; // 10MB
 
   try {
@@ -180,6 +206,39 @@ export function hashProjectPath(projectPath: string): string {
  * @throws MCPError with FILE_NOT_FOUND if file doesn't exist
  */
 export function hashFileSync(filePath: string): string {
+  const logger = getLogger();
+
+  // SECURITY: Use lstat to check file exists AND detect symlinks
+  let stats: fs.Stats;
+  try {
+    stats = fs.lstatSync(filePath);
+  } catch (error) {
+    const nodeError = error as NodeJS.ErrnoException;
+    if (nodeError.code === 'ENOENT') {
+      throw fileNotFound(filePath);
+    }
+    if (nodeError.code === 'EACCES') {
+      throw new MCPError({
+        code: ErrorCode.PERMISSION_DENIED,
+        userMessage: 'Access denied. Please check that you have permission to access this file.',
+        developerMessage: `Permission denied accessing file: ${filePath}`,
+        cause: nodeError,
+      });
+    }
+    throw new MCPError({
+      code: ErrorCode.FILE_NOT_FOUND,
+      userMessage: 'Failed to access the file.',
+      developerMessage: `Failed to stat file ${filePath}: ${nodeError.message}`,
+      cause: nodeError,
+    });
+  }
+
+  // SECURITY: Reject symlinks to prevent reading files outside project
+  if (stats.isSymbolicLink()) {
+    logger.warn('hash', `Rejecting symlink (sync): ${filePath}`);
+    throw symlinkNotAllowed(filePath);
+  }
+
   try {
     const content = fs.readFileSync(filePath);
     return crypto.createHash('sha256').update(content).digest('hex');

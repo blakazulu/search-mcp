@@ -33,6 +33,8 @@ export enum ErrorCode {
   INVALID_PATTERN = 'INVALID_PATTERN',
   /** Could not detect project root from given path */
   PROJECT_NOT_DETECTED = 'PROJECT_NOT_DETECTED',
+  /** Symbolic link not allowed for security reasons */
+  SYMLINK_NOT_ALLOWED = 'SYMLINK_NOT_ALLOWED',
 }
 
 /**
@@ -291,6 +293,23 @@ export function projectNotDetected(searchedPath: string): MCPError {
     userMessage:
       'Could not detect a project in this location. Make sure you are in a project directory with a package.json, .git, or similar project marker.',
     developerMessage: `Project root not detected from path: ${searchedPath}. No project markers (package.json, .git, etc.) found in path hierarchy.`,
+  });
+}
+
+/**
+ * Create a SYMLINK_NOT_ALLOWED error
+ *
+ * Used when a symbolic link is detected where it's not allowed for security reasons.
+ * Symlinks can be used to read files outside the project directory.
+ *
+ * @param filePath - The path to the symlink
+ */
+export function symlinkNotAllowed(filePath: string): MCPError {
+  return new MCPError({
+    code: ErrorCode.SYMLINK_NOT_ALLOWED,
+    userMessage:
+      'Symbolic links are not allowed for security reasons. Please use actual files instead.',
+    developerMessage: `Symbolic link detected at path: ${filePath}. Symlinks are rejected to prevent reading files outside the project.`,
   });
 }
 

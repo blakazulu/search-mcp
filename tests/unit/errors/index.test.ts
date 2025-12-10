@@ -12,6 +12,7 @@ import {
   fileNotFound,
   invalidPattern,
   projectNotDetected,
+  symlinkNotAllowed,
   isMCPError,
   wrapError,
 } from '../../../src/errors/index.js';
@@ -24,7 +25,7 @@ describe('Error Handling System', () => {
   });
 
   describe('ErrorCode enum', () => {
-    it('should define all 9 error codes', () => {
+    it('should define all 10 error codes', () => {
       expect(ErrorCode.INDEX_NOT_FOUND).toBe('INDEX_NOT_FOUND');
       expect(ErrorCode.MODEL_DOWNLOAD_FAILED).toBe('MODEL_DOWNLOAD_FAILED');
       expect(ErrorCode.INDEX_CORRUPT).toBe('INDEX_CORRUPT');
@@ -34,11 +35,12 @@ describe('Error Handling System', () => {
       expect(ErrorCode.FILE_NOT_FOUND).toBe('FILE_NOT_FOUND');
       expect(ErrorCode.INVALID_PATTERN).toBe('INVALID_PATTERN');
       expect(ErrorCode.PROJECT_NOT_DETECTED).toBe('PROJECT_NOT_DETECTED');
+      expect(ErrorCode.SYMLINK_NOT_ALLOWED).toBe('SYMLINK_NOT_ALLOWED');
     });
 
-    it('should have exactly 9 error codes', () => {
+    it('should have exactly 10 error codes', () => {
       const codes = Object.values(ErrorCode);
-      expect(codes.length).toBe(9);
+      expect(codes.length).toBe(10);
     });
 
     it('should have unique values for each code', () => {
@@ -314,6 +316,18 @@ describe('Error Handling System', () => {
         expect(error.developerMessage).toContain('/some/random/directory');
       });
     });
+
+    describe('symlinkNotAllowed()', () => {
+      it('should create SYMLINK_NOT_ALLOWED error', () => {
+        const error = symlinkNotAllowed('/path/to/symlink');
+
+        expect(error.code).toBe(ErrorCode.SYMLINK_NOT_ALLOWED);
+        expect(error.userMessage).toContain('Symbolic links are not allowed');
+        expect(error.userMessage).toContain('security');
+        expect(error.developerMessage).toContain('/path/to/symlink');
+        expect(error.developerMessage).toContain('Symbolic link detected');
+      });
+    });
   });
 
   describe('Type Guards and Utilities', () => {
@@ -332,6 +346,7 @@ describe('Error Handling System', () => {
         expect(isMCPError(indexNotFound('/path'))).toBe(true);
         expect(isMCPError(fileNotFound('/path'))).toBe(true);
         expect(isMCPError(invalidPattern('**', 'error'))).toBe(true);
+        expect(isMCPError(symlinkNotAllowed('/path'))).toBe(true);
       });
 
       it('should return false for regular Error instances', () => {

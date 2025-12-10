@@ -159,8 +159,12 @@ async function calculateDirectorySize(dirPath: string): Promise<number> {
         totalSize += await calculateDirectorySize(fullPath);
       } else {
         try {
-          const stats = await fs.promises.stat(fullPath);
-          totalSize += stats.size;
+          // SECURITY: Use lstat to detect symlinks without following them
+          const stats = await fs.promises.lstat(fullPath);
+          // Skip symlinks for security
+          if (!stats.isSymbolicLink()) {
+            totalSize += stats.size;
+          }
         } catch {
           // Skip files we can't stat
         }

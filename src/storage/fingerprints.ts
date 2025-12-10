@@ -9,11 +9,12 @@
  */
 
 import * as fs from 'node:fs';
-import { getFingerprintsPath, toAbsolutePath } from '../utils/paths.js';
+import { getFingerprintsPath, toAbsolutePath, safeJoin } from '../utils/paths.js';
 import { hashFile } from '../utils/hash.js';
 import { getLogger } from '../utils/logger.js';
 import { atomicWriteJson } from '../utils/atomicWrite.js';
 import { ErrorCode, MCPError, isMCPError } from '../errors/index.js';
+import { isSymlink } from '../utils/secureFileAccess.js';
 
 // ============================================================================
 // Types
@@ -238,6 +239,38 @@ export async function calculateDelta(
       const storedHash = stored.get(relativePath);
       seenStored.add(relativePath);
 
+      // SECURITY: Use safeJoin to prevent path traversal attacks
+      const absolutePath = safeJoin(projectPath, relativePath);
+      if (absolutePath === null) {
+        logger.warn('FingerprintsManager', 'Skipping file with invalid path during delta', {
+          path: relativePath,
+        });
+        // Mark as removed if it was previously indexed (shouldn't happen normally)
+        if (storedHash !== undefined) {
+          return { path: relativePath, status: 'removed' as const };
+        }
+        // Skip if never indexed
+        return null;
+      }
+
+      // SECURITY: Skip symlinks during delta calculation
+      try {
+        if (await isSymlink(absolutePath)) {
+          logger.debug('FingerprintsManager', 'Skipping symlink during delta calculation', {
+            path: relativePath,
+          });
+          // Mark as removed if it was previously indexed
+          if (storedHash !== undefined) {
+            return { path: relativePath, status: 'removed' as const };
+          }
+          // Skip if never indexed
+          return null;
+        }
+      } catch {
+        // If we can't check, skip it
+        return null;
+      }
+
       // If file is not in stored, it's added
       if (storedHash === undefined) {
         return { path: relativePath, status: 'added' as const };
@@ -245,7 +278,6 @@ export async function calculateDelta(
 
       // Get current file hash
       try {
-        const absolutePath = toAbsolutePath(relativePath, projectPath);
         const currentHash = await hashFile(absolutePath);
 
         if (currentHash === storedHash) {
@@ -256,21 +288,31 @@ export async function calculateDelta(
       } catch (error) {
         // Distinguish between permission errors and transient errors (Bug #25)
         const errorMessage = error instanceof Error ? error.message : String(error);
-        const errorCode = (error as NodeJS.ErrnoException).code;
+        const mcpError = error as MCPError;
+        const nodeError = error as NodeJS.ErrnoException;
+
+        // Check for symlink errors (security)
+        if (mcpError?.code === ErrorCode.SYMLINK_NOT_ALLOWED) {
+          logger.debug('FingerprintsManager', 'Symlink rejected during delta calculation', {
+            path: relativePath,
+          });
+          // Mark as removed if it was previously indexed
+          return { path: relativePath, status: 'removed' as const };
+        }
 
         // Log permission errors at warn level to make them visible
-        if (errorCode === 'EACCES' || errorCode === 'EPERM') {
+        if (nodeError.code === 'EACCES' || nodeError.code === 'EPERM') {
           logger.warn('FingerprintsManager', 'Permission denied reading file during delta calculation', {
             path: relativePath,
             error: errorMessage,
-            code: errorCode,
+            code: nodeError.code,
           });
         } else {
           // Other errors (e.g., ENOENT from race condition) at debug level
           logger.debug('FingerprintsManager', 'File read error during delta, treating as added', {
             path: relativePath,
             error: errorMessage,
-            code: errorCode,
+            code: nodeError.code,
           });
         }
         // If file can't be read, treat as added (will be hashed during indexing)
@@ -282,9 +324,11 @@ export async function calculateDelta(
     // Wait for batch to complete
     const batchResults = await Promise.all(hashPromises);
 
-    // Categorize results
+    // Categorize results (filter out null results from skipped files)
     for (const item of batchResults) {
-      result[item.status].push(item.path);
+      if (item !== null) {
+        result[item.status].push(item.path);
+      }
     }
   }
 

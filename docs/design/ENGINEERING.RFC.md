@@ -93,7 +93,7 @@ Indices are stored in a global user directory to:
 
 **Root Path:** `~/.mcp/search/`
 
-**Project Isolation:** Each project gets a unique directory based on SHA256 hash of its absolute path.
+**Project Isolation:** Each project gets a unique directory based on SHA256 hash of its absolute path (128-bit / 32 hex chars for collision resistance). Legacy indexes may use 64-bit / 16 hex chars; both formats are supported.
 
 ```
 ~/.mcp/search/
@@ -608,6 +608,17 @@ For each file:
 | Max File Size | 1MB | Skip file silently |
 | Binary Detection | Automatic | Skip binary files (images, videos, etc.) |
 
+#### Security Protections
+
+| Protection | Description |
+|------------|-------------|
+| **Symlink Detection** | All file operations use `lstat()` to detect symlinks. Symlinks are skipped during indexing (with warning) to prevent reading files outside the project. |
+| **Path Traversal Prevention** | All file paths validated with `safeJoin()` to prevent `../` attacks. Paths must remain within project directory. |
+| **Unicode Normalization** | Paths normalized to NFC form; zero-width characters and RTL overrides removed to prevent bypass attempts. |
+| **Content-Based Binary Detection** | Files with unknown extensions checked for null bytes in first 8KB to detect renamed binaries. |
+| **Case-Insensitive Matching (Windows)** | Deny list patterns matched case-insensitively on Windows to prevent `.ENV` bypass. |
+| **Resource Limits** | Per-file chunk limits (1000), directory depth limits (20), glob result limits (100K), JSON size limits (10MB) to prevent DoS. |
+
 ### 5.3 Chunking Engine
 
 **Purpose:** Split files into indexable chunks.
@@ -751,6 +762,7 @@ interface MCPError {
 | `INVALID_PATTERN` | "The search pattern '{pattern}' is invalid. Please check the syntax." | `INVALID_PATTERN: {glob_error}` |
 | `PROJECT_NOT_DETECTED` | "Could not detect project root. Please choose a directory." | `PROJECT_NOT_DETECTED: No markers found in path hierarchy` |
 | `DOCS_INDEX_NOT_FOUND` | "No documentation has been indexed yet. Run create_index to index your project." | `DOCS_INDEX_NOT_FOUND: No docs index at ~/.mcp/search/indexes/{hash}/docs.lancedb/` |
+| `SYMLINK_NOT_ALLOWED` | "Symbolic links are not allowed for security reasons." | `SYMLINK_NOT_ALLOWED: Symlink detected at path: {path}` |
 
 ---
 

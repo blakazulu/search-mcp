@@ -38,6 +38,7 @@ A **local-first Model Context Protocol (MCP) Server** that enables Claude Code (
 2. **Privacy First** - 100% local execution, no data leaves the machine
 3. **Always Fresh** - Auto-updating file watcher keeps index current
 4. **Safe by Default** - Secrets and dependencies are never indexed
+5. **Secure by Design** - Built-in protections against path traversal, symlink attacks, and resource exhaustion
 
 ---
 
@@ -286,6 +287,7 @@ All errors include two messages:
 | Too many files | "This project is very large (65,000 files). Indexing may take several minutes. Continue?" | `FILE_LIMIT_WARNING: 65,000 files exceeds soft limit of 50,000` |
 | Permission denied | "Can't access some files in this project. Check folder permissions." | `PERMISSION_DENIED: EACCES reading /path/to/file.ts` |
 | Out of disk space | "Not enough disk space to create the search index. Free up some space and try again." | `DISK_FULL: ENOSPC - need ~50MB, have 12MB` |
+| Symlink detected | "Symbolic links are not allowed for security reasons." | `SYMLINK_NOT_ALLOWED: Symlink detected at path: /path/to/symlink` |
 
 ### 7.3 Search Results Format
 

@@ -156,4 +156,8 @@ export {
   LazyStrategy,
   createLazyStrategy,
   type LazyStrategyOptions,
+  GitStrategy,
+  createGitStrategy,
+  DEFAULT_GIT_DEBOUNCE_DELAY,
+  type GitStrategyOptions,
 } from './strategies/index.js';

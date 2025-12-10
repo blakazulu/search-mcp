@@ -13,7 +13,7 @@ Add user-configurable indexing strategies to reduce performance overhead from co
 | 3 | SMCP-045 | Strategy Interface | COMPLETED |
 | 4 | SMCP-046 | Realtime Strategy | COMPLETED |
 | 5 | SMCP-047 | Lazy Strategy | COMPLETED |
-| 6 | SMCP-048 | Git Strategy | Not Started |
+| 6 | SMCP-048 | Git Strategy | COMPLETED |
 | 7 | SMCP-049 | Strategy Orchestrator | Not Started |
 | 8 | SMCP-050 | Tool Integrations | Not Started |
 | 9 | SMCP-051 | Server Integration | Not Started |
@@ -547,9 +547,17 @@ Comprehensive tests covering (45 tests total):
 
 ---
 
-## Phase 6: Git Strategy
+## Phase 6: Git Strategy (COMPLETED - SMCP-048)
 
 ### New File: `src/engines/strategies/gitStrategy.ts`
+
+**Implementation completed 2025-12-10**
+
+Key exports:
+- `GitStrategy` - Main class implementing `IndexingStrategy`
+- `createGitStrategy()` - Factory function
+- `GitStrategyOptions` - Configuration interface
+- `DEFAULT_GIT_DEBOUNCE_DELAY` - Default debounce delay (2000ms)
 
 ```typescript
 /**
@@ -563,9 +571,17 @@ Comprehensive tests covering (45 tests total):
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import chokidar from 'chokidar';
-import { IndexingStrategy, FileEvent, StrategyStats } from '../indexingStrategy.js';
+import { IndexingStrategy, StrategyFileEvent, StrategyStats } from '../indexingStrategy.js';
 import { IntegrityEngine } from '../integrity.js';
+import { normalizePath } from '../../utils/paths.js';
 import { getLogger } from '../../utils/logger.js';
+import { registerCleanup, unregisterCleanup, isShutdownInProgress, CleanupHandler } from '../../utils/cleanup.js';
+
+export interface GitStrategyOptions {
+  debounceDelayMs?: number;  // default: 2000
+}
+
+export const DEFAULT_GIT_DEBOUNCE_DELAY = 2000;
 
 export class GitStrategy implements IndexingStrategy {
   readonly name = 'git' as const;
@@ -577,112 +593,54 @@ export class GitStrategy implements IndexingStrategy {
 
   // Debounce rapid git operations (rebases, merges)
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
-  private readonly debounceDelay = 2000; // 2 seconds
+  private readonly debounceDelayMs: number;
+
+  // Flush lock to prevent concurrent reconciliations
+  private flushing: boolean = false;
+
+  // Cleanup handler
+  private cleanupHandler: CleanupHandler | null = null;
 
   constructor(
-    private readonly projectPath: string,
-    private readonly integrityEngine: IntegrityEngine,
-  ) {}
+    projectPath: string,
+    integrityEngine: IntegrityEngine,
+    options?: GitStrategyOptions,
+  ) { /* ... */ }
 
   async initialize(): Promise<void> {
     // Verify .git directory exists
-    const gitDir = path.join(this.projectPath, '.git');
-    if (!fs.existsSync(gitDir)) {
-      throw new Error('Not a git repository: .git directory not found');
-    }
+    // Throw error if not a git repository
   }
 
   async start(): Promise<void> {
-    const logger = getLogger();
-
-    const gitLogsHead = path.join(this.projectPath, '.git', 'logs', 'HEAD');
-
-    // Create parent directory if needed (fresh repos may not have it)
-    const logsDir = path.dirname(gitLogsHead);
-    if (!fs.existsSync(logsDir)) {
-      await fs.promises.mkdir(logsDir, { recursive: true });
-    }
-
-    // Watch the git logs/HEAD file
-    this.gitWatcher = chokidar.watch(gitLogsHead, {
-      persistent: true,
-      ignoreInitial: true,
-      awaitWriteFinish: {
-        stabilityThreshold: 500,
-        pollInterval: 100,
-      },
-    });
-
-    this.gitWatcher.on('change', () => this.onGitChange());
-    this.gitWatcher.on('error', (error) => this.handleError(error));
-
-    await new Promise<void>((resolve) => {
-      this.gitWatcher!.on('ready', () => {
-        logger.info('GitStrategy', 'Watching .git/logs/HEAD for commits');
-        resolve();
-      });
-    });
-
-    this.active = true;
+    // Build path: {projectPath}/.git/logs/HEAD
+    // Create logs dir if missing (fresh repos)
+    // Create HEAD file if missing (fresh repos)
+    // Watch with chokidar (awaitWriteFinish options)
+    // Bind change/add events to onGitChange()
+    // Register cleanup handler
   }
 
   async stop(): Promise<void> {
+    // Unregister cleanup handler
     // Clear debounce timer
-    if (this.debounceTimer) {
-      clearTimeout(this.debounceTimer);
-      this.debounceTimer = null;
-    }
-
-    // Close watcher
-    if (this.gitWatcher) {
-      await this.gitWatcher.close();
-      this.gitWatcher = null;
-    }
-
-    this.active = false;
+    // Close git watcher
   }
 
   isActive(): boolean {
     return this.active;
   }
 
-  async onFileEvent(_event: FileEvent): Promise<void> {
+  async onFileEvent(_event: StrategyFileEvent): Promise<void> {
     // Git strategy doesn't process individual file events
     // Everything is handled via git commit detection
   }
 
-  /**
-   * Reconcile index with current filesystem state
-   */
   async flush(): Promise<void> {
-    const logger = getLogger();
-    logger.info('GitStrategy', 'Reconciling index with filesystem');
-
-    // Use IntegrityEngine to detect and fix drift
-    const drift = await this.integrityEngine.detectDrift();
-
-    if (drift.added.length === 0 && drift.modified.length === 0 && drift.removed.length === 0) {
-      logger.info('GitStrategy', 'Index is in sync');
-      return;
-    }
-
-    logger.info('GitStrategy', 'Drift detected', {
-      added: drift.added.length,
-      modified: drift.modified.length,
-      removed: drift.removed.length,
-    });
-
-    // Reconcile
-    const result = await this.integrityEngine.reconcile(drift);
-    this.processedCount += result.filesAdded + result.filesModified + result.filesRemoved;
-    this.lastActivity = new Date();
-
-    logger.info('GitStrategy', 'Reconciliation complete', {
-      added: result.filesAdded,
-      modified: result.filesModified,
-      removed: result.filesRemoved,
-      durationMs: result.durationMs,
-    });
+    // Check flushing lock
+    // Call integrityEngine.checkDrift()
+    // If drift found, call integrityEngine.reconcile()
+    // Update stats (processedCount, lastActivity)
   }
 
   getStats(): StrategyStats {
@@ -695,30 +653,64 @@ export class GitStrategy implements IndexingStrategy {
     };
   }
 
-  // --- Private methods ---
+  // Private methods:
+  // - onGitChange() - Debounce rapid operations, trigger flush
+  // - handleError() - Log watcher errors
 
-  private onGitChange(): void {
-    const logger = getLogger();
-    logger.debug('GitStrategy', 'Git HEAD change detected');
-
-    // Debounce rapid git operations
-    if (this.debounceTimer) {
-      clearTimeout(this.debounceTimer);
-    }
-
-    this.debounceTimer = setTimeout(() => {
-      this.flush().catch((error) => {
-        logger.error('GitStrategy', 'Error during post-commit reconciliation', { error });
-      });
-    }, this.debounceDelay);
-  }
-
-  private handleError(error: Error): void {
-    const logger = getLogger();
-    logger.error('GitStrategy', 'Git watcher error', { error });
-  }
+  // Public accessors:
+  getProjectPath(): string;
+  getDebounceDelay(): number;
+  isFlushing(): boolean;
 }
+
+// Factory function
+export function createGitStrategy(
+  projectPath: string,
+  integrityEngine: IntegrityEngine,
+  options?: GitStrategyOptions,
+): GitStrategy;
 ```
+
+### Updated: `src/engines/strategies/index.ts`
+
+Added exports:
+```typescript
+export {
+  GitStrategy,
+  createGitStrategy,
+  DEFAULT_GIT_DEBOUNCE_DELAY,
+  type GitStrategyOptions,
+} from './gitStrategy.js';
+```
+
+### Updated: `src/engines/index.ts`
+
+Added exports:
+```typescript
+export {
+  GitStrategy,
+  createGitStrategy,
+  DEFAULT_GIT_DEBOUNCE_DELAY,
+  type GitStrategyOptions,
+} from './strategies/index.js';
+```
+
+### Tests: `tests/unit/engines/strategies/gitStrategy.test.ts`
+
+Comprehensive tests covering (40 tests total):
+- Interface compliance
+- Constructor options (default and custom debounce delay)
+- Lifecycle management (initialize, start, stop, isActive)
+- Git repository verification (throws for non-git directories)
+- onFileEvent() as no-op
+- flush() behavior (drift detection, reconciliation, stats updates)
+- Concurrent flush prevention (flushing lock)
+- Git commit detection via .git/logs/HEAD changes
+- Debounce behavior for rapid git operations
+- getStats() return values
+- Public accessors
+- Factory function
+- Constants export
 
 ---
 

@@ -234,9 +234,190 @@ export async function validateDiskSpace(
  * @param bytes - Size in bytes
  * @returns Human-readable string like "45MB", "1.2GB"
  */
-function formatBytes(bytes: number): string {
+export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)}GB`;
+}
+
+// ============================================================================
+// SMCP-057: Continuous Disk Space Monitoring
+// ============================================================================
+
+/**
+ * Default interval for disk space checks during indexing (5 seconds)
+ */
+export const DEFAULT_DISK_CHECK_INTERVAL_MS = 5000;
+
+/**
+ * Critical disk space threshold - abort if below this (50MB)
+ */
+export const CRITICAL_DISK_SPACE_BYTES = 50 * 1024 * 1024;
+
+/**
+ * Result of a disk space monitor check
+ */
+export interface DiskMonitorResult {
+  /** Whether there is sufficient space to continue */
+  sufficient: boolean;
+  /** Available bytes at time of check */
+  availableBytes: number;
+  /** Error message if space is critical */
+  error?: string;
+}
+
+/**
+ * Callback type for disk space monitor
+ * Return false from callback to stop monitoring
+ */
+export type DiskMonitorCallback = (result: DiskMonitorResult) => boolean | Promise<boolean>;
+
+/**
+ * Handle to control disk space monitoring
+ */
+export interface DiskMonitorHandle {
+  /** Stop the monitor */
+  stop: () => void;
+  /** Check if the monitor is still running */
+  isRunning: () => boolean;
+  /** Get the last check result */
+  getLastResult: () => DiskMonitorResult | null;
+}
+
+/**
+ * SMCP-057: Start continuous disk space monitoring during long operations
+ *
+ * Periodically checks disk space and calls the provided callback with results.
+ * Automatically stops if space becomes critical or if the callback returns false.
+ *
+ * @param indexPath - Path to check disk space for
+ * @param callback - Callback to receive monitoring results
+ * @param intervalMs - Check interval in milliseconds (default: 5000ms)
+ * @returns Handle to control the monitor
+ *
+ * @example
+ * ```typescript
+ * const monitor = startDiskSpaceMonitor(
+ *   indexPath,
+ *   (result) => {
+ *     if (!result.sufficient) {
+ *       console.error('Disk space critical:', result.error);
+ *       return false; // Stop monitoring
+ *     }
+ *     return true; // Continue monitoring
+ *   },
+ *   5000 // Check every 5 seconds
+ * );
+ *
+ * // Later, when operation completes:
+ * monitor.stop();
+ * ```
+ */
+export function startDiskSpaceMonitor(
+  indexPath: string,
+  callback: DiskMonitorCallback,
+  intervalMs: number = DEFAULT_DISK_CHECK_INTERVAL_MS
+): DiskMonitorHandle {
+  const logger = getLogger();
+  let intervalHandle: ReturnType<typeof setInterval> | null = null;
+  let isActive = true;
+  let lastResult: DiskMonitorResult | null = null;
+
+  logger.debug('DiskSpace', 'Starting continuous disk space monitor', {
+    path: indexPath,
+    intervalMs,
+  });
+
+  const checkDisk = async (): Promise<void> => {
+    if (!isActive) return;
+
+    try {
+      const spaceInfo = await checkDiskSpace(indexPath);
+
+      let result: DiskMonitorResult;
+
+      if (!spaceInfo.success) {
+        // Could not check disk space - assume OK but warn
+        result = {
+          sufficient: true,
+          availableBytes: 0,
+          error: 'Could not verify disk space',
+        };
+        logger.debug('DiskSpace', 'Disk space check unavailable', { error: spaceInfo.error });
+      } else if (spaceInfo.available < CRITICAL_DISK_SPACE_BYTES) {
+        // Critical - disk is nearly full
+        result = {
+          sufficient: false,
+          availableBytes: spaceInfo.available,
+          error: `Critical: Only ${formatBytes(spaceInfo.available)} disk space remaining. Aborting to prevent data corruption.`,
+        };
+        logger.error('DiskSpace', 'Critical disk space detected during indexing', {
+          availableMB: Math.round(spaceInfo.available / (1024 * 1024)),
+          thresholdMB: Math.round(CRITICAL_DISK_SPACE_BYTES / (1024 * 1024)),
+        });
+      } else {
+        // Space is OK
+        result = {
+          sufficient: true,
+          availableBytes: spaceInfo.available,
+        };
+      }
+
+      lastResult = result;
+
+      // Call the callback and check if we should continue
+      const shouldContinue = await callback(result);
+      if (!shouldContinue || !result.sufficient) {
+        stop();
+      }
+    } catch (error) {
+      logger.warn('DiskSpace', 'Error during disk space check', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  const stop = (): void => {
+    if (!isActive) return;
+
+    isActive = false;
+    if (intervalHandle) {
+      clearInterval(intervalHandle);
+      intervalHandle = null;
+    }
+    logger.debug('DiskSpace', 'Disk space monitor stopped');
+  };
+
+  // Start the interval
+  intervalHandle = setInterval(checkDisk, intervalMs);
+
+  // Also run an immediate check
+  checkDisk();
+
+  return {
+    stop,
+    isRunning: () => isActive,
+    getLastResult: () => lastResult,
+  };
+}
+
+/**
+ * SMCP-057: Check disk space once and abort if critical
+ *
+ * Convenience function for one-time disk space check with abort on critical.
+ *
+ * @param path - Path to check disk space for
+ * @throws MCPError with DISK_FULL code if space is critical
+ */
+export async function checkDiskSpaceAndAbort(path: string): Promise<void> {
+  const spaceInfo = await checkDiskSpace(path);
+
+  if (spaceInfo.success && spaceInfo.available < CRITICAL_DISK_SPACE_BYTES) {
+    const logger = getLogger();
+    logger.error('DiskSpace', 'Critical disk space - aborting operation', {
+      availableMB: Math.round(spaceInfo.available / (1024 * 1024)),
+    });
+    throw diskFull(CRITICAL_DISK_SPACE_BYTES, spaceInfo.available);
+  }
 }

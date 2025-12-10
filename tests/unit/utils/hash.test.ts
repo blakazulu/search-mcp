@@ -12,7 +12,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { hashString, hashFile, hashFileSync, hashProjectPath } from '../../../src/utils/hash.js';
+import { hashString, hashFile, hashFileSync, hashProjectPath, hashProjectPathLegacy, OLD_HASH_LENGTH, NEW_HASH_LENGTH } from '../../../src/utils/hash.js';
 import { ErrorCode, MCPError } from '../../../src/errors/index.js';
 
 describe('Hash Utilities', () => {
@@ -203,11 +203,12 @@ describe('Hash Utilities', () => {
   });
 
   describe('hashProjectPath', () => {
-    it('should return 16 character hex string', () => {
+    it('should return 32 character hex string (SMCP-057: increased entropy)', () => {
       const hash = hashProjectPath('/path/to/project');
 
-      expect(hash).toHaveLength(16);
-      expect(hash).toMatch(/^[a-f0-9]{16}$/);
+      expect(hash).toHaveLength(NEW_HASH_LENGTH);
+      expect(hash).toHaveLength(32);
+      expect(hash).toMatch(/^[a-f0-9]{32}$/);
     });
 
     it('should return consistent results', () => {
@@ -268,16 +269,53 @@ describe('Hash Utilities', () => {
     it('should handle paths with special characters', () => {
       const hash = hashProjectPath('/path/to/my-project_v2.0');
 
-      expect(hash).toHaveLength(16);
-      expect(hash).toMatch(/^[a-f0-9]{16}$/);
+      expect(hash).toHaveLength(32);
+      expect(hash).toMatch(/^[a-f0-9]{32}$/);
     });
 
     it('should handle deeply nested paths', () => {
       const deepPath = '/a/b/c/d/e/f/g/h/i/j/k/l/m/n/o/p/q/r/s/t/u/v/w/x/y/z';
       const hash = hashProjectPath(deepPath);
 
+      expect(hash).toHaveLength(32);
+      expect(hash).toMatch(/^[a-f0-9]{32}$/);
+    });
+  });
+
+  describe('hashProjectPathLegacy (SMCP-057: backward compatibility)', () => {
+    it('should return 16 character hex string', () => {
+      const hash = hashProjectPathLegacy('/path/to/project');
+
+      expect(hash).toHaveLength(OLD_HASH_LENGTH);
       expect(hash).toHaveLength(16);
       expect(hash).toMatch(/^[a-f0-9]{16}$/);
+    });
+
+    it('should be a prefix of the new hash', () => {
+      const projectPath = '/path/to/my-project';
+      const legacyHash = hashProjectPathLegacy(projectPath);
+      const newHash = hashProjectPath(projectPath);
+
+      // Legacy hash should be the first 16 chars of the new hash
+      expect(newHash.startsWith(legacyHash)).toBe(true);
+    });
+
+    it('should produce consistent results', () => {
+      const projectPath = '/path/to/test-project';
+      const hash1 = hashProjectPathLegacy(projectPath);
+      const hash2 = hashProjectPathLegacy(projectPath);
+
+      expect(hash1).toBe(hash2);
+    });
+  });
+
+  describe('Hash length constants (SMCP-057)', () => {
+    it('should have correct OLD_HASH_LENGTH', () => {
+      expect(OLD_HASH_LENGTH).toBe(16);
+    });
+
+    it('should have correct NEW_HASH_LENGTH', () => {
+      expect(NEW_HASH_LENGTH).toBe(32);
     });
   });
 

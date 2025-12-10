@@ -157,10 +157,19 @@ export const WATCHER_OPTIONS: chokidar.WatchOptions = {
 // ============================================================================
 
 /**
+ * Callback to check if reconciliation is in progress
+ * Used for SMCP-057: Prevent race condition between FileWatcher and IntegrityEngine
+ */
+export type ReconciliationCheckCallback = () => boolean;
+
+/**
  * File Watcher for real-time filesystem monitoring
  *
  * Watches a project directory for file changes and triggers incremental
  * index updates. Includes debouncing and policy filtering.
+ *
+ * SECURITY FIX (SMCP-057): Coordinates with IntegrityEngine to prevent race conditions
+ * during reconciliation. Events are queued when reconciliation is in progress.
  *
  * @example
  * ```typescript
@@ -190,6 +199,18 @@ export class FileWatcher {
   private readonly docsIndexManager?: DocsIndexManager;
   /** Optional docs fingerprints for doc file change detection */
   private readonly docsFingerprints?: DocsFingerprintsManager;
+
+  /**
+   * SMCP-057: Optional callback to check if reconciliation is in progress
+   * When provided, file events will be queued during reconciliation to prevent race conditions
+   */
+  private readonly isReconciling?: ReconciliationCheckCallback;
+
+  /**
+   * SMCP-057: Queue for events that occurred during reconciliation
+   * These events are processed after reconciliation completes
+   */
+  private reconciliationEventQueue: FileEvent[] = [];
 
   private watcher: chokidar.FSWatcher | null = null;
   private isRunning = false;
@@ -238,6 +259,7 @@ export class FileWatcher {
    * @param debounceDelay - Debounce delay in milliseconds (default: 500)
    * @param docsIndexManager - Optional DocsIndexManager for doc file routing
    * @param docsFingerprints - Optional DocsFingerprintsManager for doc file change detection
+   * @param isReconciling - Optional callback to check if reconciliation is in progress (SMCP-057)
    */
   constructor(
     projectPath: string,
@@ -247,7 +269,8 @@ export class FileWatcher {
     fingerprints: FingerprintsManager,
     debounceDelay: number = DEFAULT_DEBOUNCE_DELAY,
     docsIndexManager?: DocsIndexManager,
-    docsFingerprints?: DocsFingerprintsManager
+    docsFingerprints?: DocsFingerprintsManager,
+    isReconciling?: ReconciliationCheckCallback
   ) {
     this.projectPath = normalizePath(projectPath);
     this.indexPath = normalizePath(indexPath);
@@ -257,6 +280,7 @@ export class FileWatcher {
     this.debounceDelay = debounceDelay;
     this.docsIndexManager = docsIndexManager;
     this.docsFingerprints = docsFingerprints;
+    this.isReconciling = isReconciling;
   }
 
   // ==========================================================================
@@ -394,6 +418,55 @@ export class FileWatcher {
    */
   getIndexPath(): string {
     return this.indexPath;
+  }
+
+  /**
+   * SMCP-057: Get the count of events queued during reconciliation
+   */
+  getQueuedEventCount(): number {
+    return this.reconciliationEventQueue.length;
+  }
+
+  /**
+   * SMCP-057: Process any events that were queued during reconciliation
+   *
+   * This should be called after reconciliation completes to ensure
+   * any file changes that occurred during reconciliation are processed.
+   */
+  async processQueuedEvents(): Promise<void> {
+    const logger = getLogger();
+
+    if (this.reconciliationEventQueue.length === 0) {
+      return;
+    }
+
+    logger.info('FileWatcher', 'Processing queued events after reconciliation', {
+      queuedCount: this.reconciliationEventQueue.length,
+    });
+
+    // Copy and clear the queue to avoid re-processing
+    const eventsToProcess = [...this.reconciliationEventQueue];
+    this.reconciliationEventQueue = [];
+
+    // Process each queued event
+    for (const event of eventsToProcess) {
+      // Re-check if we should process (reconciliation might start again)
+      if (this.isReconciling && this.isReconciling()) {
+        // Re-queue events if reconciliation started again
+        this.reconciliationEventQueue.push(...eventsToProcess.slice(eventsToProcess.indexOf(event)));
+        logger.debug('FileWatcher', 'Re-queuing events - reconciliation started again', {
+          requeued: eventsToProcess.length - eventsToProcess.indexOf(event),
+        });
+        break;
+      }
+
+      // Process the event normally (will go through debouncing)
+      this.handleFileEvent(event);
+    }
+
+    logger.info('FileWatcher', 'Finished processing queued events', {
+      processed: eventsToProcess.length - this.reconciliationEventQueue.length,
+    });
   }
 
   // ==========================================================================
@@ -566,6 +639,9 @@ export class FileWatcher {
    * Handle a file event (add/change/unlink)
    *
    * Applies debouncing and queues the event for processing.
+   *
+   * SMCP-057: If reconciliation is in progress, the event is queued
+   * to be processed after reconciliation completes.
    */
   private handleFileEvent(event: FileEvent): void {
     const logger = getLogger();
@@ -581,6 +657,33 @@ export class FileWatcher {
         relativePath: event.relativePath,
       });
       this.stats.eventsSkipped++;
+      return;
+    }
+
+    // SMCP-057: Queue events during reconciliation to prevent race condition
+    if (this.isReconciling && this.isReconciling()) {
+      // Check if this file is already in the queue (dedup by path)
+      const alreadyQueued = this.reconciliationEventQueue.some(
+        (e) => e.relativePath === event.relativePath
+      );
+      if (!alreadyQueued) {
+        this.reconciliationEventQueue.push(event);
+        logger.debug('FileWatcher', 'Event queued during reconciliation', {
+          type: event.type,
+          relativePath: event.relativePath,
+          queueSize: this.reconciliationEventQueue.length,
+        });
+      } else {
+        // Update the existing queued event with the latest type
+        const existingIndex = this.reconciliationEventQueue.findIndex(
+          (e) => e.relativePath === event.relativePath
+        );
+        this.reconciliationEventQueue[existingIndex] = event;
+        logger.debug('FileWatcher', 'Updated queued event during reconciliation', {
+          type: event.type,
+          relativePath: event.relativePath,
+        });
+      }
       return;
     }
 
@@ -958,6 +1061,7 @@ export class FileWatcher {
  * @param debounceDelay - Optional debounce delay in milliseconds
  * @param docsIndexManager - Optional DocsIndexManager for doc file routing
  * @param docsFingerprints - Optional DocsFingerprintsManager for doc file change detection
+ * @param isReconciling - Optional callback to check if reconciliation is in progress (SMCP-057)
  * @returns FileWatcher instance (not yet started)
  */
 export function createFileWatcher(
@@ -968,7 +1072,8 @@ export function createFileWatcher(
   fingerprints: FingerprintsManager,
   debounceDelay?: number,
   docsIndexManager?: DocsIndexManager,
-  docsFingerprints?: DocsFingerprintsManager
+  docsFingerprints?: DocsFingerprintsManager,
+  isReconciling?: ReconciliationCheckCallback
 ): FileWatcher {
   return new FileWatcher(
     projectPath,
@@ -978,6 +1083,7 @@ export function createFileWatcher(
     fingerprints,
     debounceDelay,
     docsIndexManager,
-    docsFingerprints
+    docsFingerprints,
+    isReconciling
   );
 }

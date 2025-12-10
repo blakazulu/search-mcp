@@ -33,7 +33,7 @@ import { toRelativePath, toAbsolutePath, normalizePath, getIndexPath, safeJoin }
 import { hashFile } from '../utils/hash.js';
 import { getLogger } from '../utils/logger.js';
 import { logMemoryUsage, getAdaptiveBatchSize, isMemoryCritical } from '../utils/memory.js';
-import { validateDiskSpace } from '../utils/diskSpace.js';
+import { validateDiskSpace, startDiskSpaceMonitor, checkDiskSpaceAndAbort, DiskMonitorHandle, DEFAULT_DISK_CHECK_INTERVAL_MS } from '../utils/diskSpace.js';
 import { MCPError, ErrorCode, fileLimitWarning, isMCPError } from '../errors/index.js';
 import { isSymlink } from '../utils/secureFileAccess.js';
 
@@ -528,58 +528,98 @@ export async function createFullIndex(
     // Log memory before starting indexing
     logMemoryUsage('Starting full index');
 
+    // SMCP-057: Start continuous disk space monitoring during indexing
+    let diskSpaceAbort = false;
+    let diskSpaceError: string | undefined;
+    const diskMonitor = startDiskSpaceMonitor(
+      normalizedIndexPath,
+      (result) => {
+        if (!result.sufficient) {
+          diskSpaceAbort = true;
+          diskSpaceError = result.error;
+          logger.error('IndexManager', 'Aborting indexing due to critical disk space', {
+            error: result.error,
+          });
+          return false; // Stop monitoring
+        }
+        return true; // Continue monitoring
+      },
+      DEFAULT_DISK_CHECK_INTERVAL_MS
+    );
+
     let i = 0;
-    while (i < files.length) {
-      // Use adaptive batch sizing based on memory pressure (MCP-22)
-      const currentBatchSize = getAdaptiveBatchSize(FILE_BATCH_SIZE, 10);
-      const batch = files.slice(i, i + currentBatchSize);
-      const batchNum = Math.floor(i / FILE_BATCH_SIZE) + 1;
-      const totalBatches = Math.ceil(files.length / FILE_BATCH_SIZE);
-
-      logger.debug('IndexManager', `Processing batch ${batchNum}/${totalBatches}`, {
-        batchSize: batch.length,
-        adaptedBatchSize: currentBatchSize,
-      });
-
-      const { chunks, hashes, errors: batchErrors, failedEmbeddingCount } = await processFileBatch(
-        batch,
-        normalizedProjectPath,
-        embeddingEngine,
-        onProgress,
-        i,
-        files.length
-      );
-
-      errors.push(...batchErrors);
-      totalFailedEmbeddings += failedEmbeddingCount; // SMCP-054: Accumulate failures
-
-      // Store chunks in LanceDB
-      if (chunks.length > 0) {
-        if (onProgress) {
-          onProgress({
-            phase: 'storing',
-            current: i + batch.length,
-            total: files.length,
+    try {
+      while (i < files.length) {
+        // SMCP-057: Check if we need to abort due to disk space
+        if (diskSpaceAbort) {
+          // Save partial progress before aborting
+          if (allHashes.size > 0) {
+            fingerprintsManager.setAll(allHashes);
+            await fingerprintsManager.save();
+            metadataManager.setIndexingFailed(diskSpaceError || 'Disk space critical');
+            await metadataManager.save();
+          }
+          throw new MCPError({
+            code: ErrorCode.DISK_FULL,
+            userMessage: diskSpaceError || 'Disk space is critically low. Indexing aborted to prevent data corruption.',
+            developerMessage: `Disk space abort triggered during batch processing. Processed ${allHashes.size}/${files.length} files before abort.`,
           });
         }
 
-        await store.insertChunks(chunks);
-        totalChunks += chunks.length;
-      }
+        // Use adaptive batch sizing based on memory pressure (MCP-22)
+        const currentBatchSize = getAdaptiveBatchSize(FILE_BATCH_SIZE, 10);
+        const batch = files.slice(i, i + currentBatchSize);
+        const batchNum = Math.floor(i / FILE_BATCH_SIZE) + 1;
+        const totalBatches = Math.ceil(files.length / FILE_BATCH_SIZE);
 
-      // Collect hashes
-      for (const [path, hash] of hashes) {
-        allHashes.set(path, hash);
-      }
+        logger.debug('IndexManager', `Processing batch ${batchNum}/${totalBatches}`, {
+          batchSize: batch.length,
+          adaptedBatchSize: currentBatchSize,
+        });
 
-      // Update progress checkpoint periodically
-      metadataManager.updateIndexingProgress(allHashes.size);
-      // Save checkpoint every few batches for recovery
-      if (batchNum % 5 === 0) {
-        await metadataManager.save();
-      }
+        const { chunks, hashes, errors: batchErrors, failedEmbeddingCount } = await processFileBatch(
+          batch,
+          normalizedProjectPath,
+          embeddingEngine,
+          onProgress,
+          i,
+          files.length
+        );
 
-      i += currentBatchSize;
+        errors.push(...batchErrors);
+        totalFailedEmbeddings += failedEmbeddingCount; // SMCP-054: Accumulate failures
+
+        // Store chunks in LanceDB
+        if (chunks.length > 0) {
+          if (onProgress) {
+            onProgress({
+              phase: 'storing',
+              current: i + batch.length,
+              total: files.length,
+            });
+          }
+
+          await store.insertChunks(chunks);
+          totalChunks += chunks.length;
+        }
+
+        // Collect hashes
+        for (const [path, hash] of hashes) {
+          allHashes.set(path, hash);
+        }
+
+        // Update progress checkpoint periodically
+        metadataManager.updateIndexingProgress(allHashes.size);
+        // Save checkpoint every few batches for recovery
+        if (batchNum % 5 === 0) {
+          await metadataManager.save();
+        }
+
+        i += currentBatchSize;
+      }
+    } finally {
+      // SMCP-057: Always stop disk monitoring when done
+      diskMonitor.stop();
     }
 
     // Log memory after indexing

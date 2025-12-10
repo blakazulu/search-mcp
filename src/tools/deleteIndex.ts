@@ -19,6 +19,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { getIndexPath, getIndexesDir, isWithinDirectory, normalizePath, getDirtyFilesPath } from '../utils/paths.js';
 import { getLogger } from '../utils/logger.js';
+import { IndexingLock } from '../utils/asyncMutex.js';
 import { MCPError, ErrorCode, isMCPError } from '../errors/index.js';
 import { loadMetadata } from '../storage/metadata.js';
 import type { ToolContext } from './searchCode.js';
@@ -256,6 +257,9 @@ export async function checkIndexExistsForDelete(projectPath: string): Promise<bo
  * Stops the file watcher, closes LanceDB connection, and removes all index
  * data including the database, fingerprints, config, metadata, and logs.
  *
+ * SECURITY FIX (SMCP-057): Uses IndexingLock to prevent race conditions between
+ * concurrent create/delete/reindex operations (TOCTOU vulnerability fix).
+ *
  * @param input - The input (empty object, uses project context)
  * @param context - Tool context containing the project path and optional callbacks
  * @returns Deletion result with status
@@ -297,11 +301,36 @@ export async function deleteIndex(
     return { status: 'cancelled' };
   }
 
+  const projectPath = context.projectPath;
+
+  // SECURITY FIX (SMCP-057): Acquire global indexing lock to prevent concurrent operations
+  // This fixes the TOCTOU race condition where:
+  // 1. Thread A: checkIndexExists() returns true
+  // 2. Thread B: starts createIndex() or reindexProject()
+  // 3. Thread A: deletes the index, corrupting Thread B's work
+  const indexingLock = IndexingLock.getInstance();
+
+  // Check if indexing is already in progress (before acquiring lock)
+  if (indexingLock.isIndexing) {
+    const currentProject = indexingLock.indexingProject;
+    logger.warn('deleteIndex', 'Cannot delete - indexing in progress', {
+      currentProject,
+      requestedProject: projectPath,
+    });
+    throw new MCPError({
+      code: ErrorCode.INDEX_CORRUPT,
+      userMessage: `Cannot delete index while indexing is in progress for ${currentProject}. Please wait for it to complete.`,
+      developerMessage: `Concurrent delete prevented. Indexing active for: ${currentProject}, Delete requested for: ${projectPath}`,
+    });
+  }
+
   try {
-    const projectPath = context.projectPath;
+    // Acquire the lock with the project path (held throughout entire delete operation)
+    await indexingLock.acquire(projectPath);
+
     const indexPath = getIndexPath(projectPath);
 
-    // Step 1: Check if index exists
+    // Step 1: Check if index exists (now protected by lock - no TOCTOU race)
     const exists = await checkIndexExistsForDelete(projectPath);
     if (!exists) {
       logger.info('deleteIndex', 'No index exists for project', { projectPath });
@@ -339,7 +368,7 @@ export async function deleteIndex(
       }
     }
 
-    // Step 5: Close LanceDB connection if callback provided
+    // Step 4: Close LanceDB connection if callback provided
     if (context.closeLanceDB) {
       logger.debug('deleteIndex', 'Closing LanceDB connection');
       try {
@@ -353,7 +382,7 @@ export async function deleteIndex(
       }
     }
 
-    // Step 6: Delete the index directory
+    // Step 5: Delete the index directory
     const { success, warnings } = await safeDeleteIndex(indexPath);
 
     if (warnings.length > 0) {
@@ -385,6 +414,11 @@ export async function deleteIndex(
       developerMessage: `Unexpected error during index deletion: ${message}`,
       cause: error instanceof Error ? error : undefined,
     });
+  } finally {
+    // SECURITY FIX (SMCP-057): Always release the lock, even on error
+    if (indexingLock.isIndexing) {
+      indexingLock.release();
+    }
   }
 }
 

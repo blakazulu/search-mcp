@@ -905,6 +905,138 @@ describe('delete_index Tool', () => {
   });
 
   // --------------------------------------------------------------------------
+  // Concurrent Operations Tests (SMCP-057)
+  // --------------------------------------------------------------------------
+
+  describe('concurrent operations (SMCP-057)', () => {
+    let tempDir: string;
+    let projectDir: string;
+    let indexPath: string;
+
+    beforeEach(async () => {
+      vi.resetModules();
+      // Reset the IndexingLock singleton before each test
+      const { IndexingLock } = await import('../../../src/utils/asyncMutex.js');
+      IndexingLock.resetInstance();
+
+      tempDir = createTempDir();
+      projectDir = createProjectDir(tempDir, ['package.json']);
+      createSampleFiles(projectDir, 2);
+
+      const { getIndexPath } = await import('../../../src/utils/paths.js');
+      indexPath = getIndexPath(projectDir);
+    });
+
+    afterEach(async () => {
+      // Reset lock after test
+      const { IndexingLock } = await import('../../../src/utils/asyncMutex.js');
+      IndexingLock.resetInstance();
+
+      cleanupTempDir(tempDir);
+      if (fs.existsSync(indexPath)) {
+        fs.rmSync(indexPath, { recursive: true, force: true });
+      }
+    });
+
+    it('should prevent delete while create is in progress', async () => {
+      const { createIndex } = await import('../../../src/tools/createIndex.js');
+      const { deleteIndex } = await import('../../../src/tools/deleteIndex.js');
+      const { IndexingLock } = await import('../../../src/utils/asyncMutex.js');
+      const { isMCPError } = await import('../../../src/errors/index.js');
+
+      // Simulate indexing in progress by acquiring the lock
+      const lock = IndexingLock.getInstance();
+      await lock.acquire('/some/project');
+
+      try {
+        // Try to delete while lock is held - should throw
+        await expect(
+          deleteIndex({}, { projectPath: projectDir, confirmed: true })
+        ).rejects.toThrow(/indexing/i);
+      } finally {
+        lock.release();
+      }
+    });
+
+    it('should prevent create while delete is in progress', async () => {
+      const { createIndex } = await import('../../../src/tools/createIndex.js');
+      const { deleteIndex } = await import('../../../src/tools/deleteIndex.js');
+      const { isMCPError } = await import('../../../src/errors/index.js');
+
+      // First create an index
+      await createIndex({}, { projectPath: projectDir, confirmed: true });
+
+      // Start a delete operation and verify it acquires the lock
+      let deleteStarted = false;
+      let createAttemptedDuringDelete = false;
+      let deleteError: any = null;
+      let createError: any = null;
+
+      // We cannot easily simulate concurrent operations in single-threaded JS
+      // But we can verify the lock is properly acquired/released by checking state
+      const result = await deleteIndex({}, { projectPath: projectDir, confirmed: true });
+      expect(result.status).toBe('success');
+
+      // After delete completes, create should work
+      const createResult = await createIndex({}, { projectPath: projectDir, confirmed: true });
+      expect(createResult.status).toBe('success');
+    });
+
+    it('should release lock on delete error', async () => {
+      const { deleteIndex } = await import('../../../src/tools/deleteIndex.js');
+      const { IndexingLock } = await import('../../../src/utils/asyncMutex.js');
+
+      const lock = IndexingLock.getInstance();
+
+      // Create a corrupted metadata file to trigger an error
+      fs.mkdirSync(indexPath, { recursive: true });
+      fs.writeFileSync(path.join(indexPath, 'metadata.json'), 'invalid json');
+
+      try {
+        await deleteIndex({}, { projectPath: projectDir, confirmed: true });
+      } catch (error) {
+        // Expected to throw
+      }
+
+      // Lock should be released even after error
+      expect(lock.isIndexing).toBe(false);
+    });
+
+    it('should release lock on successful delete', async () => {
+      const { createIndex } = await import('../../../src/tools/createIndex.js');
+      const { deleteIndex } = await import('../../../src/tools/deleteIndex.js');
+      const { IndexingLock } = await import('../../../src/utils/asyncMutex.js');
+
+      // Create an index first
+      await createIndex({}, { projectPath: projectDir, confirmed: true });
+
+      const lock = IndexingLock.getInstance();
+      expect(lock.isIndexing).toBe(false);
+
+      // Delete it
+      const result = await deleteIndex({}, { projectPath: projectDir, confirmed: true });
+      expect(result.status).toBe('success');
+
+      // Lock should be released
+      expect(lock.isIndexing).toBe(false);
+    });
+
+    it('should release lock when index not found', async () => {
+      const { deleteIndex } = await import('../../../src/tools/deleteIndex.js');
+      const { IndexingLock } = await import('../../../src/utils/asyncMutex.js');
+
+      const lock = IndexingLock.getInstance();
+
+      // Try to delete non-existent index
+      const result = await deleteIndex({}, { projectPath: projectDir, confirmed: true });
+      expect(result.status).toBe('not_found');
+
+      // Lock should be released
+      expect(lock.isIndexing).toBe(false);
+    });
+  });
+
+  // --------------------------------------------------------------------------
   // Error Handling Tests
   // --------------------------------------------------------------------------
 

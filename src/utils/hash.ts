@@ -151,21 +151,34 @@ async function hashFileStream(filePath: string): Promise<string> {
 }
 
 /**
+ * Hash length constants for project path hashing
+ *
+ * SMCP-057: Increased from 16 to 32 characters for better collision resistance
+ * - OLD_HASH_LENGTH (16 chars) = 64 bits of entropy
+ * - NEW_HASH_LENGTH (32 chars) = 128 bits of entropy (recommended minimum for security)
+ */
+export const OLD_HASH_LENGTH = 16;
+export const NEW_HASH_LENGTH = 32;
+
+/**
  * Compute SHA256 hash of a project path for index directory naming
  *
- * Returns a truncated hash (first 16 characters) suitable for directory names.
+ * SMCP-057: Returns a truncated hash (first 32 characters) suitable for directory names.
+ * This provides 128 bits of entropy, which is the recommended minimum for security-sensitive
+ * applications. Previously used 16 characters (64 bits).
+ *
  * The path is normalized before hashing:
  * - Resolved to absolute path
  * - Lowercase on Windows for case-insensitivity
  * - Forward slashes normalized
  *
  * @param projectPath - Path to the project root
- * @returns First 16 characters of SHA256 hex digest
+ * @returns First 32 characters of SHA256 hex digest
  *
  * @example
  * ```typescript
  * hashProjectPath('/Users/dev/my-project')
- * // => 'a1b2c3d4e5f67890'
+ * // => 'a1b2c3d4e5f6789001234567890abcde'
  *
  * // On Windows, paths are normalized:
  * hashProjectPath('C:\\Users\\Dev\\My-Project')
@@ -190,9 +203,41 @@ export function hashProjectPath(projectPath: string): string {
     normalizedPath = normalizedPath.slice(0, -1);
   }
 
-  // Return truncated hash (16 chars provides ~64 bits of entropy)
+  // SMCP-057: Return truncated hash (32 chars provides ~128 bits of entropy)
+  // Increased from 16 chars to reduce collision probability
   const fullHash = hashString(normalizedPath);
-  return fullHash.substring(0, 16);
+  return fullHash.substring(0, NEW_HASH_LENGTH);
+}
+
+/**
+ * SMCP-057: Compute legacy (16-char) hash for backward compatibility
+ *
+ * Used during migration to support indexes created with the old hash format.
+ * Should only be used for migration/compatibility checks.
+ *
+ * @param projectPath - Path to the project root
+ * @returns First 16 characters of SHA256 hex digest (legacy format)
+ */
+export function hashProjectPathLegacy(projectPath: string): string {
+  // Resolve to absolute path
+  let normalizedPath = path.resolve(projectPath);
+
+  // Normalize for cross-platform consistency
+  normalizedPath = normalizedPath.replace(/\\/g, '/');
+
+  // On Windows, lowercase for case-insensitive comparison
+  if (process.platform === 'win32') {
+    normalizedPath = normalizedPath.toLowerCase();
+  }
+
+  // Remove trailing slash if present
+  if (normalizedPath.endsWith('/') && normalizedPath.length > 1) {
+    normalizedPath = normalizedPath.slice(0, -1);
+  }
+
+  // Return legacy 16-char hash
+  const fullHash = hashString(normalizedPath);
+  return fullHash.substring(0, OLD_HASH_LENGTH);
 }
 
 /**

@@ -13,7 +13,7 @@
 import * as path from 'node:path';
 import * as os from 'node:os';
 import * as fs from 'node:fs';
-import { hashProjectPath } from './hash.js';
+import { hashProjectPath, hashProjectPathLegacy } from './hash.js';
 
 // ============================================================================
 // Constants
@@ -387,17 +387,33 @@ export function getStorageRoot(): string {
  * Returns ~/.mcp/search/indexes/<hash>/ where hash is derived from the project path.
  * Creates the directory if it doesn't exist.
  *
+ * SMCP-057: Migration support - checks for existing legacy (16-char) index first.
+ * If a legacy index exists, returns that path to avoid breaking existing installations.
+ * New indexes are created with 32-char hashes.
+ *
  * @param projectPath - Absolute path to the project root
  * @returns Absolute path to the project's index directory
  *
  * @example
  * ```typescript
  * getIndexPath('/Users/dev/my-project')
- * // => '/Users/dev/.mcp/search/indexes/a1b2c3d4e5f67890'
+ * // => '/Users/dev/.mcp/search/indexes/a1b2c3d4e5f6789012345678901234ab' (32 chars)
+ * // or '/Users/dev/.mcp/search/indexes/a1b2c3d4e5f67890' (16 chars for legacy)
  * ```
  */
 export function getIndexPath(projectPath: string): string {
   const storageRoot = getStorageRoot();
+
+  // SMCP-057: Check for legacy (16-char) index first for backward compatibility
+  const legacyHash = hashProjectPathLegacy(projectPath);
+  const legacyIndexPath = path.join(storageRoot, INDEXES_DIR, legacyHash);
+
+  // If legacy index exists, use it (migration support)
+  if (fs.existsSync(legacyIndexPath)) {
+    return legacyIndexPath;
+  }
+
+  // Use new 32-char hash for new indexes
   const hash = hashProjectPath(projectPath);
   const indexPath = path.join(storageRoot, INDEXES_DIR, hash);
 
@@ -407,6 +423,45 @@ export function getIndexPath(projectPath: string): string {
   }
 
   return indexPath;
+}
+
+/**
+ * SMCP-057: Check if an index exists for a project (checking both old and new hash formats)
+ *
+ * @param projectPath - Absolute path to the project root
+ * @returns true if an index exists (either legacy or new format)
+ */
+export function indexPathExists(projectPath: string): boolean {
+  const storageRoot = getStorageRoot();
+  const indexesDir = path.join(storageRoot, INDEXES_DIR);
+
+  // Check legacy 16-char hash
+  const legacyHash = hashProjectPathLegacy(projectPath);
+  const legacyIndexPath = path.join(indexesDir, legacyHash);
+  if (fs.existsSync(legacyIndexPath)) {
+    return true;
+  }
+
+  // Check new 32-char hash
+  const newHash = hashProjectPath(projectPath);
+  const newIndexPath = path.join(indexesDir, newHash);
+  return fs.existsSync(newIndexPath);
+}
+
+/**
+ * SMCP-057: Check if an index is using the legacy (16-char) hash format
+ *
+ * @param projectPath - Absolute path to the project root
+ * @returns true if the index uses legacy format, false if new format or doesn't exist
+ */
+export function isLegacyIndex(projectPath: string): boolean {
+  const storageRoot = getStorageRoot();
+  const indexesDir = path.join(storageRoot, INDEXES_DIR);
+
+  const legacyHash = hashProjectPathLegacy(projectPath);
+  const legacyIndexPath = path.join(indexesDir, legacyHash);
+
+  return fs.existsSync(legacyIndexPath);
 }
 
 /**

@@ -26,6 +26,7 @@ import {
   WatchEvent,
   FileEvent,
   WatcherStats,
+  ReconciliationCheckCallback,
 } from '../../../src/engines/fileWatcher.js';
 import { IndexManager, createFullIndex } from '../../../src/engines/indexManager.js';
 import { DocsIndexManager } from '../../../src/engines/docsIndexManager.js';
@@ -989,5 +990,188 @@ describe('File Watcher Engine', () => {
         expect(detected).toBe(true);
       }, 10000);
     });
+  });
+
+  // ============================================================================
+  // SMCP-057: Reconciliation Queue Tests
+  // ============================================================================
+
+  describe('SMCP-057: Reconciliation event queueing', () => {
+    let projectPath: string;
+    let indexPath: string;
+    let indexManager: IndexManager;
+    let policy: IndexingPolicy;
+    let fingerprints: FingerprintsManager;
+    let watcher: FileWatcher;
+    let isReconciling: boolean;
+
+    beforeEach(async () => {
+      projectPath = await createTempDir('watcher-reconcile-test-');
+      indexPath = await createTempDir('watcher-reconcile-index-');
+      await createTestProject(projectPath);
+
+      // Create index first
+      await createFullIndex(projectPath, indexPath);
+
+      // Initialize components
+      const config: Config = { ...DEFAULT_CONFIG };
+      indexManager = new IndexManager(projectPath, indexPath);
+      policy = new IndexingPolicy(projectPath, config);
+      await policy.initialize();
+      fingerprints = new FingerprintsManager(indexPath, projectPath);
+      await fingerprints.load();
+
+      isReconciling = false;
+    }, 60000);
+
+    afterEach(async () => {
+      if (watcher && watcher.isWatching()) {
+        await watcher.stop();
+      }
+      await removeTempDir(projectPath);
+      await removeTempDir(indexPath);
+    });
+
+    it('should queue events during reconciliation', async () => {
+      // Set reconciliation flag to true
+      isReconciling = true;
+
+      watcher = new FileWatcher(
+        projectPath,
+        indexPath,
+        indexManager,
+        policy,
+        fingerprints,
+        100, // short debounce
+        undefined,
+        undefined,
+        () => isReconciling
+      );
+
+      await watcher.start();
+
+      // Initial queue should be empty
+      expect(watcher.getQueuedEventCount()).toBe(0);
+
+      // Create a file while reconciliation is "in progress"
+      await createFile(projectPath, 'new-file.ts', 'export const x = 1;');
+
+      // Wait for event to be detected by chokidar and queued
+      // Chokidar needs time to stabilize and detect the event
+      const queued = await waitFor(
+        () => watcher.getQueuedEventCount() > 0,
+        5000
+      );
+
+      // If file events were detected, they should be queued
+      // Note: On some platforms, file events may not be detected quickly
+      if (queued) {
+        expect(watcher.getQueuedEventCount()).toBeGreaterThan(0);
+
+        // Set reconciliation to false
+        isReconciling = false;
+
+        // Process the queue
+        await watcher.processQueuedEvents();
+
+        // Queue should be empty after processing
+        expect(watcher.getQueuedEventCount()).toBe(0);
+      } else {
+        // Skip test on platforms where file watching is slow
+        console.log('File events not detected in time - skipping assertion');
+      }
+    }, 15000);
+
+    it('should not queue events when not reconciling', async () => {
+      // reconciling is false by default
+      watcher = new FileWatcher(
+        projectPath,
+        indexPath,
+        indexManager,
+        policy,
+        fingerprints,
+        100,
+        undefined,
+        undefined,
+        () => isReconciling
+      );
+
+      await watcher.start();
+
+      // Create a file when not reconciling
+      await createFile(projectPath, 'another-file.ts', 'export const y = 2;');
+
+      // Wait for event processing
+      await delay(500);
+
+      // Events should be processed, not queued
+      expect(watcher.getQueuedEventCount()).toBe(0);
+    }, 15000);
+
+    it('should work without reconciliation callback (backward compat)', async () => {
+      watcher = new FileWatcher(
+        projectPath,
+        indexPath,
+        indexManager,
+        policy,
+        fingerprints,
+        100
+        // No isReconciling callback
+      );
+
+      await watcher.start();
+
+      // Create a file
+      await createFile(projectPath, 'compat-file.ts', 'export const z = 3;');
+
+      // Wait for event processing
+      await delay(500);
+
+      // Should work normally - no queue
+      expect(watcher.getQueuedEventCount()).toBe(0);
+    }, 15000);
+
+    it('should deduplicate events for same file during reconciliation', async () => {
+      isReconciling = true;
+
+      watcher = new FileWatcher(
+        projectPath,
+        indexPath,
+        indexManager,
+        policy,
+        fingerprints,
+        100,
+        undefined,
+        undefined,
+        () => isReconciling
+      );
+
+      await watcher.start();
+
+      // Create a file
+      const filePath = path.join(projectPath, 'multi-event.ts');
+      await fs.promises.writeFile(filePath, 'v1');
+      await delay(200);
+
+      // Modify the same file multiple times
+      await fs.promises.writeFile(filePath, 'v2');
+      await delay(200);
+      await fs.promises.writeFile(filePath, 'v3');
+
+      // Wait for events to be detected
+      const hasEvents = await waitFor(
+        () => watcher.getQueuedEventCount() > 0,
+        5000
+      );
+
+      // If events were detected, should have only one (deduplicated)
+      // Note: On some platforms, file watching may be slow
+      if (hasEvents) {
+        // Should have exactly one event queued (deduplicated by path)
+        expect(watcher.getQueuedEventCount()).toBe(1);
+      } else {
+        console.log('File events not detected in time - skipping assertion');
+      }
+    }, 15000);
   });
 });

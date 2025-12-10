@@ -369,10 +369,10 @@ describe('Path Utilities', () => {
         expect(result).toContain('.mcp');
         expect(result).toContain('search');
         expect(result).toContain('indexes');
-        // Should contain a hash (16 hex characters)
+        // SMCP-057: Should contain a hash (32 hex characters for new indexes, 16 for legacy)
         const parts = result.split(path.sep);
         const hash = parts[parts.length - 1];
-        expect(hash).toMatch(/^[a-f0-9]{16}$/);
+        expect(hash).toMatch(/^[a-f0-9]{16,32}$/);
       });
 
       it('should create directory if not exists', () => {

@@ -12,7 +12,8 @@ Complete reference for all Search MCP tools.
 | `search_code` | Semantic search for code | No |
 | `search_docs` | Semantic search for documentation | No |
 | `search_by_path` | Find files by glob pattern | No |
-| `get_index_status` | Show index statistics | No |
+| `get_index_status` | Show index statistics and paths | No |
+| `get_config` | Get config file path and contents | No |
 | `reindex_project` | Rebuild entire index | Yes |
 | `reindex_file` | Re-index a single file | No |
 | `delete_index` | Remove project index | Yes |
@@ -160,7 +161,7 @@ Finds files by glob pattern matching against indexed file paths.
 
 ## get_index_status
 
-Returns statistics about the current project's index.
+Returns statistics about the current project's index, including paths to the index and config files.
 
 ### Parameters
 
@@ -170,26 +171,57 @@ None required.
 
 ```typescript
 {
-  exists: boolean;
-  projectPath: string;
-  indexPath: string;
-  stats?: {
-    totalFiles: number;
-    totalChunks: number;
-    lastIndexed: string;  // ISO timestamp
-    indexingStrategy: "realtime" | "lazy" | "git";
-  };
-  docsStats?: {
-    totalFiles: number;
-    totalChunks: number;
-  };
-  config?: {
-    include: string[];
-    exclude: string[];
-    indexingStrategy: string;
-  };
+  status: "ready" | "indexing" | "not_found" | "incomplete" | "failed";
+  projectPath?: string;     // Absolute path to project root
+  indexPath?: string;       // Absolute path to index directory
+  configPath?: string;      // Absolute path to config file
+  totalFiles?: number;
+  totalChunks?: number;
+  lastUpdated?: string;     // ISO timestamp
+  storageSize?: string;     // e.g., "45MB"
+  watcherActive?: boolean;
+  indexingStrategy?: "realtime" | "lazy" | "git";
+  pendingFiles?: number;    // For lazy strategy
 }
 ```
+
+---
+
+## get_config
+
+Returns the configuration file path and contents for the current project. Use this to find and view your project config.
+
+### Parameters
+
+None required.
+
+### Returns
+
+```typescript
+{
+  exists: boolean;          // Whether config file exists
+  configPath: string;       // Absolute path to config file
+  indexPath: string;        // Absolute path to index directory
+  config?: {                // Config contents (if exists)
+    include: string[];
+    exclude: string[];
+    respectGitignore: boolean;
+    maxFileSize: string;
+    maxFiles: number;
+    indexingStrategy: "realtime" | "lazy" | "git";
+    docPatterns: string[];
+    indexDocs: boolean;
+  };
+  message: string;          // User-friendly message
+}
+```
+
+### Example Usage
+
+Ask your AI assistant:
+- "Where is my config file?"
+- "Show me my search config"
+- "What's my indexing configuration?"
 
 ---
 

@@ -3,7 +3,7 @@
  *
  * Tests cover:
  * - Server creation and initialization
- * - Tool registration (all 8 tools)
+ * - Tool registration (all 9 tools)
  * - list_tools handler
  * - call_tool handler routing
  * - Error handling
@@ -120,10 +120,10 @@ describe('MCP Server', () => {
   // --------------------------------------------------------------------------
 
   describe('tools registry', () => {
-    it('should export all 8 tools', async () => {
+    it('should export all 9 tools', async () => {
       const { tools } = await import('../../src/server.js');
 
-      expect(tools).toHaveLength(8);
+      expect(tools).toHaveLength(9);
     });
 
     it('should include create_index tool', async () => {
@@ -206,6 +206,16 @@ describe('MCP Server', () => {
       expect(tool?.requiresConfirmation).toBe(true);
     });
 
+    it('should include get_config tool', async () => {
+      const { tools } = await import('../../src/server.js');
+
+      const tool = tools.find(t => t.name === 'get_config');
+      expect(tool).toBeDefined();
+      expect(tool?.description).toBeDefined();
+      expect(tool?.inputSchema).toBeDefined();
+      expect(tool?.requiresConfirmation).toBe(false);
+    });
+
     it('should have correct tool names', async () => {
       const { tools } = await import('../../src/server.js');
 
@@ -215,6 +225,7 @@ describe('MCP Server', () => {
       expect(toolNames).toContain('search_docs');
       expect(toolNames).toContain('search_by_path');
       expect(toolNames).toContain('get_index_status');
+      expect(toolNames).toContain('get_config');
       expect(toolNames).toContain('reindex_project');
       expect(toolNames).toContain('reindex_file');
       expect(toolNames).toContain('delete_index');
@@ -437,11 +448,13 @@ describe('MCP Server', () => {
 
       const createIndexTool = tools.find(t => t.name === 'create_index');
       const getIndexStatusTool = tools.find(t => t.name === 'get_index_status');
+      const getConfigTool = tools.find(t => t.name === 'get_config');
       const reindexProjectTool = tools.find(t => t.name === 'reindex_project');
       const deleteIndexTool = tools.find(t => t.name === 'delete_index');
 
       expect(createIndexTool?.inputSchema.required).toEqual([]);
       expect(getIndexStatusTool?.inputSchema.required).toEqual([]);
+      expect(getConfigTool?.inputSchema.required).toEqual([]);
       expect(reindexProjectTool?.inputSchema.required).toEqual([]);
       expect(deleteIndexTool?.inputSchema.required).toEqual([]);
     });
@@ -615,7 +628,7 @@ describe('MCP Server', () => {
     it('should mark read-only tools as not requiring confirmation', async () => {
       const { tools } = await import('../../src/server.js');
 
-      const readOnlyTools = ['search_code', 'search_docs', 'search_by_path', 'get_index_status', 'reindex_file'];
+      const readOnlyTools = ['search_code', 'search_docs', 'search_by_path', 'get_index_status', 'get_config', 'reindex_file'];
 
       for (const toolName of readOnlyTools) {
         const tool = tools.find(t => t.name === toolName);

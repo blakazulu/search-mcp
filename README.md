@@ -212,7 +212,8 @@ For full configuration options, see the [Configuration Reference](docs/configura
 | `search_code` | Semantic search for relevant code chunks | No |
 | `search_docs` | Semantic search for documentation files | No |
 | `search_by_path` | Find files by name/glob pattern | No |
-| `get_index_status` | Show index statistics | No |
+| `get_index_status` | Show index statistics and paths | No |
+| `get_config` | Get config file path and contents | No |
 | `reindex_project` | Rebuild the entire index | Yes |
 | `reindex_file` | Re-index a single file | No |
 | `delete_index` | Remove the project index | Yes |

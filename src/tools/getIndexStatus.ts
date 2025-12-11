@@ -17,7 +17,7 @@ import { z } from 'zod';
 import * as fs from 'node:fs';
 import { loadMetadata, type Metadata } from '../storage/metadata.js';
 import { LanceDBStore } from '../storage/lancedb.js';
-import { getIndexPath, getLanceDbPath } from '../utils/paths.js';
+import { getIndexPath, getLanceDbPath, getConfigPath } from '../utils/paths.js';
 import { getLogger } from '../utils/logger.js';
 import { indexNotFound, MCPError, ErrorCode, isMCPError } from '../errors/index.js';
 import type { ToolContext } from './searchCode.js';
@@ -55,6 +55,10 @@ export interface GetIndexStatusOutput {
   status: IndexStatus;
   /** Absolute path to the project root (if index exists) */
   projectPath?: string;
+  /** Absolute path to the index directory */
+  indexPath?: string;
+  /** Absolute path to the config file */
+  configPath?: string;
   /** Total number of files indexed */
   totalFiles?: number;
   /** Total number of chunks in the index */
@@ -275,10 +279,15 @@ export async function collectStatus(
     }
   }
 
+  // Get config path
+  const configPath = getConfigPath(indexPath);
+
   // Build the output
   const output: GetIndexStatusOutput = {
     status,
     projectPath: metadata.projectPath,
+    indexPath,
+    configPath,
     totalFiles: metadata.stats.totalFiles,
     totalChunks: metadata.stats.totalChunks,
     lastUpdated,

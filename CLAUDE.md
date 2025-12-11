@@ -101,7 +101,8 @@ Indexes stored at `~/.mcp/search/indexes/<SHA256(project_path)>/` containing:
 | `search_code` | Semantic search for code (query + top_k) | No |
 | `search_docs` | Semantic search for docs (.md, .txt) | No |
 | `search_by_path` | Find files by glob pattern | No |
-| `get_index_status` | Show index statistics | No |
+| `get_index_status` | Show index statistics and paths | No |
+| `get_config` | Get config file path and contents | No |
 | `reindex_project` | Rebuild entire index | Yes |
 | `reindex_file` | Re-index single file | No |
 | `delete_index` | Remove project index | Yes |

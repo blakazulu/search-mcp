@@ -7,8 +7,8 @@
  *
  * Features:
  * - stdio transport for local MCP communication
- * - All 8 tools registered (search_code, search_docs, search_by_path,
- *   get_index_status, create_index, reindex_project, reindex_file, delete_index)
+ * - All 9 tools registered (search_code, search_docs, search_by_path,
+ *   get_index_status, get_config, create_index, reindex_project, reindex_file, delete_index)
  * - Lazy initialization of shared components
  * - Graceful shutdown on SIGINT/SIGTERM
  * - Proper error handling and logging
@@ -82,6 +82,10 @@ import {
   deleteIndex,
   type DeleteIndexContext,
 } from './tools/deleteIndex.js';
+import {
+  getConfigTool,
+  getConfig as getConfigHandler,
+} from './tools/getConfig.js';
 
 // ============================================================================
 // Tool Registry
@@ -102,6 +106,7 @@ const tools = [
   searchDocsTool,
   searchByPathTool,
   getIndexStatusTool,
+  getConfigTool,
   reindexProjectTool,
   reindexFileTool,
   deleteIndexTool,
@@ -116,6 +121,7 @@ type ToolName =
   | 'search_docs'
   | 'search_by_path'
   | 'get_index_status'
+  | 'get_config'
   | 'reindex_project'
   | 'reindex_file'
   | 'delete_index';
@@ -533,6 +539,14 @@ async function executeTool(
           orchestrator: serverContext.orchestrator || undefined,
         };
         result = await getIndexStatus({}, context);
+        break;
+      }
+
+      case 'get_config': {
+        const context: ToolContext = {
+          projectPath,
+        };
+        result = await getConfigHandler({}, context);
         break;
       }
 

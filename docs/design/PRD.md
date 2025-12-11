@@ -195,7 +195,6 @@ Priority chain for detecting project root:
   "enhancedToolDescriptions": false,
 
   "indexingStrategy": "realtime",
-  "lazyIdleThreshold": 30,
 
   "_hardcodedExcludes": [
     "// These patterns are ALWAYS excluded and cannot be overridden:",
@@ -218,8 +217,7 @@ Priority chain for detecting project root:
     "docPatterns": "Glob patterns for documentation files. Default: ['**/*.md', '**/*.txt'].",
     "indexDocs": "If true, index documentation files separately with prose-optimized chunking.",
     "enhancedToolDescriptions": "If true, tool descriptions include hints for AI to prefer search over re-reading context. Default: false.",
-    "indexingStrategy": "Indexing strategy: 'realtime' (immediate), 'lazy' (on idle/search), 'git' (on commit). Default: 'realtime'.",
-    "lazyIdleThreshold": "Seconds of inactivity before lazy indexing triggers. Default: 30."
+    "indexingStrategy": "Indexing strategy: 'realtime' (immediate), 'lazy' (on search), 'git' (on commit). Default: 'realtime'."
   }
 }
 ```

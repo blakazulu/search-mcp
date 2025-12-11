@@ -396,7 +396,6 @@ describe('Config Manager', () => {
       expect(loaded.docPatterns).toEqual(['**/*.md', '**/*.txt']);
       expect(loaded.indexDocs).toBe(true);
       expect(loaded.indexingStrategy).toBe('realtime');
-      expect(loaded.lazyIdleThreshold).toBe(30);
     });
 
     it('should apply defaults for new fields in existing configs (backward compatibility)', async () => {
@@ -421,7 +420,6 @@ describe('Config Manager', () => {
       expect(loaded.maxFileSize).toBe('1MB');
       // New fields should get defaults
       expect(loaded.indexingStrategy).toBe('realtime');
-      expect(loaded.lazyIdleThreshold).toBe(30);
     });
 
     it('should load custom docPatterns and indexDocs', async () => {
@@ -585,7 +583,6 @@ describe('Config Manager', () => {
       expect(config._availableOptions.indexDocs).toBeDefined();
       expect(config._availableOptions.enhancedToolDescriptions).toBeDefined();
       expect(config._availableOptions.indexingStrategy).toBeDefined();
-      expect(config._availableOptions.lazyIdleThreshold).toBeDefined();
     });
 
     it('should include docPatterns and indexDocs fields', async () => {
@@ -618,16 +615,6 @@ describe('Config Manager', () => {
 
       expect(config.indexingStrategy).toBe('realtime');
     });
-
-    it('should include lazyIdleThreshold field with default 30', async () => {
-      await generateDefaultConfig(indexPath);
-
-      const configPath = path.join(indexPath, 'config.json');
-      const content = await fs.promises.readFile(configPath, 'utf-8');
-      const config = JSON.parse(content);
-
-      expect(config.lazyIdleThreshold).toBe(30);
-    });
   });
 
   // ==========================================================================
@@ -659,7 +646,6 @@ describe('Config Manager', () => {
           indexDocs: false,
           enhancedToolDescriptions: true,
           indexingStrategy: 'git',
-          lazyIdleThreshold: 120,
         };
 
         const configPath = path.join(indexPath, 'config.json');

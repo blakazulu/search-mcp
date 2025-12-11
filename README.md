@@ -144,7 +144,7 @@ Config is auto-generated at `~/.mcp/search/indexes/<project-hash>/config.json`.
 | Strategy | Best For |
 |----------|----------|
 | `realtime` | Small projects, instant freshness |
-| `lazy` | Large projects, reduce CPU |
+| `lazy` | Large projects, index only when searching |
 | `git` | Only search committed code |
 
 For full configuration options, see the [Configuration Reference](docs/configuration.md).

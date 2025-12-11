@@ -56,7 +56,6 @@ The config file is **auto-generated** on first indexing with sensible defaults. 
   "enhancedToolDescriptions": false,
 
   "indexingStrategy": "realtime",
-  "lazyIdleThreshold": 30,
 
   "_hardcodedExcludes": [
     "// These patterns are ALWAYS excluded and cannot be overridden:",
@@ -79,8 +78,7 @@ The config file is **auto-generated** on first indexing with sensible defaults. 
     "docPatterns": "Glob patterns for documentation files.",
     "indexDocs": "If true, index docs separately with prose-optimized chunking.",
     "enhancedToolDescriptions": "If true, add AI hints to tool descriptions.",
-    "indexingStrategy": "Indexing strategy: 'realtime' (immediate), 'lazy' (on idle/search), 'git' (on commit)",
-    "lazyIdleThreshold": "Seconds of inactivity before lazy indexing triggers (default: 30)"
+    "indexingStrategy": "Indexing strategy: 'realtime' (immediate), 'lazy' (on search), 'git' (on commit)"
   }
 }
 ```
@@ -100,7 +98,6 @@ The config file is **auto-generated** on first indexing with sensible defaults. 
 | `indexDocs` | `boolean` | `true` | Enable documentation indexing (separate from code) |
 | `enhancedToolDescriptions` | `boolean` | `false` | Add AI hints to tool descriptions |
 | `indexingStrategy` | `string` | `"realtime"` | When to index: `"realtime"`, `"lazy"`, or `"git"` |
-| `lazyIdleThreshold` | `number` | `30` | Seconds of inactivity before lazy strategy indexes |
 
 ---
 
@@ -111,7 +108,7 @@ Control when and how file changes are indexed. Choose based on your project size
 | Strategy | File Watching | When Indexing Happens | Best For |
 |----------|---------------|----------------------|----------|
 | `realtime` | All files continuously | Immediately on change | Small projects, instant freshness |
-| `lazy` | All files continuously | On idle (30s) or before search | Large projects, reduce CPU |
+| `lazy` | All files continuously | Before search (on-demand) | Large projects, index only when needed |
 | `git` | Only `.git/logs/HEAD` | After each git commit | Minimal overhead, committed-only search |
 
 ---
@@ -142,24 +139,21 @@ Control when and how file changes are indexed. Choose based on your project size
 
 ```json
 {
-  "indexingStrategy": "lazy",
-  "lazyIdleThreshold": 30
+  "indexingStrategy": "lazy"
 }
 ```
 
 **How it works:**
 - Watches all project files (same as realtime)
 - Queues changes instead of processing immediately
-- Indexes when:
-  1. System is idle for `lazyIdleThreshold` seconds (default: 30), OR
-  2. Before any search executes (auto-flush)
+- Indexes only when a search is performed (true lazy loading)
 
 **Best for:**
 - Large projects (5,000+ files)
 - Reducing CPU usage during active editing
-- When slight search delay is acceptable
+- When you only need updated results at search time
 
-**Trade-off:** First search after edits may take slightly longer (while flushing)
+**Trade-off:** First search after edits may take slightly longer (while indexing pending changes)
 
 ---
 

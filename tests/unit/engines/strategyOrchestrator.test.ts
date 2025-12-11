@@ -322,17 +322,6 @@ describe('StrategyOrchestrator', () => {
         expect(orchestrator.isActive()).toBe(true);
       });
 
-      it('should use custom idle threshold from config', async () => {
-        await orchestrator.setStrategy(
-          createConfig({ indexingStrategy: 'lazy', lazyIdleThreshold: 60 })
-        );
-
-        const strategy = orchestrator.getCurrentStrategy();
-        expect(strategy?.name).toBe('lazy');
-        // Verify through stats that the strategy is running
-        expect(strategy?.isActive()).toBe(true);
-      });
-
       it('should report lazy in stats', async () => {
         await orchestrator.setStrategy(createConfig({ indexingStrategy: 'lazy' }));
 

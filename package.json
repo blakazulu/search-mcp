@@ -36,7 +36,8 @@
     "url": "https://github.com/blakazulu/search-mcp.git"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "dependencies": {
     "@lancedb/lancedb": "^0.13.0",

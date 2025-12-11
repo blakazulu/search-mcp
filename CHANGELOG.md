@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Config Matrix Test Runner** (`tests/configs/configMatrix.test.ts`) (SMCP-069)
+  - Systematically tests all 21 configuration combinations
+  - Runs 20 test queries against each config
+  - Collects quality metrics (precision@5, relevance hits)
+  - Collects performance metrics (latency, memory, tokens)
+  - Generates JSON and Markdown reports to `tests/reports/`
+  - FULL_CODEBASE environment variable for testing against actual codebase
+
 ## [1.2.0] - 2025-12-11
 
 ### Added

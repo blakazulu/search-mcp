@@ -1,14 +1,30 @@
-# Search MCP
+# Search MCP 🔍
+
+**Make your AI 20x smarter about your code.**
+
+```bash
+npx @liraz-sbz/search-mcp
+```
+
+Your AI assistant searches your entire codebase semantically. No API keys. No cloud. 100% local.
 
 [![npm version](https://img.shields.io/npm/v/@liraz-sbz/search-mcp.svg)](https://www.npmjs.com/package/@liraz-sbz/search-mcp)
+[![npm downloads](https://img.shields.io/npm/dm/@liraz-sbz/search-mcp.svg)](https://www.npmjs.com/package/@liraz-sbz/search-mcp)
+[![GitHub stars](https://img.shields.io/github/stars/blakazulu/search-mcp.svg)](https://github.com/blakazulu/search-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org/)
 
-> **"Install once. It just works. Claude always knows your code."**
+**Works with:** Claude Desktop • Claude Code • Cursor • Windsurf • Antigravity
 
-A local-first Model Context Protocol (MCP) server that provides semantic search capabilities for your codebase.
+---
 
-**Supported Clients:** Claude Desktop, Claude Code, Cursor, Windsurf, Antigravity, and any MCP-compatible client
+## Why Search MCP?
+
+| Without Search MCP | With Search MCP |
+|--------------------|-----------------|
+| Copy-paste files manually | AI finds code automatically |
+| ~159,000 tokens per query | ~7,800 tokens per query |
+| "Context limit exceeded" | Always fits |
+| Multiple tool calls | Single 14ms search |
 
 ---
 
@@ -18,8 +34,9 @@ A local-first Model Context Protocol (MCP) server that provides semantic search 
 - [Features](#features)
 - [Quick Start](#quick-start)
 - [What Can You Ask?](#what-can-you-ask)
-- [MCP Search in Action](#mcp-search-in-action)
+- [Performance](#performance)
 - [Configuration](#configuration)
+- [FAQ](#faq)
 - [Documentation](#documentation)
 - [For Developers](#for-developers)
 - [Updating & Uninstalling](#updating--uninstalling)
@@ -63,29 +80,16 @@ AI: "Based on src/auth/login.ts, here's how login works..."
 
 ## Quick Start
 
-### Step 1: Install Node.js
+**Prerequisites:** [Node.js 18+](https://nodejs.org/)
 
-If you don't have Node.js, download it from [nodejs.org](https://nodejs.org/) (version 18 or higher).
+### 1. Add to your AI assistant config
 
-### Step 2: Install Search MCP
+<details>
+<summary><b>Claude Desktop</b></summary>
 
-```bash
-npm install -g @liraz-sbz/search-mcp
-```
-
-### Step 3: Configure Your AI Assistant
-
-**Claude Desktop** (full example below) | [Claude Code](docs/getting-started.md#claude-code-cli) | [Cursor](docs/getting-started.md#cursor) | [Windsurf](docs/getting-started.md#windsurf) | [Antigravity](docs/getting-started.md#antigravity)
-
-#### Claude Desktop Setup
-
-1. Find your config file:
-   - **Mac:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-   - **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
-
-2. Open the file in any text editor
-
-3. Add this configuration (or merge with existing):
+Edit config file:
+- **Mac:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
 
 ```json
 {
@@ -97,23 +101,31 @@ npm install -g @liraz-sbz/search-mcp
   }
 }
 ```
+</details>
 
-4. Save the file and restart Claude Desktop
+<details>
+<summary><b>Claude Code</b></summary>
 
-For other clients, see the [Getting Started Guide](docs/getting-started.md).
+```bash
+claude mcp add search -- npx @liraz-sbz/search-mcp
+```
+</details>
 
-### Step 4: Start Using It
+<details>
+<summary><b>Cursor / Windsurf / Other</b></summary>
 
-1. Open your project folder in your AI assistant
-2. Ask a question about your code:
-   ```
-   "How does the authentication work?"
-   ```
-3. On first use, confirm the indexing prompt (type "yes")
-4. Wait for indexing to complete (~1 minute for most projects)
-5. Get your answer!
+See the [Getting Started Guide](docs/getting-started.md) for your client.
+</details>
 
-From now on, just ask questions naturally. The AI will automatically search your code.
+### 2. Restart your AI assistant
+
+### 3. Ask about your code
+
+```
+"How does login work?"
+```
+
+On first use, confirm indexing when prompted. That's it!
 
 ---
 
@@ -132,49 +144,17 @@ See more [examples and use cases](docs/examples.md).
 
 ---
 
-## MCP Search in Action
+## Performance
 
-We tested MCP semantic search against traditional Grep+Read approaches on a real codebase (238 files, 970 chunks). Here are the results:
+| Metric | Value |
+|--------|-------|
+| **Efficiency vs Grep** | 20.4x faster |
+| **Search speed** | 14-17ms |
+| **Tokens per query** | ~7,800 |
 
-### Efficiency Comparison
+Semantic search returns focused code chunks instead of entire files. Your AI stays under context limits even on large codebases.
 
-| Query Type | MCP Tokens | Grep Tokens | Efficiency Gain |
-|------------|------------|-------------|-----------------|
-| Conceptual ("how does file watching work") | 9,224 | 108,015 | **11.7x** |
-| Pattern ("error handling patterns") | 7,628 | 192,191 | **25.2x** |
-| Technical ("LanceDB vector search") | 9,506 | 174,552 | **18.4x** |
-| Broad ("security vulnerabilities") | 5,104 | 143,376 | **28.1x** |
-| Documentation ("configuration options") | 7,591 | 177,003 | **23.3x** |
-| **TOTAL** | **39,053** | **795,137** | **~20.4x** |
-
-### Key Findings
-
-| Metric | MCP Search | Manual (Grep+Read) |
-|--------|------------|-------------------|
-| **Token Efficiency** | ~7,800 tokens/query | ~159,000 tokens/query |
-| **Relevance** | HIGH (semantic understanding) | MEDIUM (keyword noise) |
-| **Search Speed** | 14-17ms | Multiple tool calls |
-| **Scalability** | Constant (10 chunks) | Linear with codebase |
-
-### Configuration Testing
-
-We also tested 21 different configuration combinations to find optimal settings:
-
-| Best In Category | Configuration | Value |
-|-----------------|---------------|-------|
-| Lowest Latency | all-features | 18.8ms |
-| Highest Precision@5 | default | 22% |
-| Best Token Efficiency | alpha-0.5 | 2.5x vs Grep |
-
-### Why MCP Wins
-
-1. **Chunked Retrieval** - Returns only relevant code portions, not entire files
-2. **Semantic Understanding** - Finds conceptually related content without exact keywords
-3. **Pre-filtered Results** - No manual file selection needed
-4. **Consistent Size** - Always ~10 chunks regardless of codebase size
-5. **Automatic Deduplication** - 15-17% reduction from overlapping chunks
-
-> For the full test methodology and raw data, see [docs/search-comparison-test.md](docs/search-comparison-test.md)
+[Full benchmark details →](docs/search-comparison-test.md)
 
 ---
 
@@ -204,6 +184,22 @@ Config is auto-generated when you first index a project:
 | `git` | Only search committed code |
 
 For full configuration options, see the [Configuration Reference](docs/configuration.md).
+
+---
+
+## FAQ
+
+**Does my code leave my computer?**
+Never. All processing happens locally. No cloud, no API calls, no tracking.
+
+**How big can my codebase be?**
+Tested on projects with 1000+ files. Indexing takes ~1 minute for most projects.
+
+**What languages are supported?**
+Any text-based code or documentation. The semantic search understands concepts across all languages.
+
+**How do I update the index?**
+File changes are detected automatically. Use `reindex_project` for a full rebuild.
 
 ---
 

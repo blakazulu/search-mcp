@@ -19,7 +19,7 @@ import { getEmbeddingEngine } from '../engines/embedding.js';
 import { DocsLanceDBStore } from '../storage/docsLancedb.js';
 import { SearchResult } from '../storage/lancedb.js';
 import { loadMetadata } from '../storage/metadata.js';
-import { getIndexPath } from '../utils/paths.js';
+import { getIndexPath, getDocsFTSIndexPath } from '../utils/paths.js';
 import { getLogger } from '../utils/logger.js';
 import { indexNotFound, MCPError, ErrorCode } from '../errors/index.js';
 import { MAX_QUERY_LENGTH } from '../utils/limits.js';
@@ -30,6 +30,15 @@ import {
   type CompactSearchOutput,
 } from '../utils/searchResultProcessing.js';
 import type { StrategyOrchestrator } from '../engines/strategyOrchestrator.js';
+import {
+  performHybridSearch,
+  validateSearchMode,
+  validateAlpha,
+  type SearchMode,
+  type HybridSearchContext,
+} from '../engines/hybridSearch.js';
+import { loadFTSEngine } from '../engines/ftsEngineFactory.js';
+import type { FTSEngine } from '../engines/ftsEngine.js';
 
 // ============================================================================
 // Input/Output Schemas
@@ -39,6 +48,7 @@ import type { StrategyOrchestrator } from '../engines/strategyOrchestrator.js';
  * Input schema for search_docs tool
  *
  * Validates the query string and optional top_k parameter.
+ * SMCP-061: Added mode and alpha parameters for hybrid search.
  */
 export const SearchDocsInputSchema = z.object({
   /** The question or topic to search for in documentation */
@@ -56,12 +66,24 @@ export const SearchDocsInputSchema = z.object({
     .min(1)
     .max(50)
     .default(10)
-    .describe('Number of results to return (1-50)'),
+    .describe('Number of results to return (1-50, default 10)'),
   /** Return results in compact format with shorter field names (default false) */
   compact: z
     .boolean()
     .default(false)
     .describe('Return results in compact format with shorter field names'),
+  /** Search mode: 'hybrid' (default), 'vector' (semantic only), or 'fts' (keyword only) */
+  mode: z
+    .enum(['hybrid', 'vector', 'fts'])
+    .optional()
+    .describe("Search mode: 'hybrid' combines vector+keyword (default), 'vector' for semantic only, 'fts' for keyword only"),
+  /** Alpha weight for hybrid search (0-1). Higher = more vector weight. Default from config or 0.5 */
+  alpha: z
+    .number()
+    .min(0)
+    .max(1)
+    .optional()
+    .describe('Alpha weight for hybrid search (0-1). Higher values favor semantic search, lower favor keyword search. Default: 0.5'),
 });
 
 /**
@@ -97,6 +119,8 @@ export interface SearchDocsOutput {
   searchTimeMs: number;
   /** Warning message if index is in an incomplete state (MCP-15) */
   warning?: string;
+  /** Search mode used (SMCP-061) */
+  searchMode?: SearchMode;
 }
 
 /**
@@ -147,6 +171,8 @@ export async function searchDocs(
     query: input.query.substring(0, 100),
     topK: input.top_k,
     compact: input.compact,
+    mode: input.mode,
+    alpha: input.alpha,
     projectPath: context.projectPath,
   });
 
@@ -193,6 +219,22 @@ export async function searchDocs(
     }
   }
 
+  // SMCP-061: Determine search mode and alpha
+  // Note: Docs uses the same hybrid search config as code for now
+  const hybridSearchInfo = metadata.hybridSearch;
+  const defaultAlpha = hybridSearchInfo?.defaultAlpha ?? 0.5;
+  const effectiveMode = validateSearchMode(input.mode);
+  const effectiveAlpha = validateAlpha(input.alpha, defaultAlpha);
+
+  // SMCP-061: For docs, we currently only support vector search
+  // FTS for docs would require a separate docs FTS index
+  // For now, fall back to vector-only for docs
+  let actualMode: SearchMode = effectiveMode;
+  if (effectiveMode !== 'vector') {
+    logger.debug('searchDocs', 'Docs search currently only supports vector mode, falling back');
+    actualMode = 'vector';
+  }
+
   // Open the DocsLanceDB store
   const store = new DocsLanceDBStore(indexPath);
   try {
@@ -217,7 +259,7 @@ export async function searchDocs(
       dimension: queryVector.length,
     });
 
-    // Execute vector search
+    // Execute vector search (docs currently only supports vector mode)
     const searchResults = await store.search(queryVector, input.top_k);
 
     // Calculate search time
@@ -243,6 +285,7 @@ export async function searchDocs(
       topScore: results[0]?.score,
       hasWarning: !!warning,
       compact: input.compact,
+      searchMode: actualMode,
     });
 
     // Return compact format if requested
@@ -255,6 +298,7 @@ export async function searchDocs(
       totalResults: results.length,
       searchTimeMs,
       warning,
+      searchMode: actualMode,
     };
   } finally {
     // Always close the store
@@ -293,6 +337,7 @@ import { getToolDescription } from './toolDescriptions.js';
  *
  * This tool provides semantic search over the documentation index.
  * It does NOT require confirmation as it's a read-only operation.
+ * SMCP-061: Added mode and alpha parameters for hybrid search (currently vector-only for docs).
  *
  * @param enhanced - Whether to include enhanced AI guidance hints in the description
  */
@@ -319,6 +364,19 @@ export function createSearchDocsTool(enhanced: boolean = false) {
           description:
             'Return results in compact format with shorter field names (l=location, t=text, s=score). Reduces token count by ~5%.',
           default: false,
+        },
+        mode: {
+          type: 'string',
+          enum: ['hybrid', 'vector', 'fts'],
+          description:
+            "Search mode: 'hybrid' combines vector+keyword, 'vector' for semantic only (default for docs), 'fts' for keyword only",
+        },
+        alpha: {
+          type: 'number',
+          description:
+            'Alpha weight for hybrid search (0-1). Higher values favor semantic search, lower favor keyword search.',
+          minimum: 0,
+          maximum: 1,
         },
       },
       required: ['query'],

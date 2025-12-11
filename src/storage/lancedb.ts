@@ -713,6 +713,133 @@ export class LanceDBStore {
   }
 
   // --------------------------------------------------------------------------
+  // Hybrid Search Support (SMCP-061)
+  // --------------------------------------------------------------------------
+
+  /**
+   * Retrieve chunks by their IDs
+   * Used for hybrid search result fusion.
+   *
+   * @param ids - Array of chunk IDs to retrieve
+   * @returns Map of ID to SearchResult (for found chunks)
+   */
+  async getChunksById(ids: string[]): Promise<Map<string, SearchResult>> {
+    const result = new Map<string, SearchResult>();
+
+    if (!this.table || ids.length === 0) {
+      return result;
+    }
+
+    return this.mutex.withLock(async () => {
+      const table = await this.getTable();
+      const logger = getLogger();
+
+      logger.debug('lancedb', `Retrieving ${ids.length} chunks by ID`);
+
+      // Build SQL IN clause with escaped IDs
+      const escapedIds = ids.map((id) => `'${escapeSqlString(id)}'`).join(', ');
+      const whereClause = `id IN (${escapedIds})`;
+
+      try {
+        const rows = (await table
+          .query()
+          .where(whereClause)
+          .select(['id', 'path', 'text', 'start_line', 'end_line'])
+          .toArray()) as unknown as Array<{
+          id: string;
+          path: string;
+          text: string;
+          start_line: number;
+          end_line: number;
+        }>;
+
+        for (const row of rows) {
+          result.set(row.id, {
+            path: row.path,
+            text: row.text,
+            score: 0, // Score will be set by hybrid search
+            startLine: row.start_line,
+            endLine: row.end_line,
+          });
+        }
+
+        logger.debug('lancedb', `Retrieved ${result.size} chunks by ID`);
+      } catch (error) {
+        const err = error as Error;
+        logger.error('lancedb', `getChunksById failed: ${err.message}`);
+        // Return empty map on error - non-critical for hybrid search
+      }
+
+      return result;
+    });
+  }
+
+  /**
+   * Get all chunk IDs from the store
+   * Used for FTS index rebuilding.
+   *
+   * @returns Array of all chunk IDs
+   */
+  async getAllChunkIds(): Promise<string[]> {
+    if (!this.table) {
+      return [];
+    }
+
+    return this.mutex.withLock(async () => {
+      const table = await this.getTable();
+      const logger = getLogger();
+
+      logger.debug('lancedb', 'Retrieving all chunk IDs');
+
+      try {
+        const rows = (await table
+          .query()
+          .select(['id'])
+          .toArray()) as unknown as Array<{ id: string }>;
+
+        return rows.map((r) => r.id);
+      } catch (error) {
+        const err = error as Error;
+        logger.error('lancedb', `getAllChunkIds failed: ${err.message}`);
+        return [];
+      }
+    });
+  }
+
+  /**
+   * Get all chunks with their text content
+   * Used for FTS index rebuilding.
+   *
+   * @returns Array of {id, path, text} objects
+   */
+  async getAllChunksForFTS(): Promise<Array<{ id: string; path: string; text: string }>> {
+    if (!this.table) {
+      return [];
+    }
+
+    return this.mutex.withLock(async () => {
+      const table = await this.getTable();
+      const logger = getLogger();
+
+      logger.debug('lancedb', 'Retrieving all chunks for FTS');
+
+      try {
+        const rows = (await table
+          .query()
+          .select(['id', 'path', 'text'])
+          .toArray()) as unknown as Array<{ id: string; path: string; text: string }>;
+
+        logger.debug('lancedb', `Retrieved ${rows.length} chunks for FTS`);
+        return rows;
+      } catch (error) {
+        const err = error as Error;
+        logger.error('lancedb', `getAllChunksForFTS failed: ${err.message}`);
+        return [];
+      }
+    });
+  }
+
+  // --------------------------------------------------------------------------
   // Statistics
   // --------------------------------------------------------------------------
 

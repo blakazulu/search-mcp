@@ -23,11 +23,13 @@ import { FingerprintsManager } from '../storage/fingerprints.js';
 import { MetadataManager } from '../storage/metadata.js';
 import { chunkFile } from '../engines/chunking.js';
 import { getEmbeddingEngine } from '../engines/embedding.js';
-import { getIndexPath, toAbsolutePath, normalizePath, safeJoin, sanitizeIndexPath } from '../utils/paths.js';
+import { getIndexPath, toAbsolutePath, normalizePath, safeJoin, sanitizeIndexPath, getCodeFTSIndexPath } from '../utils/paths.js';
 import { hashFile } from '../utils/hash.js';
 import { getLogger } from '../utils/logger.js';
 import { MCPError, ErrorCode, isMCPError, fileNotFound, indexNotFound } from '../errors/index.js';
 import type { ToolContext } from './searchCode.js';
+import { loadFTSEngine } from '../engines/ftsEngineFactory.js';
+import type { FTSEngine, FTSChunk } from '../engines/ftsEngine.js';
 
 // ============================================================================
 // Input/Output Schemas
@@ -264,6 +266,7 @@ export async function reindexFile(
       logger.debug('reindexFile', 'File chunked', { relativePath, chunkCount: chunks.length });
 
       let chunksCreated = 0;
+      let records: ChunkRecord[] = [];
 
       if (chunks.length > 0) {
         // Step 7: Generate embeddings
@@ -271,7 +274,6 @@ export async function reindexFile(
         const embeddingResult = await embeddingEngine.embedBatch(texts);
 
         // SECURITY (SMCP-054): Only insert chunks with successful embeddings
-        const records: ChunkRecord[] = [];
         for (let successIdx = 0; successIdx < embeddingResult.successIndices.length; successIdx++) {
           const originalIndex = embeddingResult.successIndices[successIdx];
           const chunk = chunks[originalIndex];
@@ -301,6 +303,61 @@ export async function reindexFile(
         chunksCreated = records.length;
 
         logger.debug('reindexFile', 'Inserted new chunks', { relativePath, chunksCreated });
+      }
+
+      // SMCP-061: Update FTS index if hybrid search is enabled
+      const hybridSearchInfo = metadataManager.getHybridSearchInfo();
+      if (hybridSearchInfo?.enabled && hybridSearchInfo.ftsEngine && chunksCreated > 0) {
+        try {
+          const ftsIndexPath = getCodeFTSIndexPath(indexPath);
+          const ftsEngine = await loadFTSEngine(indexPath, hybridSearchInfo.ftsEngine);
+
+          if (ftsEngine) {
+            // Load existing FTS index
+            try {
+              const serializedData = await fs.promises.readFile(ftsIndexPath, 'utf-8');
+              ftsEngine.deserialize(serializedData);
+            } catch {
+              // FTS index doesn't exist yet, that's ok - we'll create it
+              logger.debug('reindexFile', 'No existing FTS index found, will create new');
+            }
+
+            // Remove old chunks for this file
+            ftsEngine.removeByPath(relativePath);
+
+            // Add new chunks
+            const ftsChunks: FTSChunk[] = [];
+            for (const record of records) {
+              ftsChunks.push({
+                id: record.id,
+                path: record.path,
+                text: record.text,
+                startLine: record.start_line,
+                endLine: record.end_line,
+              });
+            }
+            await ftsEngine.addChunks(ftsChunks);
+
+            // Save FTS index
+            const serializedFTS = ftsEngine.serialize();
+            await fs.promises.writeFile(ftsIndexPath, serializedFTS, 'utf-8');
+
+            // Update FTS chunk count in metadata
+            const ftsStats = ftsEngine.getStats();
+            metadataManager.updateFTSChunkCount(ftsStats.totalChunks);
+
+            logger.debug('reindexFile', 'FTS index updated', {
+              relativePath,
+              ftsChunksAdded: ftsChunks.length,
+            });
+
+            ftsEngine.close();
+          }
+        } catch (error) {
+          // FTS update is non-critical - log and continue
+          const message = error instanceof Error ? error.message : String(error);
+          logger.warn('reindexFile', 'Failed to update FTS index', { error: message });
+        }
       }
 
       // Step 10: Update fingerprint

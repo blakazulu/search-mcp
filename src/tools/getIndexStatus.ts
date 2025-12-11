@@ -48,6 +48,22 @@ export type GetIndexStatusInput = z.infer<typeof GetIndexStatusInputSchema>;
 export type IndexStatus = 'ready' | 'indexing' | 'not_found' | 'incomplete' | 'failed';
 
 /**
+ * Hybrid search information for status output (SMCP-061)
+ */
+export interface HybridSearchStatus {
+  /** Whether hybrid search is enabled */
+  enabled: boolean;
+  /** FTS engine type: 'js' or 'native' */
+  ftsEngine?: string;
+  /** Reason for FTS engine selection */
+  ftsEngineReason?: string;
+  /** Default alpha weight for hybrid search */
+  defaultAlpha?: number;
+  /** Number of chunks in the FTS index */
+  ftsChunkCount?: number;
+}
+
+/**
  * Output structure for get_index_status tool
  */
 export interface GetIndexStatusOutput {
@@ -83,6 +99,8 @@ export interface GetIndexStatusOutput {
   indexingStrategy?: StrategyName;
   /** Number of files pending indexing (for lazy strategy) */
   pendingFiles?: number;
+  /** Hybrid search / FTS information (SMCP-061) */
+  hybridSearch?: HybridSearchStatus;
 }
 
 // ============================================================================
@@ -282,6 +300,18 @@ export async function collectStatus(
   // Get config path
   const configPath = getConfigPath(indexPath);
 
+  // SMCP-061: Build hybrid search status
+  let hybridSearch: HybridSearchStatus | undefined;
+  if (metadata.hybridSearch) {
+    hybridSearch = {
+      enabled: metadata.hybridSearch.enabled,
+      ftsEngine: metadata.hybridSearch.ftsEngine,
+      ftsEngineReason: metadata.hybridSearch.ftsEngineReason,
+      defaultAlpha: metadata.hybridSearch.defaultAlpha,
+      ftsChunkCount: metadata.hybridSearch.ftsChunkCount,
+    };
+  }
+
   // Build the output
   const output: GetIndexStatusOutput = {
     status,
@@ -298,6 +328,7 @@ export async function collectStatus(
     indexingProgress,
     indexingStrategy,
     pendingFiles,
+    hybridSearch,
   };
 
   logger.debug('getIndexStatus', 'Status collected', {
@@ -308,6 +339,8 @@ export async function collectStatus(
     warning: output.warning,
     indexingStrategy: output.indexingStrategy,
     pendingFiles: output.pendingFiles,
+    hybridSearchEnabled: output.hybridSearch?.enabled,
+    ftsEngine: output.hybridSearch?.ftsEngine,
   });
 
   return output;

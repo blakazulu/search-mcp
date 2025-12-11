@@ -16,8 +16,9 @@
 import { z } from 'zod';
 import { getEmbeddingEngine } from '../engines/embedding.js';
 import { LanceDBStore, SearchResult } from '../storage/lancedb.js';
-import { loadMetadata } from '../storage/metadata.js';
-import { getIndexPath } from '../utils/paths.js';
+import { loadMetadata, MetadataManager } from '../storage/metadata.js';
+import { loadConfig } from '../storage/config.js';
+import { getIndexPath, getCodeFTSIndexPath } from '../utils/paths.js';
 import { getLogger } from '../utils/logger.js';
 import { indexNotFound, MCPError, ErrorCode } from '../errors/index.js';
 import { MAX_QUERY_LENGTH } from '../utils/limits.js';
@@ -28,6 +29,15 @@ import {
   type CompactSearchOutput,
 } from '../utils/searchResultProcessing.js';
 import type { StrategyOrchestrator } from '../engines/strategyOrchestrator.js';
+import {
+  performHybridSearch,
+  validateSearchMode,
+  validateAlpha,
+  type SearchMode,
+  type HybridSearchContext,
+} from '../engines/hybridSearch.js';
+import { loadFTSEngine } from '../engines/ftsEngineFactory.js';
+import type { FTSEngine } from '../engines/ftsEngine.js';
 
 // ============================================================================
 // Input/Output Schemas
@@ -37,6 +47,7 @@ import type { StrategyOrchestrator } from '../engines/strategyOrchestrator.js';
  * Input schema for search_code tool
  *
  * Validates the query string and optional top_k parameter.
+ * SMCP-061: Added mode and alpha parameters for hybrid search.
  */
 export const SearchCodeInputSchema = z.object({
   /** The question or code concept to search for */
@@ -54,12 +65,24 @@ export const SearchCodeInputSchema = z.object({
     .min(1)
     .max(50)
     .default(10)
-    .describe('Number of results to return (1-50)'),
+    .describe('Number of results to return (1-50, default 10)'),
   /** Return results in compact format with shorter field names (default false) */
   compact: z
     .boolean()
     .default(false)
     .describe('Return results in compact format with shorter field names'),
+  /** Search mode: 'hybrid' (default), 'vector' (semantic only), or 'fts' (keyword only) */
+  mode: z
+    .enum(['hybrid', 'vector', 'fts'])
+    .optional()
+    .describe("Search mode: 'hybrid' combines vector+keyword (default), 'vector' for semantic only, 'fts' for keyword only"),
+  /** Alpha weight for hybrid search (0-1). Higher = more vector weight. Default from config or 0.5 */
+  alpha: z
+    .number()
+    .min(0)
+    .max(1)
+    .optional()
+    .describe('Alpha weight for hybrid search (0-1). Higher values favor semantic search, lower favor keyword search. Default: 0.5'),
 });
 
 /**
@@ -95,6 +118,8 @@ export interface SearchCodeOutput {
   searchTimeMs: number;
   /** Warning message if index is in an incomplete state (MCP-15) */
   warning?: string;
+  /** Search mode used (SMCP-061) */
+  searchMode?: SearchMode;
 }
 
 /**
@@ -145,6 +170,8 @@ export async function searchCode(
     query: input.query.substring(0, 100),
     topK: input.top_k,
     compact: input.compact,
+    mode: input.mode,
+    alpha: input.alpha,
     projectPath: context.projectPath,
   });
 
@@ -191,6 +218,57 @@ export async function searchCode(
     }
   }
 
+  // SMCP-061: Determine search mode and alpha
+  const hybridSearchInfo = metadata.hybridSearch;
+  const defaultAlpha = hybridSearchInfo?.defaultAlpha ?? 0.5;
+  const effectiveMode = validateSearchMode(input.mode);
+  const effectiveAlpha = validateAlpha(input.alpha, defaultAlpha);
+
+  // SMCP-061: Load FTS engine if hybrid search is available and needed
+  let ftsEngine: FTSEngine | null = null;
+  let ftsAvailable = false;
+
+  if (effectiveMode !== 'vector' && hybridSearchInfo?.enabled) {
+    try {
+      const ftsIndexPath = getCodeFTSIndexPath(indexPath);
+      ftsEngine = await loadFTSEngine(indexPath, hybridSearchInfo.ftsEngine || 'js');
+      if (ftsEngine) {
+        // Load FTS index from serialized data
+        const fs = await import('node:fs');
+        const serializedData = await fs.promises.readFile(ftsIndexPath, 'utf-8');
+        const success = ftsEngine.deserialize(serializedData);
+        if (success) {
+          ftsAvailable = true;
+          const ftsStats = ftsEngine.getStats();
+          logger.debug('searchCode', 'FTS engine loaded', {
+            type: hybridSearchInfo.ftsEngine,
+            chunkCount: ftsStats.totalChunks,
+          });
+        } else {
+          logger.warn('searchCode', 'FTS deserialization failed');
+          ftsEngine = null;
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn('searchCode', 'Failed to load FTS engine, falling back to vector-only', {
+        error: message,
+      });
+      ftsEngine = null;
+      ftsAvailable = false;
+    }
+  }
+
+  // Determine actual search mode based on FTS availability
+  let actualMode: SearchMode = effectiveMode;
+  if (effectiveMode === 'hybrid' && !ftsAvailable) {
+    actualMode = 'vector';
+    logger.debug('searchCode', 'Falling back to vector-only (FTS not available)');
+  } else if (effectiveMode === 'fts' && !ftsAvailable) {
+    logger.warn('searchCode', 'FTS mode requested but not available, using vector search');
+    actualMode = 'vector';
+  }
+
   // Open the LanceDB store
   const store = new LanceDBStore(indexPath);
   try {
@@ -215,21 +293,52 @@ export async function searchCode(
       dimension: queryVector.length,
     });
 
-    // Execute vector search
-    const searchResults = await store.search(queryVector, input.top_k);
+    let rawResults: SearchCodeResult[];
+
+    // SMCP-061: Execute search based on mode
+    if (actualMode === 'vector') {
+      // Vector-only search (traditional)
+      const searchResults = await store.search(queryVector, input.top_k);
+      rawResults = searchResults.map((result: SearchResult) => ({
+        path: result.path,
+        text: result.text,
+        score: result.score,
+        startLine: result.startLine,
+        endLine: result.endLine,
+      }));
+    } else {
+      // Hybrid or FTS-only search
+      const hybridContext: HybridSearchContext = {
+        ftsEngine,
+        ftsAvailable,
+        defaultAlpha: effectiveAlpha,
+      };
+
+      const hybridResults = await performHybridSearch(
+        input.query,
+        queryVector,
+        {
+          mode: actualMode,
+          alpha: effectiveAlpha,
+          topK: input.top_k,
+        },
+        async (vector, topK) => store.search(vector, topK),
+        async (ids) => store.getChunksById(ids),
+        hybridContext
+      );
+
+      rawResults = hybridResults.map((result) => ({
+        path: result.path,
+        text: result.text,
+        score: result.score,
+        startLine: result.startLine,
+        endLine: result.endLine,
+      }));
+    }
 
     // Calculate search time
     const endTime = performance.now();
     const searchTimeMs = Math.round(endTime - startTime);
-
-    // Format results
-    const rawResults: SearchCodeResult[] = searchResults.map((result: SearchResult) => ({
-      path: result.path,
-      text: result.text,
-      score: result.score,
-      startLine: result.startLine,
-      endLine: result.endLine,
-    }));
 
     // Post-process results: trim whitespace and deduplicate same-file results
     const results = processSearchResults(rawResults);
@@ -241,6 +350,7 @@ export async function searchCode(
       topScore: results[0]?.score,
       hasWarning: !!warning,
       compact: input.compact,
+      searchMode: actualMode,
     });
 
     // Return compact format if requested
@@ -253,6 +363,7 @@ export async function searchCode(
       totalResults: results.length,
       searchTimeMs,
       warning,
+      searchMode: actualMode,
     };
   } finally {
     // Always close the store
@@ -271,6 +382,7 @@ import { getToolDescription } from './toolDescriptions.js';
  *
  * This tool provides semantic search over the code index.
  * It does NOT require confirmation as it's a read-only operation.
+ * SMCP-061: Added mode and alpha parameters for hybrid search.
  *
  * @param enhanced - Whether to include enhanced AI guidance hints in the description
  */
@@ -297,6 +409,19 @@ export function createSearchCodeTool(enhanced: boolean = false) {
           description:
             'Return results in compact format with shorter field names (l=location, t=text, s=score). Reduces token count by ~5%.',
           default: false,
+        },
+        mode: {
+          type: 'string',
+          enum: ['hybrid', 'vector', 'fts'],
+          description:
+            "Search mode: 'hybrid' combines vector+keyword (default), 'vector' for semantic only, 'fts' for keyword only",
+        },
+        alpha: {
+          type: 'number',
+          description:
+            'Alpha weight for hybrid search (0-1). Higher values favor semantic search, lower favor keyword search.',
+          minimum: 0,
+          maximum: 1,
         },
       },
       required: ['query'],

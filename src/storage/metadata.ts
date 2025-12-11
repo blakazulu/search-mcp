@@ -92,6 +92,36 @@ export const DocsStatsSchema = z.object({
 });
 
 /**
+ * FTS engine type values
+ */
+export type FTSEngineTypeValue = 'js' | 'native';
+
+/**
+ * Schema for hybrid search / FTS information
+ */
+export const HybridSearchInfoSchema = z.object({
+  /** Whether hybrid search is enabled */
+  enabled: z.boolean(),
+
+  /** FTS engine type: 'js' or 'native' */
+  ftsEngine: z.enum(['js', 'native']).optional(),
+
+  /** Reason for FTS engine selection */
+  ftsEngineReason: z.string().optional(),
+
+  /** Default alpha weight for hybrid search (0-1) */
+  defaultAlpha: z.number().min(0).max(1).optional(),
+
+  /** Total chunks in FTS index (for verification) */
+  ftsChunkCount: z.number().int().nonnegative().optional(),
+});
+
+/**
+ * Inferred HybridSearchInfo type from the schema
+ */
+export type HybridSearchInfo = z.infer<typeof HybridSearchInfoSchema>;
+
+/**
  * Zod schema for metadata validation
  *
  * Validates metadata with required fields for version, project path, and timestamps.
@@ -123,6 +153,9 @@ export const MetadataSchema = z.object({
 
   /** Indexing state tracking for detecting incomplete indexes */
   indexingState: IndexingStateSchema.optional(),
+
+  /** Hybrid search / FTS information */
+  hybridSearch: HybridSearchInfoSchema.optional(),
 });
 
 /**
@@ -722,5 +755,62 @@ export class MetadataManager {
     }
 
     this.cachedMetadata.stats.failedEmbeddings = count;
+  }
+
+  // ==========================================================================
+  // Hybrid Search / FTS Management
+  // ==========================================================================
+
+  /**
+   * Update hybrid search / FTS information
+   *
+   * @param info - Hybrid search info to set
+   */
+  updateHybridSearchInfo(info: HybridSearchInfo): void {
+    if (this.cachedMetadata === null) {
+      throw new Error(
+        'Metadata not loaded. Call load() or initialize() first.'
+      );
+    }
+
+    this.cachedMetadata.hybridSearch = info;
+  }
+
+  /**
+   * Get the hybrid search / FTS information
+   *
+   * @returns HybridSearchInfo object or null if metadata not loaded or no info
+   */
+  getHybridSearchInfo(): HybridSearchInfo | null {
+    return this.cachedMetadata?.hybridSearch ?? null;
+  }
+
+  /**
+   * Check if hybrid search is enabled for this index
+   *
+   * @returns true if hybrid search is enabled and FTS engine is available
+   */
+  isHybridSearchEnabled(): boolean {
+    const info = this.getHybridSearchInfo();
+    return info?.enabled === true && info?.ftsEngine !== undefined;
+  }
+
+  /**
+   * Update the FTS chunk count
+   *
+   * @param count - Number of chunks in the FTS index
+   */
+  updateFTSChunkCount(count: number): void {
+    if (this.cachedMetadata === null) {
+      throw new Error(
+        'Metadata not loaded. Call load() or initialize() first.'
+      );
+    }
+
+    if (!this.cachedMetadata.hybridSearch) {
+      this.cachedMetadata.hybridSearch = { enabled: false };
+    }
+
+    this.cachedMetadata.hybridSearch.ftsChunkCount = count;
   }
 }

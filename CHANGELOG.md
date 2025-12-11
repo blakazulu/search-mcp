@@ -40,6 +40,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Falls back to character-based chunking for unsupported languages
   - New config option: `chunkingStrategy: 'character' | 'code-aware'` (default: 'character')
   - Reduced overlap (200 chars vs 800) since splits occur at meaningful boundaries
+- **Hybrid Search Integration** (SMCP-061)
+  - Integrated FTS engine into IndexManager for building FTS index during create_index
+  - Added `mode` parameter to `search_code` and `search_docs` tools: `'hybrid'` (default), `'vector'`, `'fts'`
+  - Added `alpha` parameter for hybrid search weight (0-1, higher = more semantic)
+  - `get_index_status` now shows hybrid search info (FTS engine type, chunk count, default alpha)
+  - `reindex_file` now updates both vector and FTS indexes incrementally
+  - Reciprocal Rank Fusion (RRF) for combining vector and FTS results
+  - Backward compatible: existing indexes without FTS fall back to vector-only search
+  - New module: `src/engines/hybridSearch.ts` for RRF score fusion
 
 ### Changed
 - `search_code` and `search_docs` now apply whitespace trimming and same-file deduplication to results

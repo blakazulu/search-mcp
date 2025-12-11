@@ -27,9 +27,11 @@ import { ConfigManager, Config, loadConfig, generateDefaultConfig } from '../sto
 import { IndexingPolicy } from './indexPolicy.js';
 import { chunkFile, Chunk } from './chunking.js';
 import { getEmbeddingEngine, EmbeddingEngine } from './embedding.js';
+import { createFTSEngine, type EngineSelectionResult } from './ftsEngineFactory.js';
+import type { FTSEngine, FTSChunk } from './ftsEngine.js';
 
 // Utility imports
-import { toRelativePath, toAbsolutePath, normalizePath, getIndexPath, safeJoin } from '../utils/paths.js';
+import { toRelativePath, toAbsolutePath, normalizePath, getIndexPath, safeJoin, getCodeFTSIndexPath } from '../utils/paths.js';
 import { hashFile } from '../utils/hash.js';
 import { getLogger } from '../utils/logger.js';
 import { logMemoryUsage, getAdaptiveBatchSize, isMemoryCritical } from '../utils/memory.js';
@@ -520,6 +522,49 @@ export async function createFullIndex(
     metadataManager.setIndexingInProgress(files.length);
     await metadataManager.save();
 
+    // SMCP-061: Initialize FTS engine for hybrid search
+    let ftsEngine: FTSEngine | null = null;
+    let ftsEngineType: 'js' | 'native' | undefined;
+    let ftsEngineReason: string | undefined;
+
+    if (config.hybridSearch?.enabled !== false) {
+      try {
+        logger.info('IndexManager', 'Initializing FTS engine for hybrid search', {
+          preference: config.hybridSearch?.ftsEngine || 'auto',
+          fileCount: files.length,
+        });
+
+        const ftsResult = await createFTSEngine(
+          normalizedIndexPath,
+          config.hybridSearch?.ftsEngine || 'auto',
+          files.length
+        );
+
+        ftsEngine = ftsResult.engine;
+        ftsEngineType = ftsResult.type;
+        ftsEngineReason = ftsResult.reason;
+
+        logger.info('IndexManager', 'FTS engine initialized', {
+          type: ftsEngineType,
+          reason: ftsEngineReason,
+        });
+      } catch (error) {
+        // FTS initialization is non-critical - log and continue with vector-only
+        const message = error instanceof Error ? error.message : String(error);
+        logger.warn('IndexManager', 'FTS engine initialization failed, continuing with vector-only search', {
+          error: message,
+        });
+        ftsEngine = null;
+        ftsEngineType = undefined;
+        ftsEngineReason = `Initialization failed: ${message}`;
+      }
+    } else {
+      logger.info('IndexManager', 'Hybrid search disabled in config');
+    }
+
+    // Collect all FTS chunks for batch indexing
+    const allFTSChunks: FTSChunk[] = [];
+
     // Process files in batches with adaptive sizing (MCP-22)
     let totalChunks = 0;
     let totalFailedEmbeddings = 0; // SMCP-054: Track failed embeddings
@@ -601,6 +646,19 @@ export async function createFullIndex(
 
           await store.insertChunks(chunks);
           totalChunks += chunks.length;
+
+          // SMCP-061: Collect chunks for FTS indexing
+          if (ftsEngine) {
+            for (const chunk of chunks) {
+              allFTSChunks.push({
+                id: chunk.id,
+                path: chunk.path,
+                text: chunk.text,
+                startLine: chunk.start_line,
+                endLine: chunk.end_line,
+              });
+            }
+          }
         }
 
         // Collect hashes
@@ -625,6 +683,38 @@ export async function createFullIndex(
     // Log memory after indexing
     logMemoryUsage('Full index complete');
 
+    // SMCP-061: Build FTS index from collected chunks
+    let ftsChunkCount = 0;
+    if (ftsEngine && allFTSChunks.length > 0) {
+      try {
+        logger.info('IndexManager', 'Building FTS index', {
+          chunkCount: allFTSChunks.length,
+          engineType: ftsEngineType,
+        });
+
+        ftsEngine.clear();
+        await ftsEngine.addChunks(allFTSChunks);
+        const ftsStats = ftsEngine.getStats();
+        ftsChunkCount = ftsStats.totalChunks;
+
+        // Persist FTS index to disk by serializing and writing to file
+        const ftsIndexPath = getCodeFTSIndexPath(normalizedIndexPath);
+        const serializedData = ftsEngine.serialize();
+        await fs.promises.writeFile(ftsIndexPath, serializedData, 'utf-8');
+
+        logger.info('IndexManager', 'FTS index built successfully', {
+          chunkCount: ftsChunkCount,
+          indexPath: ftsIndexPath,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error('IndexManager', 'FTS index building failed', { error: message });
+        errors.push(`FTS indexing failed: ${message}`);
+        // FTS failure is non-critical - continue with vector-only
+        ftsEngineReason = `Build failed: ${message}`;
+      }
+    }
+
     // Update fingerprints
     fingerprintsManager.setAll(allHashes);
     await fingerprintsManager.save();
@@ -639,6 +729,16 @@ export async function createFullIndex(
         failedCount: totalFailedEmbeddings,
       });
     }
+
+    // SMCP-061: Update metadata with hybrid search info
+    metadataManager.updateHybridSearchInfo({
+      enabled: ftsEngine !== null && ftsChunkCount > 0,
+      ftsEngine: ftsEngineType,
+      ftsEngineReason: ftsEngineReason,
+      defaultAlpha: config.hybridSearch?.defaultAlpha ?? 0.5,
+      ftsChunkCount: ftsChunkCount,
+    });
+
     metadataManager.markFullIndex();
     metadataManager.setIndexingComplete();
     await metadataManager.save();

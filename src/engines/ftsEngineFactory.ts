@@ -294,3 +294,54 @@ export function formatEngineSelectionReason(type: FTSEngineType, reason: string)
 export function wouldSelectNative(fileCount: number): boolean {
   return fileCount > FILE_COUNT_THRESHOLD;
 }
+
+/**
+ * Load an existing FTS engine based on the type stored in metadata.
+ *
+ * This function creates an FTS engine instance but does NOT load its index data.
+ * The caller should call `engine.load(path)` to load the persisted index.
+ *
+ * @param indexPath - Path to the index directory
+ * @param engineType - The engine type ('js' or 'native')
+ * @returns FTS engine instance ready for loading, or null if type is unknown
+ *
+ * @example
+ * ```typescript
+ * const engine = await loadFTSEngine(indexPath, 'js');
+ * if (engine) {
+ *   await engine.load(ftsIndexPath);
+ *   const results = await engine.search('query', 10);
+ * }
+ * ```
+ */
+export async function loadFTSEngine(
+  indexPath: string,
+  engineType: FTSEngineType | string
+): Promise<FTSEngine | null> {
+  const logger = getLogger();
+
+  if (engineType === 'js') {
+    logger.debug('ftsEngineFactory', 'Loading JS FTS engine');
+    return createNaturalBM25Engine();
+  }
+
+  if (engineType === 'native') {
+    const nativeAvailable = await isNativeAvailable();
+
+    if (nativeAvailable) {
+      logger.debug('ftsEngineFactory', 'Loading native FTS engine');
+      const { createSQLiteFTS5Engine } = await import('./sqliteFTS5.js');
+      const ftsDbPath = getFTSDbPath(indexPath);
+      return createSQLiteFTS5Engine(ftsDbPath);
+    }
+
+    logger.warn(
+      'ftsEngineFactory',
+      'Native FTS engine type specified but better-sqlite3 not available. Cannot load.'
+    );
+    return null;
+  }
+
+  logger.warn('ftsEngineFactory', `Unknown FTS engine type: ${engineType}`);
+  return null;
+}

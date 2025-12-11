@@ -566,6 +566,26 @@ export function getDirtyFilesPath(indexPath: string): string {
   return path.join(indexPath, 'dirty-files.json');
 }
 
+/**
+ * Get the FTS index file path for code search
+ *
+ * @param indexPath - Absolute path to the index directory
+ * @returns Absolute path to code-fts.json
+ */
+export function getCodeFTSIndexPath(indexPath: string): string {
+  return path.join(indexPath, 'code-fts.json');
+}
+
+/**
+ * Get the FTS index file path for docs search
+ *
+ * @param indexPath - Absolute path to the index directory
+ * @returns Absolute path to docs-fts.json
+ */
+export function getDocsFTSIndexPath(indexPath: string): string {
+  return path.join(indexPath, 'docs-fts.json');
+}
+
 // ============================================================================
 // Utility Exports
 // ============================================================================

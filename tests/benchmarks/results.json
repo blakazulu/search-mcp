@@ -1,12 +1,12 @@
 {
-  "timestamp": "2025-12-11T19:37:09.410Z",
+  "timestamp": "2025-12-11T19:58:43.718Z",
   "results": [
     {
       "queryId": 1,
       "query": "how does file watching work",
       "type": "Conceptual",
       "mcp": {
-        "searchTimeMs": 595,
+        "searchTimeMs": 791,
         "resultCount": 8,
         "totalChars": 36894,
         "estimatedTokens": 9224
@@ -28,7 +28,7 @@
       "query": "error handling patterns",
       "type": "Pattern",
       "mcp": {
-        "searchTimeMs": 46,
+        "searchTimeMs": 646,
         "resultCount": 10,
         "totalChars": 30510,
         "estimatedTokens": 7628
@@ -50,7 +50,7 @@
       "query": "LanceDB vector search",
       "type": "Technical",
       "mcp": {
-        "searchTimeMs": 44,
+        "searchTimeMs": 77,
         "resultCount": 10,
         "totalChars": 38023,
         "estimatedTokens": 9506
@@ -72,7 +72,7 @@
       "query": "security vulnerabilities",
       "type": "Broad",
       "mcp": {
-        "searchTimeMs": 53,
+        "searchTimeMs": 42,
         "resultCount": 9,
         "totalChars": 21374,
         "estimatedTokens": 5344
@@ -94,7 +94,7 @@
       "query": "configuration options",
       "type": "Documentation",
       "mcp": {
-        "searchTimeMs": 58,
+        "searchTimeMs": 44,
         "resultCount": 10,
         "totalChars": 28576,
         "estimatedTokens": 7144

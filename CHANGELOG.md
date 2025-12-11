@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Accuracy Comparison Tests** (`tests/configs/accuracyComparison.test.ts`) (SMCP-070)
+  - Compares MCP search efficiency against Grep and Drag-and-Drop baselines
+  - Tests 5 representative configs (default, alpha-0.0, alpha-0.5, alpha-1.0, fts-js)
+  - Calculates MCP vs Grep efficiency ratio
+  - Calculates MCP vs Drag-and-Drop efficiency ratio
+  - Tracks deduplication effectiveness per config
+  - Generates comparison reports to `tests/reports/accuracy-comparison-*.md`
+  - FULL_CONFIG and FULL_CODEBASE environment variables for extended testing
 - **Config Matrix Test Runner** (`tests/configs/configMatrix.test.ts`) (SMCP-069)
   - Systematically tests all 21 configuration combinations
   - Runs 20 test queries against each config

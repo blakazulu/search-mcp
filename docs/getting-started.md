@@ -47,7 +47,7 @@ npm install -g @liraz-sbz/search-mcp
 Or run directly with npx (no installation needed):
 
 ```bash
-npx -y @liraz-sbz/search-mcp
+npx @liraz-sbz/search-mcp
 ```
 
 ---
@@ -72,7 +72,7 @@ Choose your AI assistant and follow the configuration steps.
   "mcpServers": {
     "search": {
       "command": "npx",
-      "args": ["-y", "@liraz-sbz/search-mcp"]
+      "args": ["@liraz-sbz/search-mcp"]
     }
   }
 }
@@ -88,7 +88,7 @@ Choose your AI assistant and follow the configuration steps.
 **Option A: CLI command (recommended)**
 
 ```bash
-claude mcp add --transport stdio search -- npx -y @liraz-sbz/search-mcp
+claude mcp add search --transport stdio -- npx @liraz-sbz/search-mcp
 ```
 
 **Option B: Edit config file**
@@ -102,7 +102,7 @@ Config file location:
   "mcpServers": {
     "search": {
       "command": "npx",
-      "args": ["-y", "@liraz-sbz/search-mcp"]
+      "args": ["@liraz-sbz/search-mcp"]
     }
   }
 }
@@ -133,7 +133,7 @@ claude mcp list
   "mcpServers": {
     "search": {
       "command": "npx",
-      "args": ["-y", "@liraz-sbz/search-mcp"]
+      "args": ["@liraz-sbz/search-mcp"]
     }
   }
 }
@@ -161,7 +161,7 @@ claude mcp list
   "mcpServers": {
     "search": {
       "command": "npx",
-      "args": ["-y", "@liraz-sbz/search-mcp"]
+      "args": ["@liraz-sbz/search-mcp"]
     }
   }
 }
@@ -185,7 +185,7 @@ claude mcp list
   "mcpServers": {
     "search": {
       "command": "npx",
-      "args": ["-y", "@liraz-sbz/search-mcp"]
+      "args": ["@liraz-sbz/search-mcp"]
     }
   }
 }
@@ -204,7 +204,7 @@ For any MCP-compatible client, use this standard configuration:
   "mcpServers": {
     "search": {
       "command": "npx",
-      "args": ["-y", "@liraz-sbz/search-mcp"]
+      "args": ["@liraz-sbz/search-mcp"]
     }
   }
 }

@@ -476,6 +476,7 @@ async function executeTool(
           projectPath,
           orchestrator: orchestrator || undefined,
           config: orchestrator ? config : undefined,
+          confirmed: true, // MCP confirmation already handled at protocol level
         };
         result = await createIndex({}, context);
 
@@ -540,6 +541,7 @@ async function executeTool(
         // When we reach this point, the user has already confirmed (if required)
         const context: ReindexProjectContext = {
           projectPath,
+          confirmed: true, // MCP confirmation already handled at protocol level
         };
         result = await reindexProject({}, context);
         break;
@@ -563,6 +565,7 @@ async function executeTool(
         const context: DeleteIndexContext = {
           projectPath,
           orchestrator: serverContext.orchestrator || undefined,
+          confirmed: true, // MCP confirmation already handled at protocol level
         };
         result = await deleteIndex({}, context);
 

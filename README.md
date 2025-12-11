@@ -17,6 +17,7 @@ A local-first Model Context Protocol (MCP) server that provides semantic search 
 - [Configuration](#configuration)
 - [Documentation](#documentation)
 - [For Developers](#for-developers)
+- [Updating & Uninstalling](#updating--uninstalling)
 - [Troubleshooting](#troubleshooting)
 - [Privacy & License](#privacy--license)
 
@@ -86,7 +87,7 @@ npm install -g @liraz-sbz/search-mcp
   "mcpServers": {
     "search": {
       "command": "npx",
-      "args": ["-y", "@liraz-sbz/search-mcp"]
+      "args": ["@liraz-sbz/search-mcp"]
     }
   }
 }
@@ -219,6 +220,35 @@ For full configuration options, see the [Configuration Reference](docs/configura
 | Storage | `~/.mcp/search/indexes/` (macOS/Linux) or `%USERPROFILE%\.mcp\search\indexes\` (Windows) |
 
 For full technical documentation, see [ENGINEERING.RFC.md](docs/design/ENGINEERING.RFC.md).
+
+---
+
+## Updating & Uninstalling
+
+### Updating
+
+**If using `npx` in your config (recommended):** Updates are automatic - you always get the latest version.
+
+**If installed globally:**
+```bash
+npm install -g @liraz-sbz/search-mcp
+```
+
+### Uninstalling
+
+**1. Remove from your AI assistant:**
+
+- **Claude Code:** `claude mcp remove search`
+- **Other clients:** Delete the `search` entry from your MCP config file
+
+**2. Uninstall the package (if installed globally):**
+```bash
+npm uninstall -g @liraz-sbz/search-mcp
+```
+
+**3. (Optional) Remove index data:**
+- **macOS/Linux:** `rm -rf ~/.mcp/search`
+- **Windows:** `rmdir /s /q %USERPROFILE%\.mcp\search`
 
 ---
 

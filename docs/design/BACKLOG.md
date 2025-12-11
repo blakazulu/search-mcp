@@ -116,9 +116,10 @@ jobs:
 | README.md | ✅ Done |
 | PRD.md | ✅ Done |
 | ENGINEERING.RFC.md | ✅ Done |
-| API Reference | TODO |
-| Contributing Guide | TODO |
-| Changelog | TODO |
+| API Reference | ✅ Done |
+| Contributing Guide | ✅ Done |
+| Changelog | ✅ Done |
+| Roadmap | ✅ Done |
 
 ---
 

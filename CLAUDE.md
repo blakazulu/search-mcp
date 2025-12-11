@@ -155,3 +155,4 @@ interface MCPError {
 - `ignore` - Gitignore parsing
 - `zod` - Schema validation
 - `vitest` - Testing
+- we have a file CHANGELOG.md in the root. every bug fix/chaange/feature we add/remove/do in our code and should be documented there - should be added there.

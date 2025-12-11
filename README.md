@@ -1,5 +1,9 @@
 # Search MCP
 
+[![npm version](https://img.shields.io/npm/v/@liraz-sbz/search-mcp.svg)](https://www.npmjs.com/package/@liraz-sbz/search-mcp)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org/)
+
 > **"Install once. It just works. Claude always knows your code."**
 
 A local-first Model Context Protocol (MCP) server that provides semantic search capabilities for your codebase.
@@ -160,8 +164,12 @@ For full configuration options, see the [Configuration Reference](docs/configura
 |-------|-------------|
 | [Getting Started](docs/getting-started.md) | Detailed installation for all clients |
 | [Configuration](docs/configuration.md) | Full config reference + indexing strategies |
+| [API Reference](docs/api-reference.md) | Complete tool documentation |
 | [Examples](docs/examples.md) | Use cases & best practices |
 | [Troubleshooting](docs/troubleshooting.md) | Common issues & solutions |
+| [Roadmap](ROADMAP.md) | Planned features |
+| [Changelog](CHANGELOG.md) | Version history |
+| [Contributing](CONTRIBUTING.md) | How to contribute |
 
 ---
 

@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **FTS (Full-Text Search) Engine Interface** (`src/engines/ftsEngine.ts`) (SMCP-058)
+  - Unified interface for full-text search engines
+  - Support for multiple implementations (JS and native)
+  - Error types: `FTSNotInitializedError`, `FTSQueryError`, `FTSSerializationError`
+- **NaturalBM25Engine** (`src/engines/naturalBM25.ts`) - Pure JavaScript FTS implementation
+  - Uses `natural` npm package for TF-IDF based text search
+  - No native dependencies - works on all platforms
+  - Supports add/remove/search operations
+  - Score normalization for hybrid search (0-1 range)
+  - Serialization/deserialization for index persistence
+  - 51 unit tests with performance benchmarks
 - Search result processing utilities for token optimization (`src/utils/searchResultProcessing.ts`)
 - **Compact output format** for `search_code` and `search_docs` tools (SMCP-065)
   - New `compact` parameter (default: false) returns results with shorter field names

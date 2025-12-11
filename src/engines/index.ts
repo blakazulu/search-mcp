@@ -182,3 +182,21 @@ export {
   createStrategyOrchestrator,
   type StrategyOrchestratorDependencies,
 } from './strategyOrchestrator.js';
+
+// FTS Engine Interface
+export {
+  type FTSChunk,
+  type FTSSearchResult,
+  type FTSStats,
+  type FTSEngineType,
+  type FTSEngine,
+  FTSNotInitializedError,
+  FTSQueryError,
+  FTSSerializationError,
+} from './ftsEngine.js';
+
+// NaturalBM25 FTS Engine (JavaScript implementation)
+export {
+  NaturalBM25Engine,
+  createNaturalBM25Engine,
+} from './naturalBM25.js';

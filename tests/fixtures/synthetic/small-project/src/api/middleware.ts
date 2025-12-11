@@ -7,7 +7,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { validateSession } from '../auth/login';
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/demoLogger';
 import { ApiError } from '../errors/api';
 
 const logger = new Logger('middleware');

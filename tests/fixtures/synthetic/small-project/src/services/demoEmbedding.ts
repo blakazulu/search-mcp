@@ -5,7 +5,7 @@
  * Supports batching, caching, and efficient processing.
  */
 
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/demoLogger';
 import { LRUCache } from './cache';
 
 const logger = new Logger('embedding');

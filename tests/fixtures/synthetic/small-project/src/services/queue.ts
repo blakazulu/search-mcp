@@ -6,7 +6,7 @@
  */
 
 import { EventEmitter } from 'events';
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/demoLogger';
 
 const logger = new Logger('queue');
 

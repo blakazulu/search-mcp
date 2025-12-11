@@ -12,7 +12,7 @@ import { QueryBuilder } from '../db/query';
 import { validateRequestBody, validateQueryParams } from '../utils/validation';
 import { authMiddleware, rateLimitMiddleware } from './middleware';
 import { ApiError, NotFoundError, ValidationError } from '../errors/api';
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/demoLogger';
 
 const logger = new Logger('api');
 const router = Router();

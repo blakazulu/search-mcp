@@ -7,7 +7,7 @@
 
 import { Server as HTTPServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/demoLogger';
 import { validateSession } from '../auth/login';
 
 const logger = new Logger('websocket');

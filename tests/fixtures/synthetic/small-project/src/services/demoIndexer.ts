@@ -5,8 +5,8 @@
  * Supports creating, updating, and deleting indexes.
  */
 
-import { Logger } from '../utils/logger';
-import { EmbeddingEngine } from './embedding';
+import { Logger } from '../utils/demoLogger';
+import { EmbeddingEngine } from './demoEmbedding';
 import { LRUCache } from './cache';
 
 const logger = new Logger('indexManager');

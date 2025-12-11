@@ -21,7 +21,7 @@
       "type": "Exact",
       "description": "Tests exact function name lookup",
       "expectedTopFiles": [
-        "src/utils/hash.ts"
+        "src/utils/demoHash.ts"
       ],
       "keywords": ["hashPassword", "verifyPassword", "PBKDF2", "salt"]
     },
@@ -93,7 +93,7 @@
       "type": "Conceptual",
       "description": "Tests semantic understanding of file system monitoring",
       "expectedTopFiles": [
-        "src/services/fileWatcher.ts"
+        "src/services/demoWatcher.ts"
       ],
       "keywords": ["FileWatcher", "watchDirectory", "handleChange", "debounce"]
     },
@@ -104,7 +104,7 @@
       "description": "Tests cross-cutting security concern",
       "expectedTopFiles": [
         "src/utils/validation.ts",
-        "src/utils/hash.ts",
+        "src/utils/demoHash.ts",
         "docs/security.md"
       ],
       "keywords": ["validateEmail", "validatePassword", "sanitizeString", "XSS", "injection"]

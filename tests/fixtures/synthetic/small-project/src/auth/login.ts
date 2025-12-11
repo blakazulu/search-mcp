@@ -5,7 +5,7 @@
  * It validates credentials and generates session tokens.
  */
 
-import { hashPassword, verifyPassword } from '../utils/hash';
+import { hashPassword, verifyPassword } from '../utils/demoHash';
 import { validateEmail, validatePassword } from '../utils/validation';
 import { DatabaseConnection } from '../db/connection';
 import { UserNotFoundError, InvalidCredentialsError } from '../errors/auth';

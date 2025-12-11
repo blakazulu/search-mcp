@@ -134,27 +134,37 @@ See more [examples and use cases](docs/examples.md).
 
 ## MCP Search in Action
 
-We tested MCP semantic search against traditional Grep+Read approaches across 5 different query types. Here are the results:
+We tested MCP semantic search against traditional Grep+Read approaches on a real codebase (238 files, 970 chunks). Here are the results:
 
 ### Efficiency Comparison
 
-| Query Type | MCP Tokens | Manual Tokens | Efficiency Gain |
-|------------|------------|---------------|-----------------|
-| Conceptual ("how does file watching work") | ~3,000 | ~50,000 | **16.7x** |
-| Pattern ("error handling patterns") | ~3,500 | ~50,000 | **14.3x** |
-| Technical ("LanceDB vector search") | ~3,250 | ~37,500 | **11.5x** |
-| Broad ("security vulnerabilities") | ~2,750 | ~45,000 | **16.4x** |
-| Documentation ("configuration options") | ~3,000 | ~30,000 | **10.0x** |
-| **Average** | **~3,100** | **~42,500** | **~13.7x** |
+| Query Type | MCP Tokens | Grep Tokens | Efficiency Gain |
+|------------|------------|-------------|-----------------|
+| Conceptual ("how does file watching work") | 9,224 | 108,015 | **11.7x** |
+| Pattern ("error handling patterns") | 7,628 | 192,191 | **25.2x** |
+| Technical ("LanceDB vector search") | 9,506 | 174,552 | **18.4x** |
+| Broad ("security vulnerabilities") | 5,104 | 143,376 | **28.1x** |
+| Documentation ("configuration options") | 7,591 | 177,003 | **23.3x** |
+| **TOTAL** | **39,053** | **795,137** | **~20.4x** |
 
 ### Key Findings
 
 | Metric | MCP Search | Manual (Grep+Read) |
 |--------|------------|-------------------|
-| **Token Efficiency** | ~3,000 tokens/query | ~40,000+ tokens/query |
+| **Token Efficiency** | ~7,800 tokens/query | ~159,000 tokens/query |
 | **Relevance** | HIGH (semantic understanding) | MEDIUM (keyword noise) |
-| **Search Speed** | 13-50ms | Multiple tool calls |
+| **Search Speed** | 14-17ms | Multiple tool calls |
 | **Scalability** | Constant (10 chunks) | Linear with codebase |
+
+### Configuration Testing
+
+We also tested 21 different configuration combinations to find optimal settings:
+
+| Best In Category | Configuration | Value |
+|-----------------|---------------|-------|
+| Lowest Latency | all-features | 18.8ms |
+| Highest Precision@5 | default | 22% |
+| Best Token Efficiency | alpha-0.5 | 2.5x vs Grep |
 
 ### Why MCP Wins
 
@@ -162,6 +172,7 @@ We tested MCP semantic search against traditional Grep+Read approaches across 5 
 2. **Semantic Understanding** - Finds conceptually related content without exact keywords
 3. **Pre-filtered Results** - No manual file selection needed
 4. **Consistent Size** - Always ~10 chunks regardless of codebase size
+5. **Automatic Deduplication** - 15-17% reduction from overlapping chunks
 
 > For the full test methodology and raw data, see [docs/search-comparison-test.md](docs/search-comparison-test.md)
 

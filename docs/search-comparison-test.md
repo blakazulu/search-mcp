@@ -7,8 +7,18 @@ This document presents **actual benchmark results** comparing three approaches:
 
 > **Note**: These results are from automated benchmarks. Run them yourself with:
 > ```bash
-> npx vitest run tests/benchmarks/search-comparison.test.ts
+> npm run test:configs           # Config matrix tests (synthetic fixture)
+> npm run test:configs:full      # Full codebase tests
+> npx vitest run tests/benchmarks/search-comparison.test.ts  # Benchmark tests
 > ```
+
+## Codebase Under Test
+
+| Metric | Value |
+|--------|-------|
+| **Total files indexed** | 238 |
+| **Total chunks created** | 970 |
+| **Codebase** | Search MCP (this project) |
 
 ## Test Queries
 
@@ -168,12 +178,12 @@ This document presents **actual benchmark results** comparing three approaches:
 
 | Query | MCP Tokens | Grep Tokens | D&D Tokens | MCP vs Grep | MCP vs D&D |
 |-------|------------|-------------|------------|-------------|------------|
-| 1. File watching | 9,032 | 105,224 | 18,638 | **11.7x** | **2.1x** |
-| 2. Error handling | 8,385 | 175,227 | 2,764 | **20.9x** | 0.3x* |
-| 3. LanceDB search | 7,355 | 152,626 | 16,719 | **20.8x** | **2.3x** |
-| 4. Security | 5,699 | 136,517 | 15,948 | **24.0x** | **2.8x** |
-| 5. Configuration | 5,000 | 158,374 | 9,252 | **31.7x** | **1.9x** |
-| **TOTAL** | **35,471** | **727,968** | **63,321** | **20.5x** | **1.8x** |
+| 1. File watching | 9,224 | 108,015 | 18,638 | **11.7x** | **2.0x** |
+| 2. Error handling | 7,628 | 192,191 | 2,764 | **25.2x** | 0.4x* |
+| 3. LanceDB search | 9,506 | 174,552 | 19,852 | **18.4x** | **2.1x** |
+| 4. Security | 5,104 | 143,376 | 16,268 | **28.1x** | **3.2x** |
+| 5. Configuration | 7,591 | 177,003 | 10,445 | **23.3x** | **1.4x** |
+| **TOTAL** | **39,053** | **795,137** | **67,967** | **20.4x** | **1.7x** |
 
 *Query 2 D&D only includes errors/index.ts - incomplete coverage
 
@@ -196,13 +206,13 @@ The search results now include automatic deduplication of same-file chunks:
 ## Key Takeaways
 
 ### 1. Token Efficiency (Measured)
-- **MCP is ~20.5x more token-efficient than Grep** across all query types
-- **MCP is ~1.8x more efficient than optimal D&D** (but D&D requires expertise)
-- MCP returns focused chunks (~7,100 tokens avg) vs full files
-- Grep would require reading 25-45 files per query (impractical)
+- **MCP is ~20.4x more token-efficient than Grep** across all query types
+- **MCP is ~1.7x more efficient than optimal D&D** (but D&D requires expertise)
+- MCP returns focused chunks (~7,800 tokens avg) vs full files
+- Grep would require reading 25-49 files per query (impractical)
 
 ### 2. Search Speed (Measured)
-- **MCP search completes in 16-24ms** (after model warmup)
+- **MCP search completes in 14-17ms** (after model warmup)
 - First query takes ~400ms due to embedding model initialization
 - Subsequent queries are near-instant
 
@@ -212,12 +222,12 @@ The search results now include automatic deduplication of same-file chunks:
 - D&D relevance varies: HIGH if correct files selected, LOW otherwise
 
 ### 4. Scalability
-- **MCP scales consistently** - always 6-9 deduplicated results, ~7K tokens regardless of codebase
+- **MCP scales consistently** - always 6-10 deduplicated results, ~7,800 tokens regardless of codebase
 - Grep scales with codebase - more files = more tokens to read
 - D&D requires increasing expertise as codebase grows
 
 ### 5. The D&D Paradox
-- D&D can be **more efficient** than MCP for specific queries (Query 2: 2,764 vs 8,385)
+- D&D can be **more efficient** than MCP for specific queries (Query 2: 2,764 vs 7,628)
 - BUT requires user to **already know the answer** (which files to attach)
 - This is a chicken-and-egg problem: to know what to attach, you need to search first
 
@@ -260,11 +270,11 @@ All benchmarks are automated and reproducible. See `tests/benchmarks/search-comp
 
 ## Codebase Statistics
 
-At time of benchmark:
-- **Total .ts files**: 53
-- **Total characters**: 728,572
-- **Estimated tokens**: 182,143
-- **Average file size**: 13,747 chars
+At time of benchmark (2025-12-11):
+- **Total files indexed**: 238
+- **Total chunks created**: 970
+- **Total characters (grep scope)**: ~795,137 tokens worth
+- **Average MCP result**: ~7,800 tokens per query
 
 ---
 
@@ -285,23 +295,76 @@ The following optimizations are now active in MCP search:
 
 | Comparison | Efficiency Gain |
 |------------|-----------------|
-| MCP vs Manual Grep+Read | **~20.5x** more efficient |
-| MCP vs Optimal Drag-and-Drop | **~1.8x** more efficient |
+| MCP vs Manual Grep+Read | **~20.4x** more efficient |
+| MCP vs Optimal Drag-and-Drop | **~1.7x** more efficient |
 
 ### Why MCP Wins
 
 1. **No expertise required** - AI discovers relevant code automatically
-2. **Focused results** - Only relevant portions returned (~7K tokens avg)
+2. **Focused results** - Only relevant portions returned (~7,800 tokens avg)
 3. **Semantic understanding** - Finds conceptually related content
 4. **Consistent performance** - Same efficiency regardless of codebase size
-5. **Automatic deduplication** - Same-file chunks are merged
+5. **Automatic deduplication** - 15-17% reduction from overlapping chunks
 
 ### The Hidden Cost of Alternatives
 
-**Grep:** Would require reading 25-45 entire files per query. For a single question, that's 100K-175K tokens of context - often exceeding AI context limits entirely.
+**Grep:** Would require reading 25-49 entire files per query. For a single question, that's 108K-192K tokens of context - often exceeding AI context limits entirely.
 
 **Drag-and-Drop:** Requires the user to already understand the codebase structure. The "efficiency" comes at the cost of human expertise and time spent identifying files.
 
 ### Bottom Line
 
-For AI assistants working with code, MCP enables asking questions about large codebases that would otherwise be impractical. The ~20.5x efficiency gain over grep means the difference between "context limit exceeded" and "here's your answer in 20ms."
+For AI assistants working with code, MCP enables asking questions about large codebases that would otherwise be impractical. The ~20.4x efficiency gain over grep means the difference between "context limit exceeded" and "here's your answer in 20ms."
+
+---
+
+## Configuration Matrix Testing
+
+We also tested 21 different configuration combinations to find optimal settings:
+
+### Best Configurations (Synthetic Fixture - 25 files)
+
+| Category | Best Config | Value |
+|----------|-------------|-------|
+| Lowest Latency | all-features | 18.8ms |
+| Highest Precision@5 | default | 22% |
+| Best Token Efficiency | all-features | 6,954 tokens |
+
+### Alpha Parameter Analysis
+
+| Alpha | Description | MCP vs Grep | Best For |
+|-------|-------------|-------------|----------|
+| 0.0 | Pure FTS/keyword | 1.9x | Exact matches |
+| 0.5 | Balanced hybrid | **2.5x** | General queries |
+| 0.7 | Default (semantic-heavy) | 2.0x | Conceptual queries |
+| 1.0 | Pure semantic | 2.0x | Abstract concepts |
+
+**Recommendation:** `alpha=0.5` provides the best balance of efficiency and relevance.
+
+### Deduplication Effectiveness
+
+| Config | Raw Results | After Dedup | Reduction |
+|--------|-------------|-------------|-----------|
+| default | 79 | 67 | 15% |
+| alpha-0.0 | 80 | 68 | 15% |
+| alpha-0.5 | 66 | 55 | **17%** |
+| alpha-1.0 | 79 | 67 | 15% |
+
+---
+
+## Running the Tests
+
+```bash
+# Run config matrix tests (synthetic fixture, fast)
+npm run test:configs
+
+# Run full codebase tests (real project, slower)
+npm run test:configs:full
+
+# Run benchmark comparison test
+npx vitest run tests/benchmarks/search-comparison.test.ts
+```
+
+Reports are generated in `tests/reports/`:
+- `config-matrix-YYYY-MM-DD.md` - Configuration comparison
+- `accuracy-comparison-YYYY-MM-DD.md` - MCP vs Grep vs D&D

@@ -6,7 +6,7 @@
  */
 
 import { DatabaseConnection, TransactionContext } from './connection';
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/demoLogger';
 
 export interface Migration {
   version: number;

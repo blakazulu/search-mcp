@@ -18,6 +18,7 @@ A local-first Model Context Protocol (MCP) server that provides semantic search 
 - [Features](#features)
 - [Quick Start](#quick-start)
 - [What Can You Ask?](#what-can-you-ask)
+- [MCP Search in Action](#mcp-search-in-action)
 - [Configuration](#configuration)
 - [Documentation](#documentation)
 - [For Developers](#for-developers)
@@ -131,11 +132,48 @@ See more [examples and use cases](docs/examples.md).
 
 ---
 
+## MCP Search in Action
+
+We tested MCP semantic search against traditional Grep+Read approaches across 5 different query types. Here are the results:
+
+### Efficiency Comparison
+
+| Query Type | MCP Tokens | Manual Tokens | Efficiency Gain |
+|------------|------------|---------------|-----------------|
+| Conceptual ("how does file watching work") | ~3,000 | ~50,000 | **16.7x** |
+| Pattern ("error handling patterns") | ~3,500 | ~50,000 | **14.3x** |
+| Technical ("LanceDB vector search") | ~3,250 | ~37,500 | **11.5x** |
+| Broad ("security vulnerabilities") | ~2,750 | ~45,000 | **16.4x** |
+| Documentation ("configuration options") | ~3,000 | ~30,000 | **10.0x** |
+| **Average** | **~3,100** | **~42,500** | **~13.7x** |
+
+### Key Findings
+
+| Metric | MCP Search | Manual (Grep+Read) |
+|--------|------------|-------------------|
+| **Token Efficiency** | ~3,000 tokens/query | ~40,000+ tokens/query |
+| **Relevance** | HIGH (semantic understanding) | MEDIUM (keyword noise) |
+| **Search Speed** | 13-50ms | Multiple tool calls |
+| **Scalability** | Constant (10 chunks) | Linear with codebase |
+
+### Why MCP Wins
+
+1. **Chunked Retrieval** - Returns only relevant code portions, not entire files
+2. **Semantic Understanding** - Finds conceptually related content without exact keywords
+3. **Pre-filtered Results** - No manual file selection needed
+4. **Consistent Size** - Always ~10 chunks regardless of codebase size
+
+> For the full test methodology and raw data, see [tests/search-comparison-test.md](tests/search-comparison-test.md)
+
+---
+
 ## Configuration
 
 Config is auto-generated when you first index a project:
 - **macOS/Linux:** `~/.mcp/search/indexes/<project-hash>/config.json`
 - **Windows:** `%USERPROFILE%\.mcp\search\indexes\<project-hash>\config.json`
+
+**Finding your config file:** Ask your AI assistant "Where is my config file?" or "Show me my search config" - it will use the `get_config` tool to return the exact path.
 
 **Key options:**
 

@@ -12,7 +12,7 @@
  * - Stale lockfile detection and cleanup
  */
 
-import * as lancedb from 'vectordb';
+import * as lancedb from '@lancedb/lancedb';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { glob } from 'glob';
@@ -551,11 +551,11 @@ export class LanceDBStore {
         // Get results with a reasonable limit to avoid loading everything at once
         // We request more than the limit to account for duplicates
         const maxResults = Math.min(limit * 10, 100000);
-        const results = await table
-          .filter('true')
+        const results = (await table
+          .query()
           .select(['path'])
           .limit(maxResults)
-          .execute<{ path: string }>();
+          .toArray()) as unknown as { path: string }[];
 
         for (const result of results) {
           uniquePaths.add(result.path);
@@ -566,7 +566,10 @@ export class LanceDBStore {
       } catch (error) {
         // Fallback to unbounded query if limited query fails
         logger.debug('lancedb', 'Limited query failed, falling back', { error });
-        const allResults = await table.filter('true').select(['path']).execute<{ path: string }>();
+        const allResults = (await table
+          .query()
+          .select(['path'])
+          .toArray()) as unknown as { path: string }[];
         for (const result of allResults) {
           uniquePaths.add(result.path);
           if (uniquePaths.size >= limit) {
@@ -636,10 +639,10 @@ export class LanceDBStore {
       logger.debug('lancedb', `Searching with topK=${topK}`);
 
       // Perform vector search
-      const rawResults = await table
-        .search(queryVector)
+      const rawResults = (await table
+        .vectorSearch(queryVector)
         .limit(topK)
-        .execute<RawSearchResult>();
+        .toArray()) as unknown as RawSearchResult[];
 
       // Convert to SearchResult format
       const results: SearchResult[] = rawResults.map((row) => ({
@@ -678,10 +681,11 @@ export class LanceDBStore {
 
       try {
         // Query with path filter
-        const results = await table
-          .filter(`path LIKE '${likePattern}'`)
+        const results = (await table
+          .query()
+          .where(`path LIKE '${likePattern}'`)
           .select(['path'])
-          .execute<{ path: string }>();
+          .toArray()) as unknown as { path: string }[];
 
         // Get unique paths
         const uniquePaths = new Set<string>();

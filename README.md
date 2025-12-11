@@ -163,7 +163,7 @@ We tested MCP semantic search against traditional Grep+Read approaches across 5 
 3. **Pre-filtered Results** - No manual file selection needed
 4. **Consistent Size** - Always ~10 chunks regardless of codebase size
 
-> For the full test methodology and raw data, see [tests/search-comparison-test.md](tests/search-comparison-test.md)
+> For the full test methodology and raw data, see [docs/search-comparison-test.md](docs/search-comparison-test.md)
 
 ---
 

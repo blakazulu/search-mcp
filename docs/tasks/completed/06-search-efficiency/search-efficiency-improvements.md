@@ -254,4 +254,4 @@ Implementation files:
 ## References
 
 - Benchmark results: `tests/benchmarks/results.json`
-- Comparison document: `tests/search-comparison-test.md`
+- Comparison document: `docs/search-comparison-test.md`

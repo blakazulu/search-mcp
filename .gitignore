@@ -31,3 +31,6 @@ npm-debug.log*
 
 # Local settings
 .claude/settings.local.json
+
+# Test reports (generated)
+tests/reports/

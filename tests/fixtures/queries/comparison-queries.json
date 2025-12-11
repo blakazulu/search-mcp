@@ -1,0 +1,132 @@
+{
+  "description": "10 diverse queries for MCP vs Grep vs Drag-and-Drop comparison testing",
+  "version": "1.0.0",
+  "targetFixture": "small-project",
+  "queries": [
+    {
+      "id": 1,
+      "query": "how does file watching work",
+      "type": "Conceptual",
+      "description": "Tests semantic understanding of file system monitoring concepts",
+      "grepPatterns": ["watch", "watcher", "file.*change", "FileWatcher"],
+      "relevantFiles": ["src/services/fileWatcher.ts"],
+      "expectedTopFiles": ["src/services/fileWatcher.ts"],
+      "dragDropFiles": ["src/services/fileWatcher.ts"]
+    },
+    {
+      "id": 2,
+      "query": "error handling patterns",
+      "type": "Pattern",
+      "description": "Tests code pattern recognition across error handling",
+      "grepPatterns": ["error", "catch", "throw", "Error"],
+      "relevantFiles": ["src/errors/api.ts", "src/errors/auth.ts", "src/api/middleware.ts"],
+      "expectedTopFiles": ["src/errors/api.ts", "src/errors/auth.ts"],
+      "dragDropFiles": ["src/errors/api.ts", "src/errors/auth.ts", "src/api/middleware.ts"]
+    },
+    {
+      "id": 3,
+      "query": "database connection pooling",
+      "type": "Technical",
+      "description": "Tests specific technology/database pattern search",
+      "grepPatterns": ["connection", "pool", "database", "DatabaseConnection"],
+      "relevantFiles": ["src/db/connection.ts"],
+      "expectedTopFiles": ["src/db/connection.ts"],
+      "dragDropFiles": ["src/db/connection.ts"]
+    },
+    {
+      "id": 4,
+      "query": "security vulnerabilities",
+      "type": "Broad",
+      "description": "Tests cross-cutting security concerns across codebase",
+      "grepPatterns": ["security", "vulnerab", "sanitize", "safe", "inject", "XSS"],
+      "relevantFiles": ["src/utils/validation.ts", "docs/security.md", "src/utils/hash.ts"],
+      "expectedTopFiles": ["docs/security.md", "src/utils/validation.ts"],
+      "dragDropFiles": ["docs/security.md", "src/utils/validation.ts", "src/utils/hash.ts", "src/utils/crypto.ts"]
+    },
+    {
+      "id": 5,
+      "query": "configuration options",
+      "type": "Documentation",
+      "description": "Tests configuration and documentation search",
+      "grepPatterns": ["config", "option", "setting", "Config"],
+      "relevantFiles": ["src/config/index.ts", "docs/README.md"],
+      "expectedTopFiles": ["src/config/index.ts", "docs/README.md"],
+      "dragDropFiles": ["src/config/index.ts", "docs/README.md"]
+    },
+    {
+      "id": 6,
+      "query": "hashPassword function",
+      "type": "Exact",
+      "description": "Tests exact function name lookup",
+      "grepPatterns": ["hashPassword"],
+      "relevantFiles": ["src/utils/hash.ts", "src/auth/login.ts"],
+      "expectedTopFiles": ["src/utils/hash.ts"],
+      "dragDropFiles": ["src/utils/hash.ts"]
+    },
+    {
+      "id": 7,
+      "query": "how to create an index",
+      "type": "How-to",
+      "description": "Tests user intent / action-oriented query",
+      "grepPatterns": ["create.*index", "createIndex", "Index"],
+      "relevantFiles": ["src/services/indexManager.ts"],
+      "expectedTopFiles": ["src/services/indexManager.ts"],
+      "dragDropFiles": ["src/services/indexManager.ts"]
+    },
+    {
+      "id": 8,
+      "query": "embedding model initialization",
+      "type": "Implementation",
+      "description": "Tests specific implementation detail search",
+      "grepPatterns": ["embedding", "model", "initialize", "EmbeddingEngine"],
+      "relevantFiles": ["src/services/embedding.ts"],
+      "expectedTopFiles": ["src/services/embedding.ts"],
+      "dragDropFiles": ["src/services/embedding.ts"]
+    },
+    {
+      "id": 9,
+      "query": "API route handler",
+      "type": "API",
+      "description": "Tests API/interface search patterns",
+      "grepPatterns": ["router", "route", "handler", "GET", "POST"],
+      "relevantFiles": ["src/api/routes.ts", "src/api/middleware.ts"],
+      "expectedTopFiles": ["src/api/routes.ts"],
+      "dragDropFiles": ["src/api/routes.ts", "src/api/middleware.ts", "docs/api.md"]
+    },
+    {
+      "id": 10,
+      "query": "performance optimization",
+      "type": "Conceptual-Broad",
+      "description": "Tests abstract concept search across codebase",
+      "grepPatterns": ["performance", "optim", "cache", "memory", "fast", "efficient"],
+      "relevantFiles": ["src/services/cache.ts", "docs/README.md", "src/db/connection.ts"],
+      "expectedTopFiles": ["src/services/cache.ts", "docs/README.md"],
+      "dragDropFiles": ["src/services/cache.ts", "src/db/connection.ts", "src/services/embedding.ts"]
+    }
+  ],
+  "metrics": {
+    "description": "Metrics to collect for each query",
+    "mcp": {
+      "toolCalls": "Number of MCP tool calls (always 1 for search_code)",
+      "resultsReturned": "Number of results after deduplication",
+      "rawResults": "Number of results before deduplication",
+      "totalChars": "Total characters in results",
+      "estimatedTokens": "Estimated tokens (chars / 4)",
+      "searchTimeMs": "Search latency in milliseconds",
+      "relevance": "HIGH, MEDIUM, or LOW based on expectedTopFiles match"
+    },
+    "grep": {
+      "toolCallsNeeded": "1 grep + N file reads",
+      "filesMatched": "Number of files matching grep patterns",
+      "totalMatches": "Total line matches across files",
+      "totalChars": "Total characters if all matched files read",
+      "estimatedTokens": "Estimated tokens for grep approach"
+    },
+    "dragDrop": {
+      "userEffort": "LOW, MEDIUM, HIGH, or VERY HIGH",
+      "filesNeeded": "Array of files user would need to manually select",
+      "totalChars": "Total characters in selected files",
+      "estimatedTokens": "Estimated tokens for drag-and-drop approach"
+    }
+  }
+}

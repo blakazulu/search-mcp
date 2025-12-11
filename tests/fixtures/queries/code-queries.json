@@ -1,0 +1,113 @@
+{
+  "description": "Test queries for code search with expected results",
+  "version": "1.0.0",
+  "targetFixture": "small-project",
+  "queries": [
+    {
+      "id": "auth-login",
+      "query": "how does user authentication work",
+      "type": "Conceptual",
+      "description": "Tests semantic understanding of authentication flow",
+      "expectedTopFiles": [
+        "src/auth/login.ts",
+        "src/auth/oauth.ts",
+        "src/api/middleware.ts"
+      ],
+      "keywords": ["authenticateUser", "validateSession", "authMiddleware", "login", "password"]
+    },
+    {
+      "id": "password-hash",
+      "query": "hashPassword function",
+      "type": "Exact",
+      "description": "Tests exact function name lookup",
+      "expectedTopFiles": [
+        "src/utils/hash.ts"
+      ],
+      "keywords": ["hashPassword", "verifyPassword", "PBKDF2", "salt"]
+    },
+    {
+      "id": "db-connection",
+      "query": "database connection pool",
+      "type": "Technical",
+      "description": "Tests specific technology/pattern search",
+      "expectedTopFiles": [
+        "src/db/connection.ts"
+      ],
+      "keywords": ["DatabaseConnection", "pool", "acquireConnection", "releaseConnection"]
+    },
+    {
+      "id": "query-builder",
+      "query": "SQL query builder with parameterized queries",
+      "type": "Pattern",
+      "description": "Tests code pattern recognition",
+      "expectedTopFiles": [
+        "src/db/query.ts"
+      ],
+      "keywords": ["QueryBuilder", "where", "select", "sanitizeIdentifier"]
+    },
+    {
+      "id": "error-handling",
+      "query": "error handling patterns",
+      "type": "Pattern",
+      "description": "Tests cross-cutting concern search",
+      "expectedTopFiles": [
+        "src/errors/api.ts",
+        "src/errors/auth.ts",
+        "src/api/middleware.ts"
+      ],
+      "keywords": ["ApiError", "AuthError", "errorHandlerMiddleware", "try", "catch"]
+    },
+    {
+      "id": "rate-limit",
+      "query": "rate limiting middleware",
+      "type": "Technical",
+      "description": "Tests middleware pattern search",
+      "expectedTopFiles": [
+        "src/api/middleware.ts"
+      ],
+      "keywords": ["rateLimitMiddleware", "maxRequests", "windowMs", "X-RateLimit"]
+    },
+    {
+      "id": "oauth-flow",
+      "query": "OAuth 2.0 authorization flow",
+      "type": "Implementation",
+      "description": "Tests implementation detail search",
+      "expectedTopFiles": [
+        "src/auth/oauth.ts"
+      ],
+      "keywords": ["generateAuthorizationUrl", "handleOAuthCallback", "exchangeCodeForTokens", "CSRF"]
+    },
+    {
+      "id": "cache-lru",
+      "query": "LRU cache implementation",
+      "type": "Technical",
+      "description": "Tests algorithm/data structure search",
+      "expectedTopFiles": [
+        "src/services/cache.ts"
+      ],
+      "keywords": ["LRUCache", "evictLRU", "TTL", "cache"]
+    },
+    {
+      "id": "file-watch",
+      "query": "how does file watching work",
+      "type": "Conceptual",
+      "description": "Tests semantic understanding of file system monitoring",
+      "expectedTopFiles": [
+        "src/services/fileWatcher.ts"
+      ],
+      "keywords": ["FileWatcher", "watchDirectory", "handleChange", "debounce"]
+    },
+    {
+      "id": "security-validation",
+      "query": "input validation and security",
+      "type": "Broad",
+      "description": "Tests cross-cutting security concern",
+      "expectedTopFiles": [
+        "src/utils/validation.ts",
+        "src/utils/hash.ts",
+        "docs/security.md"
+      ],
+      "keywords": ["validateEmail", "validatePassword", "sanitizeString", "XSS", "injection"]
+    }
+  ]
+}

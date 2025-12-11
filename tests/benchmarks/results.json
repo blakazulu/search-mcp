@@ -1,15 +1,15 @@
 {
-  "timestamp": "2025-12-11T14:53:25.456Z",
+  "timestamp": "2025-12-11T15:58:11.513Z",
   "results": [
     {
       "queryId": 1,
       "query": "how does file watching work",
       "type": "Conceptual",
       "mcp": {
-        "searchTimeMs": 627,
+        "searchTimeMs": 606,
         "resultCount": 8,
-        "totalChars": 36129,
-        "estimatedTokens": 9032
+        "totalChars": 36894,
+        "estimatedTokens": 9224
       },
       "grep": {
         "filesMatched": 25,
@@ -28,10 +28,10 @@
       "query": "error handling patterns",
       "type": "Pattern",
       "mcp": {
-        "searchTimeMs": 129,
+        "searchTimeMs": 24,
         "resultCount": 10,
-        "totalChars": 31612,
-        "estimatedTokens": 7903
+        "totalChars": 30510,
+        "estimatedTokens": 7628
       },
       "grep": {
         "filesMatched": 49,
@@ -50,10 +50,10 @@
       "query": "LanceDB vector search",
       "type": "Technical",
       "mcp": {
-        "searchTimeMs": 49,
+        "searchTimeMs": 23,
         "resultCount": 10,
-        "totalChars": 38192,
-        "estimatedTokens": 9548
+        "totalChars": 38023,
+        "estimatedTokens": 9506
       },
       "grep": {
         "filesMatched": 49,
@@ -72,10 +72,10 @@
       "query": "security vulnerabilities",
       "type": "Broad",
       "mcp": {
-        "searchTimeMs": 45,
+        "searchTimeMs": 25,
         "resultCount": 9,
-        "totalChars": 22794,
-        "estimatedTokens": 5699
+        "totalChars": 21374,
+        "estimatedTokens": 5344
       },
       "grep": {
         "filesMatched": 34,
@@ -94,10 +94,10 @@
       "query": "configuration options",
       "type": "Documentation",
       "mcp": {
-        "searchTimeMs": 55,
+        "searchTimeMs": 43,
         "resultCount": 10,
-        "totalChars": 24085,
-        "estimatedTokens": 6021
+        "totalChars": 26595,
+        "estimatedTokens": 6649
       },
       "grep": {
         "filesMatched": 47,
@@ -113,10 +113,10 @@
     }
   ],
   "totals": {
-    "mcp": 38203,
+    "mcp": 38351,
     "grep": 795137,
     "dragDrop": 67967,
-    "mcpVsGrep": "20.8",
+    "mcpVsGrep": "20.7",
     "mcpVsDragDrop": "1.8"
   }
 }

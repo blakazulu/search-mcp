@@ -11,6 +11,10 @@ Complete reference for customizing Search MCP behavior.
 - [Config Location](#config-location)
 - [Full Example](#full-example)
 - [All Options](#all-options)
+- [Hybrid Search](#hybrid-search)
+  - [Search Modes](#search-modes)
+  - [FTS Engine Selection](#fts-engine-selection)
+  - [Alpha Tuning](#alpha-tuning)
 - [Indexing Strategies](#indexing-strategies)
   - [Realtime (Default)](#realtime-default)
   - [Lazy](#lazy)
@@ -58,6 +62,12 @@ The config file is **auto-generated** on first indexing with sensible defaults. 
 
   "indexingStrategy": "realtime",
 
+  "hybridSearch": {
+    "enabled": true,
+    "ftsEngine": "auto",
+    "defaultAlpha": 0.7
+  },
+
   "_hardcodedExcludes": [
     "// These patterns are ALWAYS excluded and cannot be overridden:",
     "// - node_modules/, jspm_packages/, bower_components/  (dependencies)",
@@ -99,6 +109,63 @@ The config file is **auto-generated** on first indexing with sensible defaults. 
 | `indexDocs` | `boolean` | `true` | Enable documentation indexing (separate from code) |
 | `enhancedToolDescriptions` | `boolean` | `false` | Add AI hints to tool descriptions |
 | `indexingStrategy` | `string` | `"realtime"` | When to index: `"realtime"`, `"lazy"`, or `"git"` |
+| `hybridSearch.enabled` | `boolean` | `true` | Enable hybrid search (vector + keyword) |
+| `hybridSearch.ftsEngine` | `string` | `"auto"` | FTS engine: `"auto"`, `"js"`, or `"native"` |
+| `hybridSearch.defaultAlpha` | `number` | `0.7` | Default semantic/keyword weight (0-1) |
+
+---
+
+## Hybrid Search
+
+Hybrid search combines semantic (vector) search with keyword (full-text) search for better results. It's enabled by default in version 1.2.0+.
+
+### Search Modes
+
+When searching, you can specify a `mode` parameter:
+
+| Mode | Description | When to Use |
+|------|-------------|-------------|
+| `hybrid` | Combines vector + keyword using RRF fusion | General use (default) |
+| `vector` | Semantic search only | Conceptual queries ("how does auth work?") |
+| `fts` | Keyword search only (BM25) | Exact matches ("handleWebSocket function") |
+
+### FTS Engine Selection
+
+The `ftsEngine` config option controls which full-text search engine is used:
+
+| Engine | Description | Best For |
+|--------|-------------|----------|
+| `auto` | Auto-select based on project size | Most users (default) |
+| `js` | JavaScript engine (natural package) | Small/medium projects |
+| `native` | SQLite FTS5 (requires better-sqlite3) | Large projects (5000+ files) |
+
+**Auto-Detection Logic:**
+- If project has > 5000 files AND `better-sqlite3` is available: Uses native
+- Otherwise: Uses JavaScript engine
+
+**To install native engine support:**
+```bash
+npm install better-sqlite3
+```
+
+### Alpha Tuning
+
+The `defaultAlpha` controls the balance between semantic and keyword search:
+
+```
+alpha = 1.0  ->  100% semantic (same as mode="vector")
+alpha = 0.7  ->  70% semantic, 30% keyword (good for code - default)
+alpha = 0.5  ->  50/50 balanced
+alpha = 0.3  ->  30% semantic, 70% keyword (good for exact matches)
+alpha = 0.0  ->  100% keyword (same as mode="fts")
+```
+
+**Recommended values:**
+- **Code search:** `0.7` - Semantic understanding with keyword boost for function names
+- **Documentation search:** `0.5-0.7` - Balance for natural language
+- **API/symbol search:** `0.3` - Favor exact keyword matches
+
+You can also override alpha per-search using the `alpha` parameter in `search_code` or `search_docs`.
 
 ---
 

@@ -4,10 +4,11 @@ This document outlines the planned features and improvements for Search MCP.
 
 ---
 
-## Current Version: 1.1.3
+## Current Version: 1.2.0
 
 ### What's Working
 - Semantic search for code and documentation
+- **Hybrid search** (vector + keyword) with configurable modes
 - Three indexing strategies (realtime, lazy, git)
 - Real-time file watching
 - Local embedding model (no API keys needed)
@@ -29,15 +30,15 @@ This document outlines the planned features and improvements for Search MCP.
 
 ---
 
-## Medium Term (v1.2.x)
+## Medium Term (v1.3.x)
 
 ### New Features
 
 | Feature | Description | Priority |
 |---------|-------------|----------|
 | `list_projects` | Show all indexed projects with stats | High |
-| Hybrid Search | Combine vector + keyword search (BM25) for better results | High |
 | PDF Doc Support | Add PDF text extraction to `search_docs` | Medium |
+| Native SQLite FTS5 | Full implementation of native FTS engine | Medium |
 
 ### Improvements
 
@@ -91,6 +92,19 @@ These are ideas we're evaluating but haven't committed to:
 ---
 
 ## Completed
+
+### v1.2.0
+- [x] **Hybrid Search** - Combine vector + keyword search (BM25) for better results
+  - [x] FTS Engine Interface with JS implementation (NaturalBM25Engine)
+  - [x] Auto-detection of best engine based on project size
+  - [x] Search modes: hybrid, vector, fts
+  - [x] Alpha parameter for tuning semantic vs keyword weight
+  - [x] Reciprocal Rank Fusion (RRF) for result merging
+  - [x] Comprehensive integration tests (48 tests)
+- [x] Compact output format for search tools
+- [x] Code-aware chunking module
+- [x] get_config tool
+- [x] Updated documentation (API reference, configuration, examples)
 
 ### v1.1.x
 - [x] Migrate to @lancedb/lancedb (from deprecated vectordb)

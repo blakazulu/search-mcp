@@ -16,6 +16,7 @@ Real-world examples of how to use Search MCP effectively.
 - [Finding Files by Pattern](#finding-files-by-pattern)
 - [Onboarding to a Feature](#onboarding-to-a-feature)
 - [Learning Codebase Patterns](#learning-codebase-patterns)
+- [Hybrid Search Examples](#hybrid-search-examples)
 - [Best Practices](#best-practices)
 
 ---
@@ -156,6 +157,107 @@ AI: "API endpoints follow a consistent pattern:
      2. Throw AppError with status code for expected errors
      3. Global error handler in src/middleware/error.ts formats response
      Example from src/api/users.ts:45..."
+```
+
+---
+
+## Hybrid Search Examples
+
+Search MCP supports three search modes to help you find code more effectively.
+
+### Finding Exact Function Names (Keyword Mode)
+
+**Scenario:** You know the exact function name and want to find it.
+
+```
+You: "Find the handleWebSocket function" (with mode="fts")
+
+AI: *uses keyword search*
+
+AI: "Found handleWebSocket in src/websocket/handler.ts:25"
+```
+
+**Why keyword mode?** Exact matches for function/class/variable names work best with keyword search.
+
+---
+
+### Understanding a Concept (Vector Mode)
+
+**Scenario:** You want to understand how something works conceptually.
+
+```
+You: "How does the authentication flow work?" (with mode="vector")
+
+AI: *uses semantic search*
+
+AI: "Based on the code, authentication works as follows:
+     1. User submits credentials to /api/auth/login
+     2. AuthService validates against the database
+     3. JWT token is generated and returned
+     ..."
+```
+
+**Why vector mode?** Conceptual questions benefit from semantic understanding.
+
+---
+
+### Best of Both Worlds (Hybrid Mode - Default)
+
+**Scenario:** General search that needs both exact matches and semantic understanding.
+
+```
+You: "Find where user passwords are hashed"
+
+AI: *uses hybrid search (combines vector + keyword)*
+
+AI: "Found password hashing in multiple places:
+     1. src/utils/crypto.ts:12 - hashPassword function (exact match)
+     2. src/auth/register.ts:45 - uses bcrypt for user registration
+     3. src/auth/password-reset.ts:78 - hash comparison logic"
+```
+
+**Why hybrid mode?** Catches both the exact term "hashPassword" AND related concepts like "bcrypt" and "password validation".
+
+---
+
+### Tuning Search Balance with Alpha
+
+**Scenario:** You want more control over search behavior.
+
+```
+You: "Search for database connection with alpha=0.3"
+
+AI: *uses hybrid search with 30% semantic, 70% keyword*
+    *prioritizes exact keyword matches*
+```
+
+| Alpha | Semantic | Keyword | Best For |
+|-------|----------|---------|----------|
+| 0.9 | 90% | 10% | Conceptual queries |
+| 0.7 | 70% | 30% | Code search (default) |
+| 0.5 | 50% | 50% | Balanced |
+| 0.3 | 30% | 70% | API/symbol names |
+
+---
+
+### Searching Specific File Types
+
+**Scenario:** Search only in documentation or only in code.
+
+```
+You: "Search docs for rate limiting" (uses search_docs)
+
+AI: "Found rate limiting documentation in:
+     1. docs/api-guide.md - Rate limiting section
+     2. README.md - API limits overview"
+```
+
+```
+You: "Search code for RateLimiter" (uses search_code)
+
+AI: "Found RateLimiter class in:
+     1. src/middleware/rateLimiter.ts
+     2. src/utils/rateLimit.ts"
 ```
 
 ---

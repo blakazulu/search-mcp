@@ -7,52 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2025-12-11
+
 ### Added
-- **FTS (Full-Text Search) Engine Interface** (`src/engines/ftsEngine.ts`) (SMCP-058)
+- **Hybrid Search** - Combines semantic (vector) and keyword (FTS) search for better results
+  - New `mode` parameter for `search_code` and `search_docs`: `'hybrid'` (default), `'vector'`, `'fts'`
+  - New `alpha` parameter (0-1) to control semantic vs keyword weight
+  - Reciprocal Rank Fusion (RRF) algorithm for intelligent result merging
+  - Backward compatible: existing indexes without FTS fall back to vector-only search
+- **FTS Engine Interface** (`src/engines/ftsEngine.ts`) (SMCP-058)
   - Unified interface for full-text search engines
   - Support for multiple implementations (JS and native)
   - Error types: `FTSNotInitializedError`, `FTSQueryError`, `FTSSerializationError`
 - **NaturalBM25Engine** (`src/engines/naturalBM25.ts`) - Pure JavaScript FTS implementation
-  - Uses `natural` npm package for TF-IDF based text search
+  - Uses `natural` npm package for TF-IDF/BM25 based text search
   - No native dependencies - works on all platforms
   - Supports add/remove/search operations
   - Score normalization for hybrid search (0-1 range)
   - Serialization/deserialization for index persistence
-  - 51 unit tests with performance benchmarks
 - **FTS Engine Factory** (`src/engines/ftsEngineFactory.ts`) (SMCP-060)
-  - Auto-detection of best FTS engine based on codebase size and native module availability
+  - Auto-detection of best FTS engine based on codebase size
   - Threshold: 5000 files triggers native engine selection when available
   - User preference override via `hybridSearch.ftsEngine` config option
-  - Clear feedback about which engine was selected and why
   - Graceful fallback from native to JS when better-sqlite3 unavailable
 - **Hybrid Search Configuration** - New `hybridSearch` config section
   - `enabled` (boolean, default: true) - Enable/disable hybrid search
   - `ftsEngine` ('auto' | 'js' | 'native', default: 'auto') - FTS engine preference
-  - `defaultAlpha` (0-1, default: 0.7) - Semantic vs keyword weight (0.7 = 70% semantic)
-- Search result processing utilities for token optimization (`src/utils/searchResultProcessing.ts`)
+  - `defaultAlpha` (0-1, default: 0.7) - Semantic vs keyword weight
 - **Compact output format** for `search_code` and `search_docs` tools (SMCP-065)
   - New `compact` parameter (default: false) returns results with shorter field names
-  - When compact=true: `l` (location), `t` (text), `s` (score), `r` (results), `n` (count), `ms` (time)
   - Reduces token count by ~5% through shorter field names
 - **Code-aware chunking module** (`src/engines/codeAwareChunking.ts`) (SMCP-066)
-  - Heuristic-based chunking that splits at semantic boundaries (functions, classes, exports)
+  - Heuristic-based chunking that splits at semantic boundaries
   - Supports TypeScript, JavaScript, and Python
-  - Falls back to character-based chunking for unsupported languages
   - New config option: `chunkingStrategy: 'character' | 'code-aware'` (default: 'character')
-  - Reduced overlap (200 chars vs 800) since splits occur at meaningful boundaries
-- **Hybrid Search Integration** (SMCP-061)
-  - Integrated FTS engine into IndexManager for building FTS index during create_index
-  - Added `mode` parameter to `search_code` and `search_docs` tools: `'hybrid'` (default), `'vector'`, `'fts'`
-  - Added `alpha` parameter for hybrid search weight (0-1, higher = more semantic)
-  - `get_index_status` now shows hybrid search info (FTS engine type, chunk count, default alpha)
-  - `reindex_file` now updates both vector and FTS indexes incrementally
-  - Reciprocal Rank Fusion (RRF) for combining vector and FTS results
-  - Backward compatible: existing indexes without FTS fall back to vector-only search
-  - New module: `src/engines/hybridSearch.ts` for RRF score fusion
+- `get_index_status` now shows hybrid search info (FTS engine type, chunk count, default alpha)
+- `reindex_file` now updates both vector and FTS indexes incrementally
+- Comprehensive hybrid search integration tests (48 tests)
 
 ### Changed
-- `search_code` and `search_docs` now apply whitespace trimming and same-file deduplication to results
+- `search_code` and `search_docs` now apply whitespace trimming and same-file deduplication
 - Reduced token usage by ~7-8% through automatic result optimization
+- Default search mode is now `hybrid` (combines vector + keyword search)
+
+### Documentation
+- Updated API reference with new `mode` and `alpha` parameters
+- Added Hybrid Search section to configuration docs
+- Added Hybrid Search examples to examples docs
+- Updated ROADMAP to mark Hybrid Search as completed
 
 ## [1.1.5] - 2024-12-11
 

@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Config Matrix npm Scripts** (SMCP-071)
+  - `npm run test:configs` - Run config matrix and accuracy comparison tests
+  - `npm run test:configs:watch` - Watch mode for config tests
+  - `npm run test:configs:full` - Run tests against full codebase (FULL_CODEBASE=true)
+  - Added `cross-env` dependency for Windows compatibility
 - **Accuracy Comparison Tests** (`tests/configs/accuracyComparison.test.ts`) (SMCP-070)
   - Compares MCP search efficiency against Grep and Drag-and-Drop baselines
   - Tests 5 representative configs (default, alpha-0.0, alpha-0.5, alpha-1.0, fts-js)

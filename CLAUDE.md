@@ -30,6 +30,31 @@ npm run lint
 npx @liraz-sbz/search-mcp
 ```
 
+### Config Matrix Testing
+
+```bash
+# Run config matrix tests (synthetic fixtures, ~5 minutes)
+npm run test:configs
+
+# Watch mode for development
+npm run test:configs:watch
+
+# Run against full codebase (slower, more realistic, ~30 minutes)
+npm run test:configs:full
+
+# Run a single config test file
+npx vitest run tests/configs/configMatrix.test.ts
+npx vitest run tests/configs/accuracyComparison.test.ts
+```
+
+**Environment Variables:**
+- `FULL_CODEBASE=true` - Test against actual codebase instead of synthetic fixture
+- `FULL_CONFIG=true` - Test all 21 configs instead of 5 representative configs (for accuracyComparison.test.ts)
+
+**Reports:** Generated to `tests/reports/`
+- `config-matrix-YYYY-MM-DD.md` - Config comparison results
+- `accuracy-comparison-YYYY-MM-DD.md` - MCP vs Grep vs D&D comparison
+
 ## Architecture
 
 ### High-Level Data Flow

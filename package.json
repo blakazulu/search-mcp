@@ -12,6 +12,9 @@
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:configs": "vitest run tests/configs/",
+    "test:configs:watch": "vitest tests/configs/",
+    "test:configs:full": "cross-env FULL_CODEBASE=true vitest run tests/configs/",
     "lint": "tsc --noEmit"
   },
   "keywords": [
@@ -61,6 +64,7 @@
     "@types/natural": "^5.1.5",
     "@types/node": "^20.0.0",
     "@types/uuid": "^9.0.0",
+    "cross-env": "^10.1.0",
     "typescript": "^5.3.0",
     "vitest": "^1.0.0"
   }

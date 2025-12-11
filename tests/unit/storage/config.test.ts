@@ -6,13 +6,17 @@ import {
   parseFileSize,
   formatFileSize,
   ConfigSchema,
+  HybridSearchSchema,
   DEFAULT_CONFIG,
+  DEFAULT_HYBRID_SEARCH,
   HARDCODED_EXCLUDES,
   loadConfig,
   saveConfig,
   generateDefaultConfig,
   ConfigManager,
   type Config,
+  type HybridSearchConfig,
+  type FTSEnginePreference,
 } from '../../../src/storage/config.js';
 
 // Mock the logger to avoid file system side effects
@@ -115,6 +119,11 @@ describe('Config Manager', () => {
         enhancedToolDescriptions: true,
         indexingStrategy: 'lazy' as const,
         chunkingStrategy: 'character' as const,
+        hybridSearch: {
+          enabled: false,
+          ftsEngine: 'native' as const,
+          defaultAlpha: 0.5,
+        },
       };
 
       const result = ConfigSchema.safeParse(config);
@@ -247,6 +256,74 @@ describe('Config Manager', () => {
       });
       expect(result.success).toBe(false);
     });
+
+    // HybridSearch schema tests
+    it('should accept valid hybridSearch configuration', () => {
+      const result = ConfigSchema.safeParse({
+        hybridSearch: {
+          enabled: true,
+          ftsEngine: 'auto',
+          defaultAlpha: 0.7,
+        },
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.hybridSearch.enabled).toBe(true);
+        expect(result.data.hybridSearch.ftsEngine).toBe('auto');
+        expect(result.data.hybridSearch.defaultAlpha).toBe(0.7);
+      }
+    });
+
+    it('should apply defaults for hybridSearch when not specified', () => {
+      const result = ConfigSchema.safeParse({});
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.hybridSearch).toEqual(DEFAULT_HYBRID_SEARCH);
+      }
+    });
+
+    it('should accept all valid ftsEngine values', () => {
+      const engines: FTSEnginePreference[] = ['auto', 'js', 'native'];
+      for (const engine of engines) {
+        const result = ConfigSchema.safeParse({
+          hybridSearch: { ftsEngine: engine },
+        });
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data.hybridSearch.ftsEngine).toBe(engine);
+        }
+      }
+    });
+
+    it('should reject invalid ftsEngine value', () => {
+      const result = ConfigSchema.safeParse({
+        hybridSearch: { ftsEngine: 'invalid' },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('should accept valid alpha values (0-1)', () => {
+      const alphaValues = [0, 0.3, 0.5, 0.7, 1.0];
+      for (const alpha of alphaValues) {
+        const result = ConfigSchema.safeParse({
+          hybridSearch: { defaultAlpha: alpha },
+        });
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data.hybridSearch.defaultAlpha).toBe(alpha);
+        }
+      }
+    });
+
+    it('should reject alpha values outside 0-1 range', () => {
+      const invalidAlphas = [-0.1, 1.1, 2.0, -1];
+      for (const alpha of invalidAlphas) {
+        const result = ConfigSchema.safeParse({
+          hybridSearch: { defaultAlpha: alpha },
+        });
+        expect(result.success).toBe(false);
+      }
+    });
   });
 
   // ==========================================================================
@@ -265,6 +342,7 @@ describe('Config Manager', () => {
       expect(DEFAULT_CONFIG.enhancedToolDescriptions).toBeDefined();
       expect(DEFAULT_CONFIG.indexingStrategy).toBeDefined();
       expect(DEFAULT_CONFIG.chunkingStrategy).toBeDefined();
+      expect(DEFAULT_CONFIG.hybridSearch).toBeDefined();
     });
 
     it('should have correct enhancedToolDescriptions default', () => {
@@ -283,6 +361,14 @@ describe('Config Manager', () => {
       expect(DEFAULT_CONFIG.indexingStrategy).toBe('realtime');
     });
 
+    it('should have correct hybridSearch defaults', () => {
+      expect(DEFAULT_CONFIG.hybridSearch).toEqual({
+        enabled: true,
+        ftsEngine: 'auto',
+        defaultAlpha: 0.7,
+      });
+    });
+
     it('should match schema defaults', () => {
       const schemaDefaults = ConfigSchema.parse({});
       expect(DEFAULT_CONFIG).toEqual(schemaDefaults);
@@ -290,6 +376,19 @@ describe('Config Manager', () => {
 
     it('should have valid maxFileSize', () => {
       expect(() => parseFileSize(DEFAULT_CONFIG.maxFileSize)).not.toThrow();
+    });
+  });
+
+  describe('DEFAULT_HYBRID_SEARCH', () => {
+    it('should have correct defaults', () => {
+      expect(DEFAULT_HYBRID_SEARCH.enabled).toBe(true);
+      expect(DEFAULT_HYBRID_SEARCH.ftsEngine).toBe('auto');
+      expect(DEFAULT_HYBRID_SEARCH.defaultAlpha).toBe(0.7);
+    });
+
+    it('should match HybridSearchSchema defaults', () => {
+      const schemaDefaults = HybridSearchSchema.parse({});
+      expect(DEFAULT_HYBRID_SEARCH).toEqual(schemaDefaults);
     });
   });
 
@@ -332,6 +431,11 @@ describe('Config Manager', () => {
         enhancedToolDescriptions: true,
         indexingStrategy: 'lazy',
         chunkingStrategy: 'character',
+        hybridSearch: {
+          enabled: false,
+          ftsEngine: 'native',
+          defaultAlpha: 0.5,
+        },
       };
 
       const configPath = path.join(indexPath, 'config.json');
@@ -424,6 +528,33 @@ describe('Config Manager', () => {
       expect(loaded.maxFileSize).toBe('1MB');
       // New fields should get defaults
       expect(loaded.indexingStrategy).toBe('realtime');
+      expect(loaded.hybridSearch).toEqual(DEFAULT_HYBRID_SEARCH);
+    });
+
+    it('should apply defaults for hybridSearch when not in config (v2 to v3 migration)', async () => {
+      // Simulate a v2 config without hybridSearch
+      const v2Config = {
+        include: ['**/*'],
+        exclude: [],
+        respectGitignore: true,
+        maxFileSize: '1MB',
+        maxFiles: 50000,
+        docPatterns: ['**/*.md', '**/*.txt'],
+        indexDocs: true,
+        enhancedToolDescriptions: false,
+        indexingStrategy: 'realtime',
+        chunkingStrategy: 'character',
+      };
+
+      const configPath = path.join(indexPath, 'config.json');
+      await fs.promises.writeFile(configPath, JSON.stringify(v2Config));
+
+      const loaded = await loadConfig(indexPath);
+      // hybridSearch should be added with defaults
+      expect(loaded.hybridSearch).toBeDefined();
+      expect(loaded.hybridSearch.enabled).toBe(true);
+      expect(loaded.hybridSearch.ftsEngine).toBe('auto');
+      expect(loaded.hybridSearch.defaultAlpha).toBe(0.7);
     });
 
     it('should load custom docPatterns and indexDocs', async () => {
@@ -651,6 +782,11 @@ describe('Config Manager', () => {
           enhancedToolDescriptions: true,
           indexingStrategy: 'git',
           chunkingStrategy: 'character',
+          hybridSearch: {
+            enabled: false,
+            ftsEngine: 'js',
+            defaultAlpha: 0.6,
+          },
         };
 
         const configPath = path.join(indexPath, 'config.json');
@@ -735,6 +871,11 @@ describe('Config Manager', () => {
           enhancedToolDescriptions: false,
           indexingStrategy: 'realtime',
           chunkingStrategy: 'character',
+          hybridSearch: {
+            enabled: true,
+            ftsEngine: 'native',
+            defaultAlpha: 0.8,
+          },
         };
 
         const configPath = path.join(indexPath, 'config.json');

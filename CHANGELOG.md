@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Score normalization for hybrid search (0-1 range)
   - Serialization/deserialization for index persistence
   - 51 unit tests with performance benchmarks
+- **FTS Engine Factory** (`src/engines/ftsEngineFactory.ts`) (SMCP-060)
+  - Auto-detection of best FTS engine based on codebase size and native module availability
+  - Threshold: 5000 files triggers native engine selection when available
+  - User preference override via `hybridSearch.ftsEngine` config option
+  - Clear feedback about which engine was selected and why
+  - Graceful fallback from native to JS when better-sqlite3 unavailable
+- **Hybrid Search Configuration** - New `hybridSearch` config section
+  - `enabled` (boolean, default: true) - Enable/disable hybrid search
+  - `ftsEngine` ('auto' | 'js' | 'native', default: 'auto') - FTS engine preference
+  - `defaultAlpha` (0-1, default: 0.7) - Semantic vs keyword weight (0.7 = 70% semantic)
 - Search result processing utilities for token optimization (`src/utils/searchResultProcessing.ts`)
 - **Compact output format** for `search_code` and `search_docs` tools (SMCP-065)
   - New `compact` parameter (default: false) returns results with shorter field names

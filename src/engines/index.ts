@@ -200,3 +200,22 @@ export {
   NaturalBM25Engine,
   createNaturalBM25Engine,
 } from './naturalBM25.js';
+
+// SQLite FTS5 Engine (Native implementation)
+export {
+  SQLiteFTS5Engine,
+  createSQLiteFTS5Engine,
+  isNativeAvailable,
+  resetNativeAvailableCache,
+  type SQLiteFTS5Options,
+} from './sqliteFTS5.js';
+
+// FTS Engine Factory (Auto-detection and selection)
+export {
+  FILE_COUNT_THRESHOLD,
+  type EngineSelectionResult,
+  createFTSEngine,
+  checkNativeAvailable,
+  formatEngineSelectionReason,
+  wouldSelectNative,
+} from './ftsEngineFactory.js';

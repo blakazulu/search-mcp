@@ -81,6 +81,43 @@ export function formatFileSize(bytes: number): string {
 const FILE_SIZE_REGEX = /^\d+(KB|MB)$/i;
 
 /**
+ * FTS engine preference type for hybrid search
+ *
+ * - 'auto': Automatically select engine based on codebase size and native availability
+ * - 'js': Force JavaScript engine (NaturalBM25Engine)
+ * - 'native': Force native engine (SQLiteFTS5Engine), falls back to JS if unavailable
+ */
+export type FTSEnginePreference = 'auto' | 'js' | 'native';
+
+/**
+ * Zod schema for hybrid search configuration
+ */
+export const HybridSearchSchema = z.object({
+  /** Whether hybrid search is enabled (default: true) */
+  enabled: z.boolean().default(true),
+
+  /** FTS engine preference: 'auto', 'js', or 'native' (default: 'auto') */
+  ftsEngine: z.enum(['auto', 'js', 'native']).default('auto'),
+
+  /** Default alpha weight for hybrid search (0-1, default: 0.7 = 70% semantic, 30% keyword) */
+  defaultAlpha: z.number().min(0).max(1).default(0.7),
+});
+
+/**
+ * Inferred HybridSearch type from the schema
+ */
+export type HybridSearchConfig = z.infer<typeof HybridSearchSchema>;
+
+/**
+ * Default hybrid search configuration
+ */
+export const DEFAULT_HYBRID_SEARCH: HybridSearchConfig = {
+  enabled: true,
+  ftsEngine: 'auto',
+  defaultAlpha: 0.7,
+};
+
+/**
  * Zod schema for configuration validation
  *
  * Validates configuration with sensible defaults for all fields.
@@ -120,6 +157,9 @@ export const ConfigSchema = z
 
     /** Chunking strategy: 'character' (fixed-size), 'code-aware' (semantic boundaries) */
     chunkingStrategy: z.enum(['character', 'code-aware']).default('character'),
+
+    /** Hybrid search configuration (combining vector and keyword search) */
+    hybridSearch: HybridSearchSchema.default(DEFAULT_HYBRID_SEARCH),
   })
   .strict()
   .passthrough(); // Allow underscore-prefixed documentation fields
@@ -161,6 +201,7 @@ export const DEFAULT_CONFIG: Config = {
   enhancedToolDescriptions: false,
   indexingStrategy: 'realtime',
   chunkingStrategy: 'character',
+  hybridSearch: DEFAULT_HYBRID_SEARCH,
 };
 
 /**
@@ -359,6 +400,8 @@ export async function generateDefaultConfig(indexPath: string): Promise<void> {
         'Indexing strategy: "realtime" (immediate), "lazy" (on search), "git" (on commit)',
       chunkingStrategy:
         'Chunking strategy: "character" (fixed-size), "code-aware" (semantic boundaries for TS/JS/Python)',
+      hybridSearch:
+        'Hybrid search settings: { enabled: boolean, ftsEngine: "auto"|"js"|"native", defaultAlpha: 0-1 }',
     },
     ...DEFAULT_CONFIG,
   };

@@ -13,10 +13,14 @@ export {
   // Types
   type Config,
   type ConfigWithDocs,
+  type FTSEnginePreference,
+  type HybridSearchConfig,
   // Schema
   ConfigSchema,
+  HybridSearchSchema,
   // Constants
   DEFAULT_CONFIG,
+  DEFAULT_HYBRID_SEARCH,
   HARDCODED_EXCLUDES,
   // Functions
   parseFileSize,

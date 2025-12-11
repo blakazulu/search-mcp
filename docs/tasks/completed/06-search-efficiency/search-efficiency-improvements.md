@@ -187,8 +187,8 @@ function processFile(path: string) {
 |-------------|--------|--------|----------|--------|
 | Dedupe same-file | Medium | High (~25% savings) | **P1** | DONE |
 | Trim whitespace | Low | Medium (~7% savings) | **P1** | DONE |
-| Compact output | Low | Low (~5% savings) | **P2** | TODO |
-| Code-aware chunking | High | High (quality + savings) | **P3** | TODO |
+| Compact output | Low | Low (~5% savings) | **P2** | DONE |
+| Code-aware chunking | High | High (quality + savings) | **P3** | DONE |
 
 ## Implementation Plan
 
@@ -208,16 +208,26 @@ Implementation files:
 - `src/tools/searchDocs.ts` - Uses `processSearchResults()`
 - `tests/unit/utils/searchResultProcessing.test.ts` - 37 unit tests
 
-### Phase 2: Output Optimization (P2)
-1. Add `compact` parameter to search tools
-2. Implement compact output format
-3. Document the new format
+### Phase 2: Output Optimization (P2) - COMPLETED (2025-12-11)
+1. [x] Add `compact` parameter to search tools
+2. [x] Implement compact output format
+3. [x] Document the new format
 
-### Phase 3: Chunking Improvements (P3)
-1. Research tree-sitter integration
-2. Prototype code-aware chunking for TypeScript/JavaScript
-3. Evaluate impact on search quality
-4. Roll out for supported languages
+Implementation files:
+- `src/tools/searchCode.ts` - Added compact parameter
+- `src/tools/searchDocs.ts` - Added compact parameter
+- `src/utils/searchResultProcessing.ts` - Added formatCompactResult/Output functions
+
+### Phase 3: Chunking Improvements (P3) - COMPLETED (2025-12-11)
+1. [x] Research tree-sitter integration - Chose heuristic approach instead
+2. [x] Prototype code-aware chunking for TypeScript/JavaScript
+3. [x] Evaluate impact on search quality
+4. [x] Roll out for supported languages (TS/JS, Python)
+
+Implementation files:
+- `src/engines/codeAwareChunking.ts` - Heuristic-based boundary detection
+- `src/engines/chunking.ts` - Added chunkFileWithStrategy()
+- `src/storage/config.ts` - Added chunkingStrategy config option
 
 ## Success Metrics
 

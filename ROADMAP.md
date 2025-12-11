@@ -38,7 +38,6 @@ This document outlines the planned features and improvements for Search MCP.
 |---------|-------------|----------|
 | `list_projects` | Show all indexed projects with stats | High |
 | PDF Doc Support | Add PDF text extraction to `search_docs` | Medium |
-| Native SQLite FTS5 | Full implementation of native FTS engine | Medium |
 
 ### Improvements
 
@@ -56,7 +55,6 @@ This document outlines the planned features and improvements for Search MCP.
 
 | Feature | Description | Complexity |
 |---------|-------------|------------|
-| AST Chunking | Language-aware code splitting via tree-sitter | High |
 | Multi-Root Support | Index multiple folders as one project | Medium |
 | Query Expansion | Rewrite queries for better retrieval | Medium |
 | Custom Models | Allow users to specify embedding model | Medium |
@@ -96,13 +94,20 @@ These are ideas we're evaluating but haven't committed to:
 ### v1.2.0
 - [x] **Hybrid Search** - Combine vector + keyword search (BM25) for better results
   - [x] FTS Engine Interface with JS implementation (NaturalBM25Engine)
+  - [x] Native SQLite FTS5 engine (optional, for large codebases)
   - [x] Auto-detection of best engine based on project size
   - [x] Search modes: hybrid, vector, fts
   - [x] Alpha parameter for tuning semantic vs keyword weight
   - [x] Reciprocal Rank Fusion (RRF) for result merging
   - [x] Comprehensive integration tests (48 tests)
-- [x] Compact output format for search tools
-- [x] Code-aware chunking module
+- [x] **Search Efficiency Improvements** - 7.3% token reduction
+  - [x] Deduplicate same-file search results (smart merging)
+  - [x] Trim whitespace from chunk boundaries
+  - [x] Compact output format (`compact: true` parameter)
+- [x] **Code-aware chunking** - Heuristic-based semantic splitting
+  - [x] TypeScript/JavaScript support (functions, classes, interfaces)
+  - [x] Python support (functions, classes, decorators)
+  - [x] Configurable via `chunkingStrategy` setting
 - [x] get_config tool
 - [x] Updated documentation (API reference, configuration, examples)
 

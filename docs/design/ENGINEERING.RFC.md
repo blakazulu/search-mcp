@@ -1058,7 +1058,7 @@ search-mcp/
 ### Installation
 
 ```bash
-npm install -g @blakazulu/search-mcp
+npm install -g @liraz-sbz/search-mcp
 ```
 
 ### Claude Desktop Configuration
@@ -1071,7 +1071,7 @@ npm install -g @blakazulu/search-mcp
   "mcpServers": {
     "search": {
       "command": "npx",
-      "args": ["@blakazulu/search-mcp"]
+      "args": ["@liraz-sbz/search-mcp"]
     }
   }
 }
@@ -1085,7 +1085,7 @@ File > Preferences > Cursor Settings > MCP > Add new global MCP server
 {
   "search": {
     "command": "npx",
-    "args": ["@blakazulu/search-mcp"]
+    "args": ["@liraz-sbz/search-mcp"]
   }
 }
 ```

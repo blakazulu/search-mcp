@@ -10,7 +10,7 @@
  * Claude Desktop, Claude Code, Cursor, Windsurf, or Antigravity.
  *
  * Usage:
- *   npx @blakazulu/search-mcp
+ *   npx @liraz-sbz/search-mcp
  *
  * Or after global installation:
  *   search-mcp

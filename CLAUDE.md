@@ -27,7 +27,7 @@ npx vitest run <test-file>
 npm run lint
 
 # Run the MCP server locally
-npx @blakazulu/search-mcp
+npx @liraz-sbz/search-mcp
 ```
 
 ## Architecture

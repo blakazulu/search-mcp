@@ -41,13 +41,13 @@ If not installed, download from [nodejs.org](https://nodejs.org/) (LTS version r
 Install Search MCP globally:
 
 ```bash
-npm install -g @blakazulu/search-mcp
+npm install -g @liraz-sbz/search-mcp
 ```
 
 Or run directly with npx (no installation needed):
 
 ```bash
-npx -y @blakazulu/search-mcp
+npx -y @liraz-sbz/search-mcp
 ```
 
 ---
@@ -72,7 +72,7 @@ Choose your AI assistant and follow the configuration steps.
   "mcpServers": {
     "search": {
       "command": "npx",
-      "args": ["-y", "@blakazulu/search-mcp"]
+      "args": ["-y", "@liraz-sbz/search-mcp"]
     }
   }
 }
@@ -88,7 +88,7 @@ Choose your AI assistant and follow the configuration steps.
 **Option A: CLI command (recommended)**
 
 ```bash
-claude mcp add --transport stdio search -- npx -y @blakazulu/search-mcp
+claude mcp add --transport stdio search -- npx -y @liraz-sbz/search-mcp
 ```
 
 **Option B: Edit config file**
@@ -100,7 +100,7 @@ Edit `~/.claude.json`:
   "mcpServers": {
     "search": {
       "command": "npx",
-      "args": ["-y", "@blakazulu/search-mcp"]
+      "args": ["-y", "@liraz-sbz/search-mcp"]
     }
   }
 }
@@ -130,7 +130,7 @@ claude mcp list
   "mcpServers": {
     "search": {
       "command": "npx",
-      "args": ["-y", "@blakazulu/search-mcp"]
+      "args": ["-y", "@liraz-sbz/search-mcp"]
     }
   }
 }
@@ -156,7 +156,7 @@ claude mcp list
   "mcpServers": {
     "search": {
       "command": "npx",
-      "args": ["-y", "@blakazulu/search-mcp"]
+      "args": ["-y", "@liraz-sbz/search-mcp"]
     }
   }
 }
@@ -180,7 +180,7 @@ claude mcp list
   "mcpServers": {
     "search": {
       "command": "npx",
-      "args": ["-y", "@blakazulu/search-mcp"]
+      "args": ["-y", "@liraz-sbz/search-mcp"]
     }
   }
 }
@@ -199,7 +199,7 @@ For any MCP-compatible client, use this standard configuration:
   "mcpServers": {
     "search": {
       "command": "npx",
-      "args": ["-y", "@blakazulu/search-mcp"]
+      "args": ["-y", "@liraz-sbz/search-mcp"]
     }
   }
 }

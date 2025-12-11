@@ -64,7 +64,7 @@ If you don't have Node.js, download it from [nodejs.org](https://nodejs.org/) (v
 ### Step 2: Install Search MCP
 
 ```bash
-npm install -g @blakazulu/search-mcp
+npm install -g @liraz-sbz/search-mcp
 ```
 
 ### Step 3: Configure Your AI Assistant
@@ -86,7 +86,7 @@ npm install -g @blakazulu/search-mcp
   "mcpServers": {
     "search": {
       "command": "npx",
-      "args": ["-y", "@blakazulu/search-mcp"]
+      "args": ["-y", "@liraz-sbz/search-mcp"]
     }
   }
 }

@@ -29,9 +29,10 @@ Complete reference for customizing Search MCP behavior.
 
 Configuration is stored per-project at:
 
-```
-~/.mcp/search/indexes/<SHA256(project_path)>/config.json
-```
+- **macOS/Linux:** `~/.mcp/search/indexes/<project-hash>/config.json`
+- **Windows:** `%USERPROFILE%\.mcp\search\indexes\<project-hash>\config.json`
+
+The `<project-hash>` is a SHA256 hash of your project's absolute path.
 
 The config file is **auto-generated** on first indexing with sensible defaults. Edit it to customize behavior.
 

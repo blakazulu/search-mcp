@@ -128,7 +128,9 @@ See more [examples and use cases](docs/examples.md).
 
 ## Configuration
 
-Config is auto-generated at `~/.mcp/search/indexes/<project-hash>/config.json`.
+Config is auto-generated when you first index a project:
+- **macOS/Linux:** `~/.mcp/search/indexes/<project-hash>/config.json`
+- **Windows:** `%USERPROFILE%\.mcp\search\indexes\<project-hash>\config.json`
 
 **Key options:**
 
@@ -214,7 +216,7 @@ For full configuration options, see the [Configuration Reference](docs/configura
 | Code Chunk Size | ~1000 tokens |
 | Doc Chunk Size | ~2000 tokens |
 | Search Latency | < 200ms |
-| Storage | `~/.mcp/search/indexes/` |
+| Storage | `~/.mcp/search/indexes/` (macOS/Linux) or `%USERPROFILE%\.mcp\search\indexes\` (Windows) |
 
 For full technical documentation, see [ENGINEERING.RFC.md](docs/design/ENGINEERING.RFC.md).
 

@@ -40,7 +40,7 @@ All errors include two messages:
 | | Message |
 |---|---------|
 | **User** | "This project hasn't been indexed yet. Would you like to index it now?" |
-| **Developer** | `INDEX_NOT_FOUND: No index at ~/.mcp/search/indexes/{hash}/` |
+| **Developer** | `INDEX_NOT_FOUND: No index at <storage-path>/indexes/{hash}/` |
 
 **Solution:** Run `create_index` or say "Index this project" to create the index.
 

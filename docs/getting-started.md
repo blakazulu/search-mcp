@@ -93,7 +93,9 @@ claude mcp add --transport stdio search -- npx -y @liraz-sbz/search-mcp
 
 **Option B: Edit config file**
 
-Edit `~/.claude.json`:
+Config file location:
+- **macOS/Linux:** `~/.claude.json`
+- **Windows:** `%USERPROFILE%\.claude.json`
 
 ```json
 {
@@ -117,7 +119,8 @@ claude mcp list
 ### Cursor
 
 **Config file locations:**
-- **Global (all projects):** `~/.cursor/mcp.json`
+- **Global (macOS/Linux):** `~/.cursor/mcp.json`
+- **Global (Windows):** `%USERPROFILE%\.cursor\mcp.json`
 - **Project-specific:** `.cursor/mcp.json` in your project folder
 
 **Steps:**
@@ -144,7 +147,9 @@ claude mcp list
 
 ### Windsurf
 
-**Config file:** `~/.codeium/windsurf/mcp_config.json`
+**Config file location:**
+- **macOS/Linux:** `~/.codeium/windsurf/mcp_config.json`
+- **Windows:** `%USERPROFILE%\.codeium\windsurf\mcp_config.json`
 
 **Steps:**
 

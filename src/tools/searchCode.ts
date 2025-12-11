@@ -22,6 +22,11 @@ import { getLogger } from '../utils/logger.js';
 import { indexNotFound, MCPError, ErrorCode } from '../errors/index.js';
 import { MAX_QUERY_LENGTH } from '../utils/limits.js';
 import { sanitizeIndexPath } from '../utils/paths.js';
+import {
+  processSearchResults,
+  formatCompactOutput,
+  type CompactSearchOutput,
+} from '../utils/searchResultProcessing.js';
 import type { StrategyOrchestrator } from '../engines/strategyOrchestrator.js';
 
 // ============================================================================
@@ -50,6 +55,11 @@ export const SearchCodeInputSchema = z.object({
     .max(50)
     .default(10)
     .describe('Number of results to return (1-50)'),
+  /** Return results in compact format with shorter field names (default false) */
+  compact: z
+    .boolean()
+    .default(false)
+    .describe('Return results in compact format with shorter field names'),
 });
 
 /**
@@ -127,13 +137,14 @@ export interface ToolContext {
 export async function searchCode(
   input: SearchCodeInput,
   context: ToolContext
-): Promise<SearchCodeOutput> {
+): Promise<SearchCodeOutput | CompactSearchOutput> {
   const logger = getLogger();
   const startTime = performance.now();
 
   logger.info('searchCode', 'Starting search', {
     query: input.query.substring(0, 100),
     topK: input.top_k,
+    compact: input.compact,
     projectPath: context.projectPath,
   });
 
@@ -212,7 +223,7 @@ export async function searchCode(
     const searchTimeMs = Math.round(endTime - startTime);
 
     // Format results
-    const results: SearchCodeResult[] = searchResults.map((result: SearchResult) => ({
+    const rawResults: SearchCodeResult[] = searchResults.map((result: SearchResult) => ({
       path: result.path,
       text: result.text,
       score: result.score,
@@ -220,12 +231,22 @@ export async function searchCode(
       endLine: result.endLine,
     }));
 
+    // Post-process results: trim whitespace and deduplicate same-file results
+    const results = processSearchResults(rawResults);
+
     logger.info('searchCode', 'Search completed', {
       totalResults: results.length,
+      rawResults: rawResults.length,
       searchTimeMs,
       topScore: results[0]?.score,
       hasWarning: !!warning,
+      compact: input.compact,
     });
+
+    // Return compact format if requested
+    if (input.compact) {
+      return formatCompactOutput(results, searchTimeMs, warning);
+    }
 
     return {
       results,
@@ -270,6 +291,12 @@ export function createSearchCodeTool(enhanced: boolean = false) {
           default: 10,
           minimum: 1,
           maximum: 50,
+        },
+        compact: {
+          type: 'boolean',
+          description:
+            'Return results in compact format with shorter field names (l=location, t=text, s=score). Reduces token count by ~5%.',
+          default: false,
         },
       },
       required: ['query'],

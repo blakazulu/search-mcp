@@ -43,12 +43,26 @@ export {
   type Chunk,
   type SplitOptions,
   type ChunkWithLines,
+  type ChunkingStrategy,
+  type SmartChunkOptions,
   DEFAULT_SPLIT_OPTIONS,
   splitText,
   splitWithLineNumbers,
   chunkFile,
   chunkFileSync,
+  chunkFileWithStrategy,
 } from './chunking.js';
+
+// Code-Aware Chunking Engine
+export {
+  type SupportedLanguage,
+  type CodeAwareChunkOptions,
+  DEFAULT_CODE_AWARE_OPTIONS,
+  detectLanguage,
+  splitCodeWithLineNumbers,
+  supportsCodeAwareChunking,
+  getLanguageName,
+} from './codeAwareChunking.js';
 
 // Docs Chunking Engine
 export {

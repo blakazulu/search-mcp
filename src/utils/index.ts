@@ -128,3 +128,17 @@ export {
   hasSufficientSpace,
   validateDiskSpace,
 } from './diskSpace.js';
+
+// Search result processing exports
+export {
+  type SearchResultItem,
+  type CompactSearchResult,
+  type CompactSearchOutput,
+  trimChunkWhitespace,
+  areRangesMergeable,
+  deduplicateSameFileResults,
+  processSearchResults,
+  formatCompactResult,
+  formatCompactResults,
+  formatCompactOutput,
+} from './searchResultProcessing.js';

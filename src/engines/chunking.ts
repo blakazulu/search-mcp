@@ -21,6 +21,10 @@ import {
   CHUNKS_WARNING_THRESHOLD,
   ResourceLimitError,
 } from '../utils/limits.js';
+import {
+  splitCodeWithLineNumbers,
+  supportsCodeAwareChunking,
+} from './codeAwareChunking.js';
 
 // ============================================================================
 // Types and Interfaces
@@ -942,4 +946,135 @@ export function chunkFileSync(
   }));
 
   return chunks;
+}
+
+// ============================================================================
+// Code-Aware Chunking Integration
+// ============================================================================
+
+/**
+ * Chunking strategy type
+ */
+export type ChunkingStrategy = 'character' | 'code-aware';
+
+/**
+ * Options for smart chunking
+ */
+export interface SmartChunkOptions extends Partial<SplitOptions> {
+  /** Chunking strategy to use */
+  strategy?: ChunkingStrategy;
+}
+
+/**
+ * Chunk a file using the specified strategy
+ *
+ * When strategy is 'code-aware':
+ * - For supported languages (TS, JS, Python), splits at semantic boundaries
+ * - Falls back to character-based chunking for unsupported languages
+ * - Falls back on any errors
+ *
+ * When strategy is 'character' (default):
+ * - Uses traditional fixed-size chunking with overlap
+ *
+ * @param absolutePath - Absolute path to the file on disk
+ * @param relativePath - Relative path from project root (stored in chunk)
+ * @param options - Chunking options including strategy
+ * @returns Promise resolving to array of chunks with IDs and metadata
+ *
+ * @example
+ * ```typescript
+ * // Use code-aware chunking for TypeScript file
+ * const chunks = await chunkFileWithStrategy(
+ *   '/path/to/file.ts',
+ *   'src/file.ts',
+ *   { strategy: 'code-aware' }
+ * );
+ * ```
+ */
+export async function chunkFileWithStrategy(
+  absolutePath: string,
+  relativePath: string,
+  options?: SmartChunkOptions
+): Promise<Chunk[]> {
+  const logger = getLogger();
+  const strategy = options?.strategy ?? 'character';
+
+  // If using character-based or file doesn't support code-aware, use standard chunking
+  if (strategy === 'character' || !supportsCodeAwareChunking(relativePath)) {
+    return chunkFile(absolutePath, relativePath, options);
+  }
+
+  // Try code-aware chunking
+  try {
+    // Read file content
+    const stats = await fs.promises.lstat(absolutePath);
+
+    // Skip symlinks
+    if (stats.isSymbolicLink()) {
+      logger.warn('Chunking', 'Skipping symlink during code-aware chunking', {
+        path: absolutePath,
+      });
+      return [];
+    }
+
+    // For very large files, fall back to streaming (character-based)
+    if (stats.size > MAX_IN_MEMORY_SIZE) {
+      logger.debug('Chunking', 'Large file, falling back to character-based chunking', {
+        path: relativePath,
+        size: stats.size,
+      });
+      return chunkFile(absolutePath, relativePath, options);
+    }
+
+    // Read file content
+    const content = await fs.promises.readFile(absolutePath, 'utf8');
+
+    if (!content || content.length === 0) {
+      return [];
+    }
+
+    // Compute content hash
+    const contentHash = hashString(content);
+
+    // Try code-aware chunking
+    const chunksWithLines = splitCodeWithLineNumbers(content, relativePath, {
+      chunkSize: options?.chunkSize ?? DEFAULT_SPLIT_OPTIONS.chunkSize,
+      chunkOverlap: options?.chunkOverlap ?? 200, // Reduced overlap for code-aware
+      maxChunkSize: 8000,
+    });
+
+    // If code-aware chunking returned null, fall back to character-based
+    if (chunksWithLines === null) {
+      logger.debug('Chunking', 'Code-aware chunking returned null, using fallback', {
+        path: relativePath,
+      });
+      return chunkFile(absolutePath, relativePath, options);
+    }
+
+    // Create full chunk objects
+    const chunks: Chunk[] = chunksWithLines.map((chunk) => ({
+      id: uuidv4(),
+      text: chunk.text,
+      path: relativePath,
+      startLine: chunk.startLine,
+      endLine: chunk.endLine,
+      contentHash,
+    }));
+
+    logger.debug('Chunking', 'Code-aware chunking successful', {
+      path: relativePath,
+      chunkCount: chunks.length,
+      strategy: 'code-aware',
+    });
+
+    return chunks;
+  } catch (error) {
+    // On any error, fall back to character-based chunking
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('Chunking', 'Code-aware chunking failed, using fallback', {
+      path: relativePath,
+      error: message,
+    });
+    return chunkFile(absolutePath, relativePath, options);
+  }
 }

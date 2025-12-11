@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Search result processing utilities for token optimization (`src/utils/searchResultProcessing.ts`)
+- **Compact output format** for `search_code` and `search_docs` tools (SMCP-065)
+  - New `compact` parameter (default: false) returns results with shorter field names
+  - When compact=true: `l` (location), `t` (text), `s` (score), `r` (results), `n` (count), `ms` (time)
+  - Reduces token count by ~5% through shorter field names
+- **Code-aware chunking module** (`src/engines/codeAwareChunking.ts`) (SMCP-066)
+  - Heuristic-based chunking that splits at semantic boundaries (functions, classes, exports)
+  - Supports TypeScript, JavaScript, and Python
+  - Falls back to character-based chunking for unsupported languages
+  - New config option: `chunkingStrategy: 'character' | 'code-aware'` (default: 'character')
+  - Reduced overlap (200 chars vs 800) since splits occur at meaningful boundaries
+
+### Changed
+- `search_code` and `search_docs` now apply whitespace trimming and same-file deduplication to results
+- Reduced token usage by ~7-8% through automatic result optimization
+
 ## [1.1.5] - 2024-12-11
 
 ### Added

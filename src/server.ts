@@ -502,6 +502,7 @@ async function executeTool(
         const parsed = z.object({
           query: z.string(),
           top_k: z.number().optional().default(10),
+          compact: z.boolean().optional().default(false),
         }).parse(args);
         result = await searchCode(parsed, context);
         break;
@@ -515,6 +516,7 @@ async function executeTool(
         const parsed = z.object({
           query: z.string(),
           top_k: z.number().optional().default(10),
+          compact: z.boolean().optional().default(false),
         }).parse(args);
         result = await searchDocs(parsed, context);
         break;

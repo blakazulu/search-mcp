@@ -114,6 +114,7 @@ describe('Config Manager', () => {
         indexDocs: false,
         enhancedToolDescriptions: true,
         indexingStrategy: 'lazy' as const,
+        chunkingStrategy: 'character' as const,
       };
 
       const result = ConfigSchema.safeParse(config);
@@ -136,6 +137,7 @@ describe('Config Manager', () => {
         expect(result.data.indexDocs).toBe(true);
         expect(result.data.enhancedToolDescriptions).toBe(false);
         expect(result.data.indexingStrategy).toBe('realtime');
+        expect(result.data.chunkingStrategy).toBe('character');
       }
     });
 
@@ -262,6 +264,7 @@ describe('Config Manager', () => {
       expect(DEFAULT_CONFIG.indexDocs).toBeDefined();
       expect(DEFAULT_CONFIG.enhancedToolDescriptions).toBeDefined();
       expect(DEFAULT_CONFIG.indexingStrategy).toBeDefined();
+      expect(DEFAULT_CONFIG.chunkingStrategy).toBeDefined();
     });
 
     it('should have correct enhancedToolDescriptions default', () => {
@@ -328,6 +331,7 @@ describe('Config Manager', () => {
         indexDocs: false,
         enhancedToolDescriptions: true,
         indexingStrategy: 'lazy',
+        chunkingStrategy: 'character',
       };
 
       const configPath = path.join(indexPath, 'config.json');
@@ -646,6 +650,7 @@ describe('Config Manager', () => {
           indexDocs: false,
           enhancedToolDescriptions: true,
           indexingStrategy: 'git',
+          chunkingStrategy: 'character',
         };
 
         const configPath = path.join(indexPath, 'config.json');
@@ -725,6 +730,11 @@ describe('Config Manager', () => {
           respectGitignore: false,
           maxFileSize: '5MB',
           maxFiles: 1000,
+          docPatterns: ['**/*.md'],
+          indexDocs: true,
+          enhancedToolDescriptions: false,
+          indexingStrategy: 'realtime',
+          chunkingStrategy: 'character',
         };
 
         const configPath = path.join(indexPath, 'config.json');

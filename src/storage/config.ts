@@ -117,6 +117,9 @@ export const ConfigSchema = z
 
     /** Indexing strategy: 'realtime' (immediate), 'lazy' (on search), 'git' (on commit) */
     indexingStrategy: z.enum(['realtime', 'lazy', 'git']).default('realtime'),
+
+    /** Chunking strategy: 'character' (fixed-size), 'code-aware' (semantic boundaries) */
+    chunkingStrategy: z.enum(['character', 'code-aware']).default('character'),
   })
   .strict()
   .passthrough(); // Allow underscore-prefixed documentation fields
@@ -157,6 +160,7 @@ export const DEFAULT_CONFIG: Config = {
   indexDocs: true,
   enhancedToolDescriptions: false,
   indexingStrategy: 'realtime',
+  chunkingStrategy: 'character',
 };
 
 /**
@@ -353,6 +357,8 @@ export async function generateDefaultConfig(indexPath: string): Promise<void> {
         'Whether to add AI guidance hints to tool descriptions (default: false)',
       indexingStrategy:
         'Indexing strategy: "realtime" (immediate), "lazy" (on search), "git" (on commit)',
+      chunkingStrategy:
+        'Chunking strategy: "character" (fixed-size), "code-aware" (semantic boundaries for TS/JS/Python)',
     },
     ...DEFAULT_CONFIG,
   };

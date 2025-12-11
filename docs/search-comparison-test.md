@@ -28,18 +28,18 @@ This document presents **actual benchmark results** comparing three approaches:
 
 #### MCP Results
 - **Tool calls**: 1
-- **Results returned**: 8 (after deduplication from 10 raw)
-- **Characters**: 36,129
-- **Measured tokens**: 9,032
-- **Search time**: 16-19ms (after model warmup)
+- **Results returned**: 10 semantic chunks
+- **Characters**: 37,683
+- **Measured tokens**: 9,421
+- **Search time**: 15-20ms (after model warmup)
 - **Relevance**: HIGH - Direct matches for file watcher implementation, debouncing, event handling
 
 #### Manual Results (Grep + Read)
 - **Tool calls**: Would need 25+ (1 Grep + reading matched files)
 - **Files matched**: 25
 - **Total matches**: 607 occurrences
-- **Characters**: 420,897
-- **Measured tokens**: 105,224
+- **Characters**: 420,109
+- **Measured tokens**: 105,027
 - **Relevance**: MEDIUM - Need to manually select which files to read
 
 #### Drag-and-Drop Results
@@ -56,18 +56,18 @@ This document presents **actual benchmark results** comparing three approaches:
 
 #### MCP Results
 - **Tool calls**: 1
-- **Results returned**: 9 (after deduplication from 10 raw)
-- **Characters**: 33,540
-- **Measured tokens**: 8,385
-- **Search time**: 18-19ms
+- **Results returned**: 10 semantic chunks
+- **Characters**: 34,314
+- **Measured tokens**: 8,579
+- **Search time**: 16ms
 - **Relevance**: HIGH - Found MCPError class, wrapError(), error factories, test patterns
 
 #### Manual Results (Grep + Read)
-- **Tool calls**: Would need 45+ (1 Grep + reading matched files)
-- **Files matched**: 45
-- **Total matches**: 2,197 occurrences
-- **Characters**: 700,909
-- **Measured tokens**: 175,227
+- **Tool calls**: Would need 43+ (1 Grep + reading matched files)
+- **Files matched**: 43
+- **Total matches**: 2,185 occurrences
+- **Characters**: 665,473
+- **Measured tokens**: 166,368
 - **Relevance**: LOW - Too many matches, high noise ratio
 
 #### Drag-and-Drop Results
@@ -76,7 +76,7 @@ This document presents **actual benchmark results** comparing three approaches:
 - **Characters**: 11,056
 - **Measured tokens**: 2,764
 - **Relevance**: MEDIUM - Only covers error definitions, misses usage patterns
-- **Problem**: Error patterns exist in 45 files - impractical to attach all
+- **Problem**: Error patterns exist in 43 files - impractical to attach all
 
 ---
 
@@ -84,25 +84,25 @@ This document presents **actual benchmark results** comparing three approaches:
 
 #### MCP Results
 - **Tool calls**: 1
-- **Results returned**: 8 (after deduplication from 10 raw)
-- **Characters**: 29,418
-- **Measured tokens**: 7,355
-- **Search time**: 24ms
+- **Results returned**: 10 semantic chunks
+- **Characters**: 36,689
+- **Measured tokens**: 9,172
+- **Search time**: 18ms
 - **Relevance**: HIGH - Found LanceDB store implementation, search functions, tests
 
 #### Manual Results (Grep + Read)
-- **Tool calls**: Would need 44+ (1 Grep + reading matched files)
-- **Files matched**: 44
-- **Total matches**: 1,098 occurrences
-- **Characters**: 610,503
-- **Measured tokens**: 152,626
+- **Tool calls**: Would need 42+ (1 Grep + reading matched files)
+- **Files matched**: 42
+- **Total matches**: 1,041 occurrences
+- **Characters**: 574,404
+- **Measured tokens**: 143,601
 - **Relevance**: MEDIUM - Keyword matches but includes package.json, changelogs, etc.
 
 #### Drag-and-Drop Results
 - **User effort**: MEDIUM - LanceDB files are more concentrated
 - **Files to attach**: lancedb.ts, docsLancedb.ts, searchCode.ts, searchDocs.ts
-- **Characters**: 66,877
-- **Measured tokens**: 16,719
+- **Characters**: 64,941
+- **Measured tokens**: 16,235
 - **Relevance**: HIGH (if user knows the architecture)
 - **Problem**: User must understand codebase structure first
 
@@ -112,18 +112,18 @@ This document presents **actual benchmark results** comparing three approaches:
 
 #### MCP Results
 - **Tool calls**: 1
-- **Results returned**: 9 (after deduplication from 10 raw)
-- **Characters**: 22,794
-- **Measured tokens**: 5,699
-- **Search time**: 16ms
+- **Results returned**: 10 semantic chunks
+- **Characters**: 23,500
+- **Measured tokens**: 5,875
+- **Search time**: 15ms
 - **Relevance**: HIGH - Found security sections, path security, symlink protection
 
 #### Manual Results (Grep + Read)
 - **Tool calls**: Would need 34+ (1 Grep + reading matched files)
 - **Files matched**: 34
-- **Total matches**: 376 occurrences
-- **Characters**: 546,067
-- **Measured tokens**: 136,517
+- **Total matches**: 374 occurrences
+- **Characters**: 539,183
+- **Measured tokens**: 134,796
 - **Relevance**: MEDIUM - Many false positives (e.g., comments mentioning "security")
 
 #### Drag-and-Drop Results
@@ -140,25 +140,25 @@ This document presents **actual benchmark results** comparing three approaches:
 
 #### MCP Results
 - **Tool calls**: 1
-- **Results returned**: 6 (after deduplication from 10 raw)
-- **Characters**: 19,999
-- **Measured tokens**: 5,000
-- **Search time**: 19ms
+- **Results returned**: 10 semantic chunks
+- **Characters**: 25,560
+- **Measured tokens**: 6,390
+- **Search time**: 15ms
 - **Relevance**: HIGH - Found ConfigManager, config schema, default options, documentation
 
 #### Manual Results (Grep + Read)
-- **Tool calls**: Would need 43+ (1 Grep + reading matched files)
-- **Files matched**: 43
-- **Total matches**: 843 occurrences
-- **Characters**: 633,495
-- **Measured tokens**: 158,374
+- **Tool calls**: Would need 41+ (1 Grep + reading matched files)
+- **Files matched**: 41
+- **Total matches**: 806 occurrences
+- **Characters**: 597,396
+- **Measured tokens**: 149,349
 - **Relevance**: MEDIUM - Matches spread across many files
 
 #### Drag-and-Drop Results
 - **User effort**: MEDIUM - Config is relatively concentrated
 - **Files to attach**: config.ts, metadata.ts
-- **Characters**: 37,008
-- **Measured tokens**: 9,252
+- **Characters**: 36,665
+- **Measured tokens**: 9,166
 - **Relevance**: HIGH (if user knows config locations)
 - **Problem**: May miss config options in tool files, schema definitions
 
@@ -168,41 +168,27 @@ This document presents **actual benchmark results** comparing three approaches:
 
 | Query | MCP Tokens | Grep Tokens | D&D Tokens | MCP vs Grep | MCP vs D&D |
 |-------|------------|-------------|------------|-------------|------------|
-| 1. File watching | 9,032 | 105,224 | 18,638 | **11.7x** | **2.1x** |
-| 2. Error handling | 8,385 | 175,227 | 2,764 | **20.9x** | 0.3x* |
-| 3. LanceDB search | 7,355 | 152,626 | 16,719 | **20.8x** | **2.3x** |
-| 4. Security | 5,699 | 136,517 | 15,948 | **24.0x** | **2.8x** |
-| 5. Configuration | 5,000 | 158,374 | 9,252 | **31.7x** | **1.9x** |
-| **TOTAL** | **35,471** | **727,968** | **63,321** | **20.5x** | **1.8x** |
+| 1. File watching | 9,421 | 105,027 | 18,638 | **11.1x** | **2.0x** |
+| 2. Error handling | 8,579 | 166,368 | 2,764 | **19.4x** | 0.3x* |
+| 3. LanceDB search | 9,172 | 143,601 | 16,235 | **15.7x** | **1.8x** |
+| 4. Security | 5,875 | 134,796 | 15,948 | **22.9x** | **2.7x** |
+| 5. Configuration | 6,390 | 149,349 | 9,166 | **23.4x** | **1.4x** |
+| **TOTAL** | **39,437** | **699,141** | **62,751** | **17.7x** | **1.6x** |
 
 *Query 2 D&D only includes errors/index.ts - incomplete coverage
-
----
-
-## Deduplication Effectiveness
-
-The search results now include automatic deduplication of same-file chunks:
-
-| Query | Raw Results | After Dedup | Reduction |
-|-------|-------------|-------------|-----------|
-| File watching | 10 | 8 | -20% |
-| Error handling | 10 | 9 | -10% |
-| LanceDB search | 10 | 8 | -20% |
-| Security | 10 | 9 | -10% |
-| Configuration | 10 | 6 | **-40%** |
 
 ---
 
 ## Key Takeaways
 
 ### 1. Token Efficiency (Measured)
-- **MCP is ~20.5x more token-efficient than Grep** across all query types
-- **MCP is ~1.8x more efficient than optimal D&D** (but D&D requires expertise)
-- MCP returns focused chunks (~7,100 tokens avg) vs full files
-- Grep would require reading 25-45 files per query (impractical)
+- **MCP is ~17.7x more token-efficient than Grep** across all query types
+- **MCP is ~1.6x more efficient than optimal D&D** (but D&D requires expertise)
+- MCP returns focused chunks (~7,900 tokens avg) vs full files
+- Grep would require reading 25-43 files per query (impractical)
 
 ### 2. Search Speed (Measured)
-- **MCP search completes in 16-24ms** (after model warmup)
+- **MCP search completes in 15-20ms** (after model warmup)
 - First query takes ~400ms due to embedding model initialization
 - Subsequent queries are near-instant
 
@@ -212,12 +198,12 @@ The search results now include automatic deduplication of same-file chunks:
 - D&D relevance varies: HIGH if correct files selected, LOW otherwise
 
 ### 4. Scalability
-- **MCP scales consistently** - always 6-9 deduplicated results, ~7K tokens regardless of codebase
+- **MCP scales consistently** - always ~10 results, ~8K tokens regardless of codebase
 - Grep scales with codebase - more files = more tokens to read
 - D&D requires increasing expertise as codebase grows
 
 ### 5. The D&D Paradox
-- D&D can be **more efficient** than MCP for specific queries (Query 2: 2,764 vs 8,385)
+- D&D can be **more efficient** than MCP for specific queries (Query 2: 2,764 vs 8,579)
 - BUT requires user to **already know the answer** (which files to attach)
 - This is a chicken-and-egg problem: to know what to attach, you need to search first
 
@@ -242,7 +228,6 @@ All benchmarks are automated and reproducible. See `tests/benchmarks/search-comp
 
 ### MCP Measurement
 - Actual `search_code` tool calls with `top_k=10`
-- Results are automatically deduplicated (adjacent/overlapping chunks merged)
 - Measured characters from returned chunk text
 - Search time from actual execution (excluding first query warmup)
 
@@ -261,21 +246,10 @@ All benchmarks are automated and reproducible. See `tests/benchmarks/search-comp
 ## Codebase Statistics
 
 At time of benchmark:
-- **Total .ts files**: 53
-- **Total characters**: 728,572
-- **Estimated tokens**: 182,143
-- **Average file size**: 13,747 chars
-
----
-
-## Optimizations Applied
-
-The following optimizations are now active in MCP search:
-
-1. **Same-file deduplication** (SMCP-063): Merges adjacent/overlapping chunks from the same file
-2. **Whitespace trimming** (SMCP-064): Removes leading/trailing blank lines from chunks
-3. **Compact output format** (SMCP-065): Available via `compact: true` parameter
-4. **Code-aware chunking** (SMCP-066): Available via `chunkingStrategy: 'code-aware'` config
+- **Total .ts files**: 51
+- **Total characters**: 692,473
+- **Estimated tokens**: 173,118
+- **Average file size**: 13,578 chars
 
 ---
 
@@ -285,23 +259,22 @@ The following optimizations are now active in MCP search:
 
 | Comparison | Efficiency Gain |
 |------------|-----------------|
-| MCP vs Manual Grep+Read | **~20.5x** more efficient |
-| MCP vs Optimal Drag-and-Drop | **~1.8x** more efficient |
+| MCP vs Manual Grep+Read | **~17.7x** more efficient |
+| MCP vs Optimal Drag-and-Drop | **~1.6x** more efficient |
 
 ### Why MCP Wins
 
 1. **No expertise required** - AI discovers relevant code automatically
-2. **Focused results** - Only relevant portions returned (~7K tokens avg)
+2. **Focused results** - Only relevant portions returned (~8K tokens avg)
 3. **Semantic understanding** - Finds conceptually related content
 4. **Consistent performance** - Same efficiency regardless of codebase size
-5. **Automatic deduplication** - Same-file chunks are merged
 
 ### The Hidden Cost of Alternatives
 
-**Grep:** Would require reading 25-45 entire files per query. For a single question, that's 100K-175K tokens of context - often exceeding AI context limits entirely.
+**Grep:** Would require reading 25-43 entire files per query. For a single question, that's 100K-166K tokens of context - often exceeding AI context limits entirely.
 
 **Drag-and-Drop:** Requires the user to already understand the codebase structure. The "efficiency" comes at the cost of human expertise and time spent identifying files.
 
 ### Bottom Line
 
-For AI assistants working with code, MCP enables asking questions about large codebases that would otherwise be impractical. The ~20.5x efficiency gain over grep means the difference between "context limit exceeded" and "here's your answer in 20ms."
+For AI assistants working with code, MCP enables asking questions about large codebases that would otherwise be impractical. The ~17.7x efficiency gain over grep means the difference between "context limit exceeded" and "here's your answer in 15ms."

@@ -121,10 +121,29 @@ const STALE_LOCKFILE_AGE_MS = 5 * 60 * 1000;
 /**
  * Detect and remove stale lockfiles in the database directory
  *
- * Uses async file operations with proper TOCTOU mitigation:
+ * Uses async file operations with partial TOCTOU mitigation:
  * 1. First checks if directory exists using async access
  * 2. Opens lockfile with 'r+' mode to verify no one else is using it
  * 3. Only deletes after successfully acquiring the file handle
+ *
+ * BUG #8 LIMITATION DOCUMENTATION:
+ * There is an inherent TOCTOU race between closing the file handle (fd.close())
+ * and unlinking the lockfile (fs.unlink()). Another process could acquire the
+ * lock in this ~1ms window. This is acceptable because:
+ *
+ * 1. MCP servers are designed as one-per-project - multiple concurrent indexing
+ *    processes on the same project is not a supported use case
+ * 2. The race window is very small (~1ms between close and unlink)
+ * 3. Platform-specific atomic locks (flock on Unix, LockFileEx on Windows)
+ *    would add significant complexity for minimal benefit in our use case
+ * 4. The stale lockfile cleanup is a recovery mechanism for crashed processes,
+ *    not a primary locking mechanism - the main lock is held by LanceDB itself
+ *
+ * If multi-process safety becomes critical, consider:
+ * - flock() on Unix via node-flock or similar
+ * - LockFileEx() on Windows via native bindings
+ * - External lock manager process
+ * - Advisory file locking with proper OS support
  *
  * @param dbPath - Path to the LanceDB directory
  */

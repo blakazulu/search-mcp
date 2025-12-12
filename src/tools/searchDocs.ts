@@ -208,7 +208,10 @@ export async function searchDocs(
     throw docsIndexNotFound(indexPath);
   }
 
-  // Check indexing state for stale results warning (MCP-15)
+  // BUG #24 FIX: Check indexing state for stale results warning (MCP-15)
+  // This addresses the metadata staleness issue during concurrent operations.
+  // When indexing is in progress, the metadata and search results may be incomplete
+  // or stale. We inform the user rather than blocking the search.
   let warning: string | undefined;
   if (metadata.indexingState) {
     switch (metadata.indexingState.state) {

@@ -318,6 +318,44 @@ describe('MCP Server', () => {
         cleanupTempDir(tempDir);
       }
     });
+
+    // BUG #22 FIX: Test for project path cache validation
+    it('should re-detect project path when cached path no longer exists', async () => {
+      const { getProjectPath } = await import('../../src/server.js');
+
+      // Create two temp directories
+      const tempDir1 = createTempDir();
+      const tempDir2 = createTempDir();
+
+      try {
+        // Create context with first temp dir as both cwd and cached project path
+        const context = {
+          cwd: tempDir2, // Use second dir as cwd for fallback
+          projectPath: tempDir1, // Cache first dir as project path
+        };
+
+        // Verify cached path is returned initially
+        const firstResult = await getProjectPath(context);
+        expect(firstResult).toBe(tempDir1);
+
+        // Delete the first directory
+        cleanupTempDir(tempDir1);
+
+        // Now call getProjectPath again - it should detect that the cached path is gone
+        // and re-detect (or fallback to cwd)
+        const secondResult = await getProjectPath(context);
+
+        // Should NOT return the deleted path
+        expect(secondResult).not.toBe(tempDir1);
+        // The result should be defined and valid
+        expect(secondResult).toBeDefined();
+        expect(typeof secondResult).toBe('string');
+        expect(secondResult.length).toBeGreaterThan(0);
+      } finally {
+        cleanupTempDir(tempDir2);
+        // tempDir1 already cleaned up
+      }
+    });
   });
 
   // --------------------------------------------------------------------------

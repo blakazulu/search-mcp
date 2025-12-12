@@ -26,6 +26,7 @@ import { getEmbeddingEngine } from '../engines/embedding.js';
 import { getIndexPath, toAbsolutePath, normalizePath, safeJoin, sanitizeIndexPath, getCodeFTSIndexPath } from '../utils/paths.js';
 import { hashFile } from '../utils/hash.js';
 import { getLogger } from '../utils/logger.js';
+import { atomicWrite } from '../utils/atomicWrite.js';
 import { MCPError, ErrorCode, isMCPError, fileNotFound, indexNotFound } from '../errors/index.js';
 import type { ToolContext } from './searchCode.js';
 import { loadFTSEngine } from '../engines/ftsEngineFactory.js';
@@ -338,9 +339,10 @@ export async function reindexFile(
             }
             await ftsEngine.addChunks(ftsChunks);
 
-            // Save FTS index
+            // BUG #25 FIX: Save FTS index using atomic write pattern
+            // This prevents index corruption if the process crashes during write
             const serializedFTS = ftsEngine.serialize();
-            await fs.promises.writeFile(ftsIndexPath, serializedFTS, 'utf-8');
+            await atomicWrite(ftsIndexPath, serializedFTS, 'utf-8');
 
             // Update FTS chunk count in metadata
             const ftsStats = ftsEngine.getStats();

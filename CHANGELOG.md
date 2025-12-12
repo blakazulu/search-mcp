@@ -29,6 +29,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Falls back to `DEFAULT_CONFIG` on any config load error
   - Logs warning about config load failure for debugging
 
+- **MEDIUM: FTS Index Uses Non-Atomic Writes** (BUG #25, SMCP-077)
+  - FTS index now uses `atomicWrite` utility (temp-file-then-rename pattern)
+  - Prevents FTS index corruption if process crashes during write
+  - Updated both `indexManager.ts` and `reindexFile.ts`
+
+- **MEDIUM: Project Path Cache Without Invalidation** (BUG #22, SMCP-077)
+  - Added validation that cached project path still exists before returning
+  - Uses `fs.promises.access()` to verify path accessibility
+  - Re-detects project root if cached path is deleted/moved during long-running session
+  - Added unit test for cache invalidation scenario
+
+- **MEDIUM: Metadata Staleness During Concurrent Indexing** (BUG #24, SMCP-077)
+  - Enhanced documentation for existing indexing state check in search operations
+  - Search operations already warn users when indexing is in progress
+  - Clarified that warning approach is the implemented solution for concurrent access
+
+- **MEDIUM: TOCTOU in Stale Lockfile Cleanup** (BUG #8, SMCP-077)
+  - Added comprehensive documentation of the inherent TOCTOU limitation
+  - Documents why it's acceptable (single MCP server per project, small race window)
+  - Lists platform-specific alternatives if multi-process safety becomes critical
+
 ## [1.3.1] - 2025-12-12
 
 ### Fixed

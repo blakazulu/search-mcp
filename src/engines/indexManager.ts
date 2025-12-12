@@ -39,6 +39,7 @@ import type { FTSEngine, FTSChunk } from './ftsEngine.js';
 import { toRelativePath, toAbsolutePath, normalizePath, getIndexPath, safeJoin, getCodeFTSIndexPath } from '../utils/paths.js';
 import { hashFile } from '../utils/hash.js';
 import { getLogger } from '../utils/logger.js';
+import { atomicWrite } from '../utils/atomicWrite.js';
 import { logMemoryUsage, getAdaptiveBatchSize, isMemoryCritical } from '../utils/memory.js';
 import { validateDiskSpace, startDiskSpaceMonitor, checkDiskSpaceAndAbort, DiskMonitorHandle, DEFAULT_DISK_CHECK_INTERVAL_MS } from '../utils/diskSpace.js';
 import { MCPError, ErrorCode, fileLimitWarning, isMCPError } from '../errors/index.js';
@@ -704,10 +705,11 @@ export async function createFullIndex(
         const ftsStats = ftsEngine.getStats();
         ftsChunkCount = ftsStats.totalChunks;
 
-        // Persist FTS index to disk by serializing and writing to file
+        // BUG #25 FIX: Persist FTS index to disk using atomic write pattern
+        // This prevents index corruption if the process crashes during write
         const ftsIndexPath = getCodeFTSIndexPath(normalizedIndexPath);
         const serializedData = ftsEngine.serialize();
-        await fs.promises.writeFile(ftsIndexPath, serializedData, 'utf-8');
+        await atomicWrite(ftsIndexPath, serializedData, 'utf-8');
 
         logger.info('IndexManager', 'FTS index built successfully', {
           chunkCount: ftsChunkCount,

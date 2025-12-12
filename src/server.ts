@@ -15,6 +15,7 @@
  * - Strategy orchestrator for configurable indexing strategies
  */
 
+import * as fs from 'node:fs';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -407,13 +408,27 @@ async function initializeOrchestratorWithoutStarting(
 
 /**
  * Get the project path, detecting it if not already cached
+ *
+ * BUG #22 FIX: Validates cached path still exists before returning it.
+ * This handles cases where the project directory was moved/deleted
+ * during a long-running MCP server session.
  */
 async function getProjectPath(context: ServerContext): Promise<string> {
-  if (context.projectPath) {
-    return context.projectPath;
-  }
-
   const logger = getLogger();
+
+  // BUG #22 FIX: If we have a cached path, validate it still exists
+  if (context.projectPath) {
+    try {
+      await fs.promises.access(context.projectPath);
+      return context.projectPath;
+    } catch {
+      // Path no longer exists, re-detect
+      logger.warn('server', 'Cached project path no longer exists, re-detecting', {
+        cachedPath: context.projectPath,
+      });
+      context.projectPath = null;
+    }
+  }
 
   try {
     const result = await detectProjectRoot(context.cwd);

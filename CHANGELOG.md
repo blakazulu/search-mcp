@@ -5,9 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.0] - 2025-12-12
 
 ### Added
+- **Migration Detection and Model Compatibility** (SMCP-074)
+  - All MCP tools now use the correct embedding engines (code vs docs)
+  - `search_code` uses `getCodeEmbeddingEngine()` (BGE-small, 384 dims)
+  - `search_docs` uses `getDocsEmbeddingEngine()` (BGE-base, 768 dims)
+  - Index creation and reindexing now save model metadata to `metadata.json`
+  - Migration detection warns when searching an index created with a different model
+  - Searching with mismatched models triggers clear error suggesting `reindex_project`
+  - `get_index_status` now shows embedding model information and mismatch warnings
+  - New utility: `checkModelCompatibility()` in `src/utils/modelCompatibility.ts`
+  - New utility functions: `checkCodeModelCompatibility()`, `checkDocsModelCompatibility()`
+  - New utility: `buildStatusWarning()` for non-blocking status warnings
+  - `createMetadata()` now includes embedding model info by default
+  - **Breaking for legacy indexes**: Search operations on legacy indexes (created before SMCP-072) will fail with a helpful error message suggesting `reindex_project`
+- **Dual Embedding Model Support** (SMCP-072)
+  - Refactored embedding engine to support two separate models
+  - Code search: `Xenova/bge-small-en-v1.5` (384 dimensions)
+  - Docs search: `Xenova/bge-base-en-v1.5` (768 dimensions)
+  - New exports: `CODE_MODEL_NAME`, `CODE_EMBEDDING_DIMENSION`, `DOCS_MODEL_NAME`, `DOCS_EMBEDDING_DIMENSION`
+  - New exports: `CODE_ENGINE_CONFIG`, `DOCS_ENGINE_CONFIG`, `EmbeddingEngineConfig`
+  - New functions: `getCodeEmbeddingEngine()`, `getDocsEmbeddingEngine()`
+  - New reset functions: `resetCodeEmbeddingEngine()`, `resetDocsEmbeddingEngine()`
+  - EmbeddingEngine now accepts config parameter for model customization
+  - New methods: `getModelName()`, `getDisplayName()` on EmbeddingEngine class
+  - Backward compatible: `getEmbeddingEngine()`, `MODEL_NAME`, `EMBEDDING_DIMENSION` still work
+- **Configurable Vector Dimensions in Storage** (SMCP-073)
+  - `LanceDBStore` now accepts `vectorDimension` parameter (defaults to 384)
+  - `DocsLanceDBStore` now accepts configurable dimension (defaults to 384 for backward compat)
+  - New exports: `CODE_VECTOR_DIMENSION` (384), `DOCS_VECTOR_DIMENSION` (768)
+  - Added `EmbeddingModelInfoSchema` to metadata for tracking model names and dimensions
+  - New `MetadataManager` methods: `updateEmbeddingModelInfo()`, `getCodeModelName()`, `getDocsModelName()`, etc.
+  - Backward compatible: existing indexes without `embeddingModels` field still work
 - **Config Matrix npm Scripts** (SMCP-071)
   - `npm run test:configs` - Run config matrix and accuracy comparison tests
   - `npm run test:configs:watch` - Watch mode for config tests

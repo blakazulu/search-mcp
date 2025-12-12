@@ -37,9 +37,11 @@ export {
   // Types
   type Metadata,
   type Stats,
+  type EmbeddingModelInfo,
   // Schema
   MetadataSchema,
   StatsSchema,
+  EmbeddingModelInfoSchema,
   // Constants
   CURRENT_VERSION,
   // Functions
@@ -88,6 +90,8 @@ export {
   // Constants
   TABLE_NAME,
   VECTOR_DIMENSION,
+  CODE_VECTOR_DIMENSION,
+  DOCS_VECTOR_DIMENSION,
   // Functions
   distanceToScore,
   globToLikePattern,

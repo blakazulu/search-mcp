@@ -75,15 +75,36 @@ export {
 
 // Embedding Engine
 export {
+  // New dual-model constants
+  CODE_MODEL_NAME,
+  CODE_EMBEDDING_DIMENSION,
+  DOCS_MODEL_NAME,
+  DOCS_EMBEDDING_DIMENSION,
+  // Deprecated (backward compat)
   MODEL_NAME,
   EMBEDDING_DIMENSION,
+  // Common constants
   BATCH_SIZE,
+  // Types
   type EmbeddingResult,
   type EmbeddingProgressCallback,
   type DownloadProgressCallback,
+  type EmbeddingEngineConfig,
+  // Configurations
+  CODE_ENGINE_CONFIG,
+  DOCS_ENGINE_CONFIG,
+  // Class
   EmbeddingEngine,
+  // Dual singleton getters
+  getCodeEmbeddingEngine,
+  getDocsEmbeddingEngine,
+  // Deprecated singleton getter (backward compat)
   getEmbeddingEngine,
+  // Reset functions
+  resetCodeEmbeddingEngine,
+  resetDocsEmbeddingEngine,
   resetEmbeddingEngine,
+  // Convenience functions
   embedText,
   embedBatch,
 } from './embedding.js';

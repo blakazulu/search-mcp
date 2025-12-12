@@ -7,6 +7,7 @@ import {
   MetadataSchema,
   StatsSchema,
   DocsStatsSchema,
+  EmbeddingModelInfoSchema,
   loadMetadata,
   saveMetadata,
   createMetadata,
@@ -14,6 +15,7 @@ import {
   type Metadata,
   type Stats,
   type DocsStats,
+  type EmbeddingModelInfo,
 } from '../../../src/storage/metadata.js';
 import { ErrorCode } from '../../../src/errors/index.js';
 
@@ -186,6 +188,81 @@ describe('Metadata Manager', () => {
       };
 
       const result = DocsStatsSchema.safeParse(docsStats);
+      expect(result.success).toBe(false);
+    });
+  });
+
+  // ==========================================================================
+  // EmbeddingModelInfo Schema Tests
+  // ==========================================================================
+
+  describe('EmbeddingModelInfoSchema', () => {
+    it('should accept valid embedding model info', () => {
+      const modelInfo: EmbeddingModelInfo = {
+        codeModelName: 'Xenova/bge-small-en-v1.5',
+        codeModelDimension: 384,
+        docsModelName: 'Xenova/bge-base-en-v1.5',
+        docsModelDimension: 768,
+      };
+
+      const result = EmbeddingModelInfoSchema.safeParse(modelInfo);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).toEqual(modelInfo);
+      }
+    });
+
+    it('should accept partial model info (code only)', () => {
+      const modelInfo = {
+        codeModelName: 'Xenova/bge-small-en-v1.5',
+        codeModelDimension: 384,
+      };
+
+      const result = EmbeddingModelInfoSchema.safeParse(modelInfo);
+      expect(result.success).toBe(true);
+    });
+
+    it('should accept partial model info (docs only)', () => {
+      const modelInfo = {
+        docsModelName: 'Xenova/bge-base-en-v1.5',
+        docsModelDimension: 768,
+      };
+
+      const result = EmbeddingModelInfoSchema.safeParse(modelInfo);
+      expect(result.success).toBe(true);
+    });
+
+    it('should accept empty object', () => {
+      const modelInfo = {};
+      const result = EmbeddingModelInfoSchema.safeParse(modelInfo);
+      expect(result.success).toBe(true);
+    });
+
+    it('should reject non-positive dimension values', () => {
+      const modelInfo = {
+        codeModelName: 'Xenova/bge-small-en-v1.5',
+        codeModelDimension: 0, // Invalid - must be positive
+      };
+
+      const result = EmbeddingModelInfoSchema.safeParse(modelInfo);
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject negative dimension values', () => {
+      const modelInfo = {
+        docsModelDimension: -1,
+      };
+
+      const result = EmbeddingModelInfoSchema.safeParse(modelInfo);
+      expect(result.success).toBe(false);
+    });
+
+    it('should reject non-integer dimension values', () => {
+      const modelInfo = {
+        codeModelDimension: 384.5,
+      };
+
+      const result = EmbeddingModelInfoSchema.safeParse(modelInfo);
       expect(result.success).toBe(false);
     });
   });
@@ -957,6 +1034,117 @@ describe('Metadata Manager', () => {
         const manager = new MetadataManager(indexPath);
         manager.initialize('/test/project');
         expect(manager.getVersion()).toBe(CURRENT_VERSION);
+      });
+    });
+
+    describe('embedding model info methods', () => {
+      it('updateCodeModelInfo should update code model info', () => {
+        const manager = new MetadataManager(indexPath);
+        manager.initialize('/test/project');
+
+        manager.updateCodeModelInfo('Xenova/bge-small-en-v1.5', 384);
+
+        const modelInfo = manager.getEmbeddingModelInfo();
+        expect(modelInfo?.codeModelName).toBe('Xenova/bge-small-en-v1.5');
+        expect(modelInfo?.codeModelDimension).toBe(384);
+      });
+
+      it('updateDocsModelInfo should update docs model info', () => {
+        const manager = new MetadataManager(indexPath);
+        manager.initialize('/test/project');
+
+        manager.updateDocsModelInfo('Xenova/bge-base-en-v1.5', 768);
+
+        const modelInfo = manager.getEmbeddingModelInfo();
+        expect(modelInfo?.docsModelName).toBe('Xenova/bge-base-en-v1.5');
+        expect(modelInfo?.docsModelDimension).toBe(768);
+      });
+
+      it('updateEmbeddingModelInfo should update all fields', () => {
+        const manager = new MetadataManager(indexPath);
+        manager.initialize('/test/project');
+
+        manager.updateEmbeddingModelInfo({
+          codeModelName: 'Xenova/bge-small-en-v1.5',
+          codeModelDimension: 384,
+          docsModelName: 'Xenova/bge-base-en-v1.5',
+          docsModelDimension: 768,
+        });
+
+        expect(manager.getCodeModelName()).toBe('Xenova/bge-small-en-v1.5');
+        expect(manager.getCodeModelDimension()).toBe(384);
+        expect(manager.getDocsModelName()).toBe('Xenova/bge-base-en-v1.5');
+        expect(manager.getDocsModelDimension()).toBe(768);
+      });
+
+      it('should throw if metadata not loaded', () => {
+        const manager = new MetadataManager(indexPath);
+
+        expect(() =>
+          manager.updateCodeModelInfo('Xenova/bge-small-en-v1.5', 384)
+        ).toThrow('Metadata not loaded');
+
+        expect(() =>
+          manager.updateDocsModelInfo('Xenova/bge-base-en-v1.5', 768)
+        ).toThrow('Metadata not loaded');
+
+        expect(() =>
+          manager.updateEmbeddingModelInfo({
+            codeModelName: 'test',
+            codeModelDimension: 384,
+          })
+        ).toThrow('Metadata not loaded');
+      });
+
+      it('getEmbeddingModelInfo should return null if metadata not loaded', () => {
+        const manager = new MetadataManager(indexPath);
+        expect(manager.getEmbeddingModelInfo()).toBeNull();
+        expect(manager.getCodeModelName()).toBeNull();
+        expect(manager.getCodeModelDimension()).toBeNull();
+        expect(manager.getDocsModelName()).toBeNull();
+        expect(manager.getDocsModelDimension()).toBeNull();
+      });
+
+      it('should persist and load embedding model info', async () => {
+        const manager1 = new MetadataManager(indexPath);
+        manager1.initialize('/test/project');
+        manager1.updateCodeModelInfo('Xenova/bge-small-en-v1.5', 384);
+        manager1.updateDocsModelInfo('Xenova/bge-base-en-v1.5', 768);
+        await manager1.save();
+
+        const manager2 = new MetadataManager(indexPath);
+        await manager2.load();
+
+        expect(manager2.getCodeModelName()).toBe('Xenova/bge-small-en-v1.5');
+        expect(manager2.getCodeModelDimension()).toBe(384);
+        expect(manager2.getDocsModelName()).toBe('Xenova/bge-base-en-v1.5');
+        expect(manager2.getDocsModelDimension()).toBe(768);
+      });
+
+      it('should be backward compatible with metadata without embedding model info', async () => {
+        // Create metadata without embeddingModels field (simulating old metadata)
+        const oldMetadata = {
+          version: '1.0.0',
+          projectPath: '/test/project',
+          createdAt: '2025-01-15T10:30:00.000Z',
+          lastFullIndex: '2025-01-15T10:30:00.000Z',
+          stats: {
+            totalFiles: 100,
+            totalChunks: 500,
+            storageSizeBytes: 1024000,
+          },
+        };
+
+        const metadataPath = path.join(indexPath, 'metadata.json');
+        await fs.promises.writeFile(metadataPath, JSON.stringify(oldMetadata));
+
+        const manager = new MetadataManager(indexPath);
+        const loaded = await manager.load();
+
+        expect(loaded).not.toBeNull();
+        expect(manager.getEmbeddingModelInfo()).toBeNull();
+        expect(manager.getCodeModelName()).toBeNull();
+        expect(manager.getDocsModelName()).toBeNull();
       });
     });
 

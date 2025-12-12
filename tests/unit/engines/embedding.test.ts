@@ -70,14 +70,34 @@ describe('Embedding Engine', () => {
   });
 
   describe('Constants', () => {
-    it('should export correct MODEL_NAME', async () => {
-      const { MODEL_NAME } = await import('../../../src/engines/embedding.js');
-      expect(MODEL_NAME).toBe('Xenova/all-MiniLM-L6-v2');
+    it('should export correct CODE_MODEL_NAME', async () => {
+      const { CODE_MODEL_NAME } = await import('../../../src/engines/embedding.js');
+      expect(CODE_MODEL_NAME).toBe('Xenova/bge-small-en-v1.5');
     });
 
-    it('should export correct EMBEDDING_DIMENSION', async () => {
-      const { EMBEDDING_DIMENSION } = await import('../../../src/engines/embedding.js');
-      expect(EMBEDDING_DIMENSION).toBe(384);
+    it('should export correct CODE_EMBEDDING_DIMENSION', async () => {
+      const { CODE_EMBEDDING_DIMENSION } = await import('../../../src/engines/embedding.js');
+      expect(CODE_EMBEDDING_DIMENSION).toBe(384);
+    });
+
+    it('should export correct DOCS_MODEL_NAME', async () => {
+      const { DOCS_MODEL_NAME } = await import('../../../src/engines/embedding.js');
+      expect(DOCS_MODEL_NAME).toBe('Xenova/bge-base-en-v1.5');
+    });
+
+    it('should export correct DOCS_EMBEDDING_DIMENSION', async () => {
+      const { DOCS_EMBEDDING_DIMENSION } = await import('../../../src/engines/embedding.js');
+      expect(DOCS_EMBEDDING_DIMENSION).toBe(768);
+    });
+
+    it('should export deprecated MODEL_NAME (backward compat)', async () => {
+      const { MODEL_NAME, CODE_MODEL_NAME } = await import('../../../src/engines/embedding.js');
+      expect(MODEL_NAME).toBe(CODE_MODEL_NAME);
+    });
+
+    it('should export deprecated EMBEDDING_DIMENSION (backward compat)', async () => {
+      const { EMBEDDING_DIMENSION, CODE_EMBEDDING_DIMENSION } = await import('../../../src/engines/embedding.js');
+      expect(EMBEDDING_DIMENSION).toBe(CODE_EMBEDDING_DIMENSION);
     });
 
     it('should export correct BATCH_SIZE', async () => {
@@ -95,7 +115,7 @@ describe('Embedding Engine', () => {
       });
 
       it('should initialize successfully', async () => {
-        const { EmbeddingEngine } = await import('../../../src/engines/embedding.js');
+        const { EmbeddingEngine, CODE_MODEL_NAME } = await import('../../../src/engines/embedding.js');
         const engine = new EmbeddingEngine();
 
         await engine.initialize();
@@ -103,7 +123,7 @@ describe('Embedding Engine', () => {
         expect(engine.isInitialized()).toBe(true);
         expect(mockPipeline).toHaveBeenCalledWith(
           'feature-extraction',
-          'Xenova/all-MiniLM-L6-v2',
+          CODE_MODEL_NAME,
           expect.objectContaining({
             progress_callback: expect.any(Function),
           })
@@ -191,10 +211,89 @@ describe('Embedding Engine', () => {
     });
 
     describe('getDimension', () => {
-      it('should return 384', async () => {
+      it('should return 384 for default (code) engine', async () => {
         const { EmbeddingEngine } = await import('../../../src/engines/embedding.js');
         const engine = new EmbeddingEngine();
         expect(engine.getDimension()).toBe(384);
+      });
+
+      it('should return configured dimension for docs engine', async () => {
+        const { EmbeddingEngine, DOCS_ENGINE_CONFIG } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine(DOCS_ENGINE_CONFIG);
+        expect(engine.getDimension()).toBe(768);
+      });
+    });
+
+    describe('getModelName', () => {
+      it('should return code model name for default engine', async () => {
+        const { EmbeddingEngine, CODE_MODEL_NAME } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine();
+        expect(engine.getModelName()).toBe(CODE_MODEL_NAME);
+      });
+
+      it('should return docs model name for docs engine', async () => {
+        const { EmbeddingEngine, DOCS_ENGINE_CONFIG, DOCS_MODEL_NAME } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine(DOCS_ENGINE_CONFIG);
+        expect(engine.getModelName()).toBe(DOCS_MODEL_NAME);
+      });
+    });
+
+    describe('getDisplayName', () => {
+      it('should return display name for code engine', async () => {
+        const { EmbeddingEngine, CODE_ENGINE_CONFIG } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine(CODE_ENGINE_CONFIG);
+        expect(engine.getDisplayName()).toBe('Code (BGE-small)');
+      });
+
+      it('should return display name for docs engine', async () => {
+        const { EmbeddingEngine, DOCS_ENGINE_CONFIG } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine(DOCS_ENGINE_CONFIG);
+        expect(engine.getDisplayName()).toBe('Docs (BGE-base)');
+      });
+    });
+
+    describe('docs engine embedding', () => {
+      it('should embed text with 768-dimensional vector for docs engine', async () => {
+        // Setup mock to return 768-dimensional vectors
+        mockPipelineInstance.mockResolvedValue(createMockTensorOutput(768));
+
+        const { EmbeddingEngine, DOCS_ENGINE_CONFIG } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine(DOCS_ENGINE_CONFIG);
+
+        const vector = await engine.embed('# README');
+
+        expect(vector).toBeInstanceOf(Array);
+        expect(vector.length).toBe(768);
+      });
+
+      it('should validate dimension for docs engine', async () => {
+        // Mock returns 384-dimensional vector (wrong for docs engine)
+        mockPipelineInstance.mockResolvedValue(createMockTensorOutput(384));
+
+        const { EmbeddingEngine, DOCS_ENGINE_CONFIG } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine(DOCS_ENGINE_CONFIG);
+
+        // Should throw error because we expect 768 but got 384
+        await expect(engine.embed('Test text')).rejects.toThrow(
+          'Invalid embedding dimension: expected 768, got 384'
+        );
+      });
+
+      it('should use docs model name when initializing', async () => {
+        mockPipelineInstance.mockResolvedValue(createMockTensorOutput(768));
+
+        const { EmbeddingEngine, DOCS_ENGINE_CONFIG, DOCS_MODEL_NAME } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine(DOCS_ENGINE_CONFIG);
+
+        await engine.initialize();
+
+        expect(mockPipeline).toHaveBeenCalledWith(
+          'feature-extraction',
+          DOCS_MODEL_NAME,
+          expect.objectContaining({
+            progress_callback: expect.any(Function),
+          })
+        );
       });
     });
 
@@ -467,25 +566,117 @@ describe('Embedding Engine', () => {
   });
 
   describe('Singleton pattern', () => {
-    it('should return same instance from getEmbeddingEngine', async () => {
-      const { getEmbeddingEngine } = await import('../../../src/engines/embedding.js');
+    describe('getCodeEmbeddingEngine', () => {
+      it('should return same instance on repeated calls', async () => {
+        const { getCodeEmbeddingEngine } = await import('../../../src/engines/embedding.js');
 
-      const engine1 = getEmbeddingEngine();
-      const engine2 = getEmbeddingEngine();
+        const engine1 = getCodeEmbeddingEngine();
+        const engine2 = getCodeEmbeddingEngine();
 
-      expect(engine1).toBe(engine2);
+        expect(engine1).toBe(engine2);
+      });
+
+      it('should return engine with code model config', async () => {
+        const { getCodeEmbeddingEngine, CODE_MODEL_NAME, CODE_EMBEDDING_DIMENSION } = await import('../../../src/engines/embedding.js');
+
+        const engine = getCodeEmbeddingEngine();
+
+        expect(engine.getModelName()).toBe(CODE_MODEL_NAME);
+        expect(engine.getDimension()).toBe(CODE_EMBEDDING_DIMENSION);
+      });
+
+      it('should reset with resetCodeEmbeddingEngine', async () => {
+        const { getCodeEmbeddingEngine, resetCodeEmbeddingEngine } = await import('../../../src/engines/embedding.js');
+
+        const engine1 = getCodeEmbeddingEngine();
+        resetCodeEmbeddingEngine();
+        const engine2 = getCodeEmbeddingEngine();
+
+        expect(engine1).not.toBe(engine2);
+      });
     });
 
-    it('should reset singleton with resetEmbeddingEngine', async () => {
-      const { getEmbeddingEngine, resetEmbeddingEngine } = await import(
-        '../../../src/engines/embedding.js'
-      );
+    describe('getDocsEmbeddingEngine', () => {
+      it('should return same instance on repeated calls', async () => {
+        const { getDocsEmbeddingEngine } = await import('../../../src/engines/embedding.js');
 
-      const engine1 = getEmbeddingEngine();
-      resetEmbeddingEngine();
-      const engine2 = getEmbeddingEngine();
+        const engine1 = getDocsEmbeddingEngine();
+        const engine2 = getDocsEmbeddingEngine();
 
-      expect(engine1).not.toBe(engine2);
+        expect(engine1).toBe(engine2);
+      });
+
+      it('should return engine with docs model config', async () => {
+        const { getDocsEmbeddingEngine, DOCS_MODEL_NAME, DOCS_EMBEDDING_DIMENSION } = await import('../../../src/engines/embedding.js');
+
+        const engine = getDocsEmbeddingEngine();
+
+        expect(engine.getModelName()).toBe(DOCS_MODEL_NAME);
+        expect(engine.getDimension()).toBe(DOCS_EMBEDDING_DIMENSION);
+      });
+
+      it('should reset with resetDocsEmbeddingEngine', async () => {
+        const { getDocsEmbeddingEngine, resetDocsEmbeddingEngine } = await import('../../../src/engines/embedding.js');
+
+        const engine1 = getDocsEmbeddingEngine();
+        resetDocsEmbeddingEngine();
+        const engine2 = getDocsEmbeddingEngine();
+
+        expect(engine1).not.toBe(engine2);
+      });
+    });
+
+    describe('getEmbeddingEngine (deprecated, backward compat)', () => {
+      it('should return same instance on repeated calls', async () => {
+        const { getEmbeddingEngine } = await import('../../../src/engines/embedding.js');
+
+        const engine1 = getEmbeddingEngine();
+        const engine2 = getEmbeddingEngine();
+
+        expect(engine1).toBe(engine2);
+      });
+
+      it('should return code engine for backward compatibility', async () => {
+        const { getEmbeddingEngine, CODE_MODEL_NAME } = await import('../../../src/engines/embedding.js');
+
+        const engine = getEmbeddingEngine();
+
+        expect(engine.getModelName()).toBe(CODE_MODEL_NAME);
+        expect(engine.getDimension()).toBe(384);
+      });
+    });
+
+    describe('resetEmbeddingEngine', () => {
+      it('should reset all singleton instances', async () => {
+        const { getCodeEmbeddingEngine, getDocsEmbeddingEngine, getEmbeddingEngine, resetEmbeddingEngine } = await import('../../../src/engines/embedding.js');
+
+        const codeEngine1 = getCodeEmbeddingEngine();
+        const docsEngine1 = getDocsEmbeddingEngine();
+        const legacyEngine1 = getEmbeddingEngine();
+
+        resetEmbeddingEngine();
+
+        const codeEngine2 = getCodeEmbeddingEngine();
+        const docsEngine2 = getDocsEmbeddingEngine();
+        const legacyEngine2 = getEmbeddingEngine();
+
+        expect(codeEngine1).not.toBe(codeEngine2);
+        expect(docsEngine1).not.toBe(docsEngine2);
+        expect(legacyEngine1).not.toBe(legacyEngine2);
+      });
+    });
+
+    describe('code and docs engines are separate', () => {
+      it('should return different instances for code and docs', async () => {
+        const { getCodeEmbeddingEngine, getDocsEmbeddingEngine } = await import('../../../src/engines/embedding.js');
+
+        const codeEngine = getCodeEmbeddingEngine();
+        const docsEngine = getDocsEmbeddingEngine();
+
+        expect(codeEngine).not.toBe(docsEngine);
+        expect(codeEngine.getDimension()).toBe(384);
+        expect(docsEngine.getDimension()).toBe(768);
+      });
     });
   });
 

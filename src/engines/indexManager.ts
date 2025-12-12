@@ -26,7 +26,12 @@ import { ConfigManager, Config, loadConfig, generateDefaultConfig } from '../sto
 // Engine imports
 import { IndexingPolicy } from './indexPolicy.js';
 import { chunkFile, Chunk } from './chunking.js';
-import { getEmbeddingEngine, EmbeddingEngine } from './embedding.js';
+import {
+  getCodeEmbeddingEngine,
+  EmbeddingEngine,
+  CODE_MODEL_NAME,
+  CODE_EMBEDDING_DIMENSION,
+} from './embedding.js';
 import { createFTSEngine, type EngineSelectionResult } from './ftsEngineFactory.js';
 import type { FTSEngine, FTSChunk } from './ftsEngine.js';
 
@@ -477,8 +482,8 @@ export async function createFullIndex(
   const fingerprintsManager = new FingerprintsManager(normalizedIndexPath, normalizedProjectPath);
   const metadataManager = new MetadataManager(normalizedIndexPath);
 
-  // Initialize embedding engine
-  const embeddingEngine = getEmbeddingEngine();
+  // Initialize code embedding engine (SMCP-074: use dedicated code engine)
+  const embeddingEngine = getCodeEmbeddingEngine();
   await embeddingEngine.initialize();
 
   try {
@@ -501,6 +506,8 @@ export async function createFullIndex(
       // Save empty metadata with complete state
       metadataManager.initialize(normalizedProjectPath);
       metadataManager.updateStats(0, 0, 0);
+      // SMCP-074: Save code embedding model info
+      metadataManager.updateCodeModelInfo(CODE_MODEL_NAME, CODE_EMBEDDING_DIMENSION);
       metadataManager.markFullIndex();
       metadataManager.setIndexingComplete();
       await metadataManager.save();
@@ -739,6 +746,9 @@ export async function createFullIndex(
       ftsChunkCount: ftsChunkCount,
     });
 
+    // SMCP-074: Save code embedding model info for migration detection
+    metadataManager.updateCodeModelInfo(CODE_MODEL_NAME, CODE_EMBEDDING_DIMENSION);
+
     metadataManager.markFullIndex();
     metadataManager.setIndexingComplete();
     await metadataManager.save();
@@ -827,7 +837,8 @@ export async function updateFile(
   const metadataManager = new MetadataManager(normalizedIndexPath);
   await metadataManager.load();
 
-  const embeddingEngine = getEmbeddingEngine();
+  // SMCP-074: use dedicated code embedding engine
+  const embeddingEngine = getCodeEmbeddingEngine();
   await embeddingEngine.initialize();
 
   try {
@@ -1021,7 +1032,8 @@ export async function applyDelta(
   const metadataManager = new MetadataManager(normalizedIndexPath);
   await metadataManager.load();
 
-  const embeddingEngine = getEmbeddingEngine();
+  // SMCP-074: use dedicated code embedding engine
+  const embeddingEngine = getCodeEmbeddingEngine();
   await embeddingEngine.initialize();
 
   try {

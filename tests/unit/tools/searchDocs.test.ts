@@ -22,9 +22,20 @@ import { v4 as uuidv4 } from 'uuid';
 // ============================================================================
 
 /**
+ * Dimension for code embeddings (BGE-small model uses 384)
+ */
+const CODE_DIMENSION = 384;
+
+/**
+ * Dimension for docs embeddings (BGE-base model uses 768)
+ * SMCP-074: Docs now uses a separate embedding model with 768 dimensions
+ */
+const DOCS_DIMENSION = 768;
+
+/**
  * Create a mock tensor output that mimics @xenova/transformers output
  */
-function createMockTensorOutput(dimension: number = 384): { data: Float32Array } {
+function createMockTensorOutput(dimension: number = CODE_DIMENSION): { data: Float32Array } {
   const data = new Float32Array(dimension);
   for (let i = 0; i < dimension; i++) {
     data[i] = Math.random() * 0.1 - 0.05;
@@ -78,10 +89,11 @@ function cleanupTempDir(tempDir: string): void {
 }
 
 /**
- * Generate a random 384-dimensional vector
+ * Generate a random 768-dimensional vector for docs
+ * SMCP-074: Docs uses BGE-base model with 768 dimensions
  */
 function randomVector(): number[] {
-  return Array.from({ length: 384 }, () => Math.random() * 2 - 1);
+  return Array.from({ length: DOCS_DIMENSION }, () => Math.random() * 2 - 1);
 }
 
 /**
@@ -112,7 +124,8 @@ describe('search_docs Tool', () => {
     vi.resetModules();
 
     // Setup default mock behavior
-    mockPipelineInstance.mockResolvedValue(createMockTensorOutput());
+    // SMCP-074: Use DOCS_DIMENSION (768) for docs embedding tests
+    mockPipelineInstance.mockResolvedValue(createMockTensorOutput(DOCS_DIMENSION));
     mockPipeline.mockResolvedValue(mockPipelineInstance);
   });
 
@@ -319,12 +332,12 @@ describe('search_docs Tool', () => {
       metadata.stats.totalChunks = 2;
       await saveMetadata(indexPath, metadata);
 
-      // Create DocsLanceDB store with test data
+      // Create DocsLanceDB store with test data (using CODE_DIMENSION for backward compatibility)
       const { DocsLanceDBStore } = await import(
         '../../../src/storage/docsLancedb.js'
       );
       const { ChunkRecord } = await import('../../../src/storage/lancedb.js');
-      const store = new DocsLanceDBStore(indexPath);
+      const store = new DocsLanceDBStore(indexPath, DOCS_DIMENSION);
       await store.open();
 
       // Create a query vector and chunks at varying distances
@@ -381,11 +394,11 @@ describe('search_docs Tool', () => {
       metadata.stats.totalChunks = 5;
       await saveMetadata(indexPath, metadata);
 
-      // Create DocsLanceDB store with test data
+      // Create DocsLanceDB store with test data (using CODE_DIMENSION for backward compatibility)
       const { DocsLanceDBStore } = await import(
         '../../../src/storage/docsLancedb.js'
       );
-      const store = new DocsLanceDBStore(indexPath);
+      const store = new DocsLanceDBStore(indexPath, DOCS_DIMENSION);
       await store.open();
 
       const chunks = Array.from({ length: 5 }, (_, i) => ({
@@ -424,7 +437,7 @@ describe('search_docs Tool', () => {
       const { DocsLanceDBStore } = await import(
         '../../../src/storage/docsLancedb.js'
       );
-      const store = new DocsLanceDBStore(indexPath);
+      const store = new DocsLanceDBStore(indexPath, DOCS_DIMENSION);
       await store.open();
 
       const chunks = Array.from({ length: 3 }, (_, i) => ({
@@ -465,7 +478,7 @@ describe('search_docs Tool', () => {
       const { DocsLanceDBStore } = await import(
         '../../../src/storage/docsLancedb.js'
       );
-      const store = new DocsLanceDBStore(indexPath);
+      const store = new DocsLanceDBStore(indexPath, DOCS_DIMENSION);
       await store.open();
 
       const chunk = {
@@ -514,7 +527,7 @@ describe('search_docs Tool', () => {
       const { DocsLanceDBStore } = await import(
         '../../../src/storage/docsLancedb.js'
       );
-      const store = new DocsLanceDBStore(indexPath);
+      const store = new DocsLanceDBStore(indexPath, DOCS_DIMENSION);
       await store.open();
 
       const chunk = {
@@ -554,7 +567,7 @@ describe('search_docs Tool', () => {
       const { DocsLanceDBStore } = await import(
         '../../../src/storage/docsLancedb.js'
       );
-      const store = new DocsLanceDBStore(indexPath);
+      const store = new DocsLanceDBStore(indexPath, DOCS_DIMENSION);
       await store.open();
 
       const chunk = {

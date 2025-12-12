@@ -15,6 +15,12 @@ import { getLogger } from '../utils/logger.js';
 import { atomicWriteJson } from '../utils/atomicWrite.js';
 import { ErrorCode, MCPError } from '../errors/index.js';
 import { safeLoadJSON, MAX_JSON_FILE_SIZE, ResourceLimitError } from '../utils/limits.js';
+import {
+  CODE_MODEL_NAME,
+  CODE_EMBEDDING_DIMENSION,
+  DOCS_MODEL_NAME,
+  DOCS_EMBEDDING_DIMENSION,
+} from '../engines/embedding.js';
 
 // ============================================================================
 // Version Constant
@@ -117,9 +123,32 @@ export const HybridSearchInfoSchema = z.object({
 });
 
 /**
+ * Schema for embedding model information
+ * Tracks which models were used to create the index for migration detection
+ */
+export const EmbeddingModelInfoSchema = z.object({
+  /** Model name used for code embeddings (e.g., 'Xenova/bge-small-en-v1.5') */
+  codeModelName: z.string().optional(),
+
+  /** Dimension of code embedding vectors (e.g., 384) */
+  codeModelDimension: z.number().int().positive().optional(),
+
+  /** Model name used for docs embeddings (e.g., 'Xenova/bge-base-en-v1.5') */
+  docsModelName: z.string().optional(),
+
+  /** Dimension of docs embedding vectors (e.g., 768) */
+  docsModelDimension: z.number().int().positive().optional(),
+});
+
+/**
  * Inferred HybridSearchInfo type from the schema
  */
 export type HybridSearchInfo = z.infer<typeof HybridSearchInfoSchema>;
+
+/**
+ * Inferred EmbeddingModelInfo type from the schema
+ */
+export type EmbeddingModelInfo = z.infer<typeof EmbeddingModelInfoSchema>;
 
 /**
  * Zod schema for metadata validation
@@ -156,6 +185,9 @@ export const MetadataSchema = z.object({
 
   /** Hybrid search / FTS information */
   hybridSearch: HybridSearchInfoSchema.optional(),
+
+  /** Embedding model information for migration detection */
+  embeddingModels: EmbeddingModelInfoSchema.optional(),
 });
 
 /**
@@ -335,6 +367,13 @@ export function createMetadata(projectPath: string): Metadata {
       totalFiles: 0,
       totalChunks: 0,
       storageSizeBytes: 0,
+    },
+    // SMCP-074: Include embedding model info by default for migration detection
+    embeddingModels: {
+      codeModelName: CODE_MODEL_NAME,
+      codeModelDimension: CODE_EMBEDDING_DIMENSION,
+      docsModelName: DOCS_MODEL_NAME,
+      docsModelDimension: DOCS_EMBEDDING_DIMENSION,
     },
   };
 }
@@ -812,5 +851,111 @@ export class MetadataManager {
     }
 
     this.cachedMetadata.hybridSearch.ftsChunkCount = count;
+  }
+
+  // ==========================================================================
+  // Embedding Model Information Management
+  // ==========================================================================
+
+  /**
+   * Update the embedding model information
+   *
+   * @param info - Embedding model info to set
+   */
+  updateEmbeddingModelInfo(info: EmbeddingModelInfo): void {
+    if (this.cachedMetadata === null) {
+      throw new Error(
+        'Metadata not loaded. Call load() or initialize() first.'
+      );
+    }
+
+    this.cachedMetadata.embeddingModels = info;
+  }
+
+  /**
+   * Update the code model information
+   *
+   * @param modelName - Name of the code embedding model
+   * @param dimension - Dimension of the code embedding vectors
+   */
+  updateCodeModelInfo(modelName: string, dimension: number): void {
+    if (this.cachedMetadata === null) {
+      throw new Error(
+        'Metadata not loaded. Call load() or initialize() first.'
+      );
+    }
+
+    if (!this.cachedMetadata.embeddingModels) {
+      this.cachedMetadata.embeddingModels = {};
+    }
+
+    this.cachedMetadata.embeddingModels.codeModelName = modelName;
+    this.cachedMetadata.embeddingModels.codeModelDimension = dimension;
+  }
+
+  /**
+   * Update the docs model information
+   *
+   * @param modelName - Name of the docs embedding model
+   * @param dimension - Dimension of the docs embedding vectors
+   */
+  updateDocsModelInfo(modelName: string, dimension: number): void {
+    if (this.cachedMetadata === null) {
+      throw new Error(
+        'Metadata not loaded. Call load() or initialize() first.'
+      );
+    }
+
+    if (!this.cachedMetadata.embeddingModels) {
+      this.cachedMetadata.embeddingModels = {};
+    }
+
+    this.cachedMetadata.embeddingModels.docsModelName = modelName;
+    this.cachedMetadata.embeddingModels.docsModelDimension = dimension;
+  }
+
+  /**
+   * Get the embedding model information
+   *
+   * @returns EmbeddingModelInfo object or null if metadata not loaded or no info
+   */
+  getEmbeddingModelInfo(): EmbeddingModelInfo | null {
+    return this.cachedMetadata?.embeddingModels ?? null;
+  }
+
+  /**
+   * Get the code model name
+   *
+   * @returns Code model name or null if not set
+   */
+  getCodeModelName(): string | null {
+    return this.cachedMetadata?.embeddingModels?.codeModelName ?? null;
+  }
+
+  /**
+   * Get the code model dimension
+   *
+   * @returns Code model dimension or null if not set
+   */
+  getCodeModelDimension(): number | null {
+    return this.cachedMetadata?.embeddingModels?.codeModelDimension ?? null;
+  }
+
+  /**
+   * Get the docs model name
+   *
+   * @returns Docs model name or null if not set
+   */
+  getDocsModelName(): string | null {
+    return this.cachedMetadata?.embeddingModels?.docsModelName ?? null;
+  }
+
+  /**
+   * Get the docs model dimension
+   *
+   * @returns Docs model dimension or null if not set
+   */
+  getDocsModelDimension(): number | null {
+    return this.cachedMetadata?.embeddingModels?.docsModelDimension ?? null;
   }
 }

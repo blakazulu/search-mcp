@@ -15,7 +15,10 @@
  */
 
 import { z } from 'zod';
-import { getEmbeddingEngine } from '../engines/embedding.js';
+import {
+  getDocsEmbeddingEngine,
+  DOCS_EMBEDDING_DIMENSION,
+} from '../engines/embedding.js';
 import { DocsLanceDBStore } from '../storage/docsLancedb.js';
 import { SearchResult } from '../storage/lancedb.js';
 import { loadMetadata } from '../storage/metadata.js';
@@ -24,6 +27,7 @@ import { getLogger } from '../utils/logger.js';
 import { indexNotFound, MCPError, ErrorCode } from '../errors/index.js';
 import { MAX_QUERY_LENGTH } from '../utils/limits.js';
 import { sanitizeIndexPath } from '../utils/paths.js';
+import { checkDocsModelCompatibility } from '../utils/modelCompatibility.js';
 import {
   processSearchResults,
   formatCompactOutput,
@@ -219,6 +223,19 @@ export async function searchDocs(
     }
   }
 
+  // SMCP-074: Check model compatibility - block search if models don't match
+  const modelCompatibility = checkDocsModelCompatibility(metadata.embeddingModels);
+  if (!modelCompatibility.compatible) {
+    logger.error('searchDocs', 'Model mismatch detected', {
+      storedModels: metadata.embeddingModels,
+    });
+    throw new MCPError({
+      code: ErrorCode.INDEX_CORRUPT,
+      userMessage: modelCompatibility.message || 'Index model mismatch detected. Please run reindex_project.',
+      developerMessage: `Docs embedding model mismatch. Stored: ${JSON.stringify(metadata.embeddingModels)}, Expected: BGE-base (${DOCS_EMBEDDING_DIMENSION} dims)`,
+    });
+  }
+
   // SMCP-061: Determine search mode and alpha
   // Note: Docs uses the same hybrid search config as code for now
   const hybridSearchInfo = metadata.hybridSearch;
@@ -235,8 +252,8 @@ export async function searchDocs(
     actualMode = 'vector';
   }
 
-  // Open the DocsLanceDB store
-  const store = new DocsLanceDBStore(indexPath);
+  // SMCP-074: Open the DocsLanceDB store with docs dimension (768)
+  const store = new DocsLanceDBStore(indexPath, DOCS_EMBEDDING_DIMENSION);
   try {
     await store.open();
 
@@ -251,8 +268,9 @@ export async function searchDocs(
       });
     }
 
-    // Generate query embedding
-    const embeddingEngine = getEmbeddingEngine();
+    // SMCP-074: Generate query embedding using docs embedding engine
+    const embeddingEngine = getDocsEmbeddingEngine();
+    await embeddingEngine.initialize();
     const queryVector = await embeddingEngine.embed(input.query);
 
     logger.debug('searchDocs', 'Query embedding generated', {

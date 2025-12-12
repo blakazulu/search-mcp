@@ -2,7 +2,7 @@
  * Embedding Engine
  *
  * Implements local vector generation using Xenova/transformers.
- * Converts text chunks into 384-dimensional vectors for semantic search.
+ * Supports dual models: BGE-small for code (384 dims) and BGE-base for docs (768 dims).
  * Handles model download on first use and batch processing for efficiency.
  */
 
@@ -15,16 +15,42 @@ import { modelDownloadFailed } from '../errors/index.js';
 // ============================================================================
 
 /**
+ * Model name for code embedding
+ * Using BGE-small for good balance of quality and speed
+ */
+export const CODE_MODEL_NAME = 'Xenova/bge-small-en-v1.5';
+
+/**
+ * Dimension of code embedding vectors
+ * BGE-small produces 384-dimensional vectors
+ */
+export const CODE_EMBEDDING_DIMENSION = 384;
+
+/**
+ * Model name for docs embedding
+ * Using BGE-base for higher quality on prose content
+ */
+export const DOCS_MODEL_NAME = 'Xenova/bge-base-en-v1.5';
+
+/**
+ * Dimension of docs embedding vectors
+ * BGE-base produces 768-dimensional vectors
+ */
+export const DOCS_EMBEDDING_DIMENSION = 768;
+
+/**
+ * @deprecated Use CODE_MODEL_NAME instead. Kept for backward compatibility.
  * Model name for the embedding model
  * Using MiniLM for good balance of quality and speed
  */
-export const MODEL_NAME = 'Xenova/all-MiniLM-L6-v2';
+export const MODEL_NAME = CODE_MODEL_NAME;
 
 /**
+ * @deprecated Use CODE_EMBEDDING_DIMENSION instead. Kept for backward compatibility.
  * Dimension of the embedding vectors
  * MiniLM produces 384-dimensional vectors
  */
-export const EMBEDDING_DIMENSION = 384;
+export const EMBEDDING_DIMENSION = CODE_EMBEDDING_DIMENSION;
 
 /**
  * Batch size for processing multiple texts
@@ -77,6 +103,36 @@ export type DownloadProgressCallback = (progress: {
   total?: number;
 }) => void;
 
+/**
+ * Configuration for the embedding engine
+ */
+export interface EmbeddingEngineConfig {
+  /** The model name to use (e.g., 'Xenova/bge-small-en-v1.5') */
+  modelName: string;
+  /** The dimension of embedding vectors produced by this model */
+  dimension: number;
+  /** Human-readable display name for logging */
+  displayName: string;
+}
+
+/**
+ * Default configuration for code embedding
+ */
+export const CODE_ENGINE_CONFIG: EmbeddingEngineConfig = {
+  modelName: CODE_MODEL_NAME,
+  dimension: CODE_EMBEDDING_DIMENSION,
+  displayName: 'Code (BGE-small)',
+};
+
+/**
+ * Default configuration for docs embedding
+ */
+export const DOCS_ENGINE_CONFIG: EmbeddingEngineConfig = {
+  modelName: DOCS_MODEL_NAME,
+  dimension: DOCS_EMBEDDING_DIMENSION,
+  displayName: 'Docs (BGE-base)',
+};
+
 // ============================================================================
 // Embedding Engine Class
 // ============================================================================
@@ -84,28 +140,35 @@ export type DownloadProgressCallback = (progress: {
 /**
  * Embedding Engine for generating vector embeddings from text.
  *
- * Uses the Xenova/all-MiniLM-L6-v2 model to create 384-dimensional
- * embedding vectors. The model is downloaded on first use (~90MB)
- * and cached for future use.
+ * Supports configurable models for different use cases:
+ * - Code search: BGE-small (384 dims) - fast and efficient
+ * - Docs search: BGE-base (768 dims) - higher quality for prose
  *
  * @example
  * ```typescript
- * const engine = getEmbeddingEngine();
- * await engine.initialize();
+ * // Use the code embedding engine
+ * const codeEngine = getCodeEmbeddingEngine();
+ * await codeEngine.initialize();
+ * const codeVector = await codeEngine.embed('function hello() {}');
  *
- * // Single text embedding
- * const vector = await engine.embed('Hello, world!');
- *
- * // Batch embedding with progress
- * const vectors = await engine.embedBatch(
- *   ['text1', 'text2', 'text3'],
- *   (completed, total) => console.log(`${completed}/${total}`)
- * );
+ * // Use the docs embedding engine
+ * const docsEngine = getDocsEmbeddingEngine();
+ * await docsEngine.initialize();
+ * const docsVector = await docsEngine.embed('# README');
  * ```
  */
 export class EmbeddingEngine {
   private pipeline: FeatureExtractionPipeline | null = null;
   private initializationPromise: Promise<void> | null = null;
+  private config: EmbeddingEngineConfig;
+
+  /**
+   * Create a new EmbeddingEngine with the specified configuration.
+   * @param config - The configuration for this engine (defaults to code engine config)
+   */
+  constructor(config: EmbeddingEngineConfig = CODE_ENGINE_CONFIG) {
+    this.config = config;
+  }
 
   /**
    * Initialize the embedding model.
@@ -146,17 +209,19 @@ export class EmbeddingEngine {
    */
   private async loadModel(onProgress?: DownloadProgressCallback): Promise<void> {
     const logger = getLogger();
-    logger.info('EmbeddingEngine', 'Initializing embedding model...', { model: MODEL_NAME });
+    logger.info('EmbeddingEngine', `Initializing ${this.config.displayName} embedding model...`, {
+      model: this.config.modelName,
+    });
 
     try {
       // Check if model needs to be downloaded
       logger.info(
         'EmbeddingEngine',
-        'Loading model (may download on first use, ~90MB)...'
+        `Loading ${this.config.displayName} model (may download on first use)...`
       );
 
       // Create the feature extraction pipeline
-      this.pipeline = await pipeline('feature-extraction', MODEL_NAME, {
+      this.pipeline = await pipeline('feature-extraction', this.config.modelName, {
         progress_callback: (progress: {
           status: string;
           name?: string;
@@ -179,15 +244,15 @@ export class EmbeddingEngine {
         },
       }) as FeatureExtractionPipeline;
 
-      logger.info('EmbeddingEngine', 'Embedding model initialized successfully', {
-        model: MODEL_NAME,
-        dimension: EMBEDDING_DIMENSION,
+      logger.info('EmbeddingEngine', `${this.config.displayName} embedding model initialized successfully`, {
+        model: this.config.modelName,
+        dimension: this.config.dimension,
       });
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      logger.error('EmbeddingEngine', 'Failed to initialize embedding model', {
+      logger.error('EmbeddingEngine', `Failed to initialize ${this.config.displayName} embedding model`, {
         error: err.message,
-        model: MODEL_NAME,
+        model: this.config.modelName,
       });
       throw modelDownloadFailed(err);
     }
@@ -201,11 +266,27 @@ export class EmbeddingEngine {
   }
 
   /**
+   * Get the model name being used by this engine
+   * @returns The model name (e.g., 'Xenova/bge-small-en-v1.5')
+   */
+  getModelName(): string {
+    return this.config.modelName;
+  }
+
+  /**
    * Get the dimension of embedding vectors
-   * @returns 384 for MiniLM model
+   * @returns The embedding dimension for this engine's model
    */
   getDimension(): number {
-    return EMBEDDING_DIMENSION;
+    return this.config.dimension;
+  }
+
+  /**
+   * Get the display name for this engine
+   * @returns Human-readable display name (e.g., 'Code (BGE-small)')
+   */
+  getDisplayName(): string {
+    return this.config.displayName;
   }
 
   /**
@@ -240,9 +321,9 @@ export class EmbeddingEngine {
       const vector = Array.from(output!.data as Float32Array);
 
       // Validate dimension - enforce strictly (SMCP-054)
-      if (vector.length !== EMBEDDING_DIMENSION) {
+      if (vector.length !== this.config.dimension) {
         throw new Error(
-          `Invalid embedding dimension: expected ${EMBEDDING_DIMENSION}, got ${vector.length}`
+          `Invalid embedding dimension: expected ${this.config.dimension}, got ${vector.length}`
         );
       }
 
@@ -408,35 +489,99 @@ export class EmbeddingEngine {
 }
 
 // ============================================================================
-// Singleton Instance
+// Singleton Instances
 // ============================================================================
 
 /**
- * Singleton instance of the embedding engine
+ * Singleton instance for code embedding engine
+ */
+let codeEngineInstance: EmbeddingEngine | null = null;
+
+/**
+ * Singleton instance for docs embedding engine
+ */
+let docsEngineInstance: EmbeddingEngine | null = null;
+
+/**
+ * @deprecated Legacy singleton instance. Use getCodeEmbeddingEngine() or getDocsEmbeddingEngine() instead.
  */
 let engineInstance: EmbeddingEngine | null = null;
 
 /**
- * Get the singleton embedding engine instance.
+ * Get the singleton code embedding engine instance.
  *
+ * Uses BGE-small model (384 dimensions) optimized for code search.
  * Creates a new instance if one doesn't exist.
  * The instance must be initialized before use via initialize().
  *
- * @returns The singleton EmbeddingEngine instance
+ * @returns The singleton EmbeddingEngine instance for code
+ */
+export function getCodeEmbeddingEngine(): EmbeddingEngine {
+  if (!codeEngineInstance) {
+    codeEngineInstance = new EmbeddingEngine(CODE_ENGINE_CONFIG);
+  }
+  return codeEngineInstance;
+}
+
+/**
+ * Get the singleton docs embedding engine instance.
+ *
+ * Uses BGE-base model (768 dimensions) optimized for prose/documentation search.
+ * Creates a new instance if one doesn't exist.
+ * The instance must be initialized before use via initialize().
+ *
+ * @returns The singleton EmbeddingEngine instance for docs
+ */
+export function getDocsEmbeddingEngine(): EmbeddingEngine {
+  if (!docsEngineInstance) {
+    docsEngineInstance = new EmbeddingEngine(DOCS_ENGINE_CONFIG);
+  }
+  return docsEngineInstance;
+}
+
+/**
+ * @deprecated Use getCodeEmbeddingEngine() or getDocsEmbeddingEngine() instead.
+ * Get the singleton embedding engine instance.
+ *
+ * For backward compatibility, returns the code embedding engine.
+ * Creates a new instance if one doesn't exist.
+ * The instance must be initialized before use via initialize().
+ *
+ * @returns The singleton EmbeddingEngine instance (code engine)
  */
 export function getEmbeddingEngine(): EmbeddingEngine {
+  // For backward compatibility, use the legacy instance if it exists
+  // Otherwise, return the code engine
   if (!engineInstance) {
-    engineInstance = new EmbeddingEngine();
+    engineInstance = getCodeEmbeddingEngine();
   }
   return engineInstance;
 }
 
 /**
- * Reset the singleton instance.
+ * Reset the code embedding engine singleton instance.
+ * Mainly used for testing purposes.
+ */
+export function resetCodeEmbeddingEngine(): void {
+  codeEngineInstance = null;
+}
+
+/**
+ * Reset the docs embedding engine singleton instance.
+ * Mainly used for testing purposes.
+ */
+export function resetDocsEmbeddingEngine(): void {
+  docsEngineInstance = null;
+}
+
+/**
+ * Reset all singleton instances.
  * Mainly used for testing purposes.
  */
 export function resetEmbeddingEngine(): void {
   engineInstance = null;
+  codeEngineInstance = null;
+  docsEngineInstance = null;
 }
 
 // ============================================================================

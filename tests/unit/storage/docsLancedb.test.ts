@@ -20,6 +20,8 @@ import {
   getDocsLanceDbPath,
   ChunkRecord,
   VECTOR_DIMENSION,
+  CODE_VECTOR_DIMENSION,
+  DOCS_VECTOR_DIMENSION,
   LanceDBStore,
 } from '../../../src/storage/index.js';
 
@@ -50,10 +52,18 @@ function cleanupTempDir(tempDir: string): void {
 }
 
 /**
- * Generate a random 384-dimensional vector
+ * Generate a random vector with specified dimension
+ */
+function randomVectorWithDimension(dimension: number): number[] {
+  return Array.from({ length: dimension }, () => Math.random() * 2 - 1);
+}
+
+/**
+ * Generate a random 384-dimensional vector (current default for backward compatibility)
+ * Note: Will use 768 dimensions when SMCP-074 implements docs-specific embedding model
  */
 function randomVector(): number[] {
-  return Array.from({ length: VECTOR_DIMENSION }, () => Math.random() * 2 - 1);
+  return randomVectorWithDimension(CODE_VECTOR_DIMENSION);
 }
 
 /**
@@ -581,18 +591,18 @@ describe('Store Isolation', () => {
     await docsStore.open();
     await codeStore.open();
 
-    // Insert documentation chunks
+    // Insert documentation chunks (768-dimensional vectors)
     await docsStore.insertChunks([
       createTestDocChunk({ path: 'docs/readme.md', text: 'Documentation content' }),
       createTestDocChunk({ path: 'docs/guide.md', text: 'Guide content' }),
     ]);
 
-    // Insert code chunks
+    // Insert code chunks (384-dimensional vectors)
     const codeChunk: ChunkRecord = {
       id: uuidv4(),
       path: 'src/index.ts',
       text: 'function main() { return 42; }',
-      vector: randomVector(),
+      vector: randomVectorWithDimension(CODE_VECTOR_DIMENSION),
       start_line: 1,
       end_line: 1,
       content_hash: 'code123',
@@ -620,14 +630,14 @@ describe('Store Isolation', () => {
     await docsStore.open();
     await codeStore.open();
 
-    // Insert data in both stores
+    // Insert data in both stores (docs: 768-dim, code: 384-dim)
     await docsStore.insertChunks([createTestDocChunk({ path: 'docs/test.md' })]);
     await codeStore.insertChunks([
       {
         id: uuidv4(),
         path: 'src/test.ts',
         text: 'test code',
-        vector: randomVector(),
+        vector: randomVectorWithDimension(CODE_VECTOR_DIMENSION),
         start_line: 1,
         end_line: 1,
         content_hash: 'test123',
@@ -647,12 +657,13 @@ describe('Store Isolation', () => {
     await docsStore.open();
     await codeStore.open();
 
-    // Create a specific vector to search for
-    const targetVector = randomVector();
+    // Both stores use 384-dimensional vectors (the default for backward compatibility)
+    const docsTargetVector = randomVector(); // 384 dims
+    const codeTargetVector = randomVector(); // 384 dims
 
     // Insert similar chunks in both stores
     await docsStore.insertChunks([
-      createTestDocChunk({ path: 'docs/match.md', vector: targetVector.map((v) => v + 0.01) }),
+      createTestDocChunk({ path: 'docs/match.md', vector: docsTargetVector.map((v) => v + 0.01) }),
     ]);
 
     await codeStore.insertChunks([
@@ -660,21 +671,85 @@ describe('Store Isolation', () => {
         id: uuidv4(),
         path: 'src/match.ts',
         text: 'code match',
-        vector: targetVector.map((v) => v + 0.02),
+        vector: codeTargetVector.map((v) => v + 0.02),
         start_line: 1,
         end_line: 1,
         content_hash: 'match123',
       },
     ]);
 
-    // Search in docs store
-    const docsResults = await docsStore.search(targetVector, 10);
+    // Search in docs store (384 dims)
+    const docsResults = await docsStore.search(docsTargetVector, 10);
     expect(docsResults).toHaveLength(1);
     expect(docsResults[0].path).toBe('docs/match.md');
 
-    // Search in code store
-    const codeResults = await codeStore.search(targetVector, 10);
+    // Search in code store (384 dims)
+    const codeResults = await codeStore.search(codeTargetVector, 10);
     expect(codeResults).toHaveLength(1);
     expect(codeResults[0].path).toBe('src/match.ts');
+  });
+});
+
+// ============================================================================
+// DocsLanceDBStore Vector Dimension Tests
+// ============================================================================
+
+describe('DocsLanceDBStore Vector Dimension', () => {
+  let tempDir: string;
+  let store: DocsLanceDBStore;
+
+  beforeEach(() => {
+    tempDir = createTempDir();
+    store = new DocsLanceDBStore(tempDir);
+  });
+
+  afterEach(async () => {
+    try {
+      await store.close();
+    } catch {
+      // Ignore close errors in cleanup
+    }
+    cleanupTempDir(tempDir);
+  });
+
+  it('should default to CODE_VECTOR_DIMENSION (384) for backward compatibility', () => {
+    expect(store.getVectorDimension()).toBe(CODE_VECTOR_DIMENSION);
+    expect(store.getVectorDimension()).toBe(384);
+  });
+
+  it('should accept custom dimension (768) for docs embedding model', () => {
+    const docsStore = new DocsLanceDBStore(tempDir, DOCS_VECTOR_DIMENSION);
+    expect(docsStore.getVectorDimension()).toBe(DOCS_VECTOR_DIMENSION);
+    expect(docsStore.getVectorDimension()).toBe(768);
+  });
+
+  it('should accept 384-dimensional vectors in search (default)', async () => {
+    await store.open();
+    const chunk = createTestDocChunk();
+    await store.insertChunks([chunk]);
+
+    // Search with 384-dimensional vector should work (default dimension)
+    const results = await store.search(chunk.vector, 1);
+    expect(results).toHaveLength(1);
+    expect(results[0].path).toBe(chunk.path);
+  });
+
+  it('should reject mismatched dimensions in search', async () => {
+    // Create a store with 768 dimensions
+    const docsStore = new DocsLanceDBStore(tempDir + '-768', DOCS_VECTOR_DIMENSION);
+    await docsStore.open();
+
+    const chunk = {
+      ...createTestDocChunk(),
+      vector: randomVectorWithDimension(DOCS_VECTOR_DIMENSION),
+    };
+    await docsStore.insertChunks([chunk]);
+
+    // Try to search with 384-dimensional vector (wrong dimension)
+    await expect(
+      docsStore.search(randomVectorWithDimension(CODE_VECTOR_DIMENSION), 10)
+    ).rejects.toThrow(/dimension mismatch.*Expected 768.*got 384/);
+
+    await docsStore.close();
   });
 });

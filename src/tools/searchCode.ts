@@ -14,7 +14,10 @@
  */
 
 import { z } from 'zod';
-import { getEmbeddingEngine } from '../engines/embedding.js';
+import {
+  getCodeEmbeddingEngine,
+  CODE_EMBEDDING_DIMENSION,
+} from '../engines/embedding.js';
 import { LanceDBStore, SearchResult } from '../storage/lancedb.js';
 import { loadMetadata, MetadataManager } from '../storage/metadata.js';
 import { loadConfig } from '../storage/config.js';
@@ -23,6 +26,7 @@ import { getLogger } from '../utils/logger.js';
 import { indexNotFound, MCPError, ErrorCode } from '../errors/index.js';
 import { MAX_QUERY_LENGTH } from '../utils/limits.js';
 import { sanitizeIndexPath } from '../utils/paths.js';
+import { checkCodeModelCompatibility } from '../utils/modelCompatibility.js';
 import {
   processSearchResults,
   formatCompactOutput,
@@ -218,6 +222,19 @@ export async function searchCode(
     }
   }
 
+  // SMCP-074: Check model compatibility - block search if models don't match
+  const modelCompatibility = checkCodeModelCompatibility(metadata.embeddingModels);
+  if (!modelCompatibility.compatible) {
+    logger.error('searchCode', 'Model mismatch detected', {
+      storedModels: metadata.embeddingModels,
+    });
+    throw new MCPError({
+      code: ErrorCode.INDEX_CORRUPT,
+      userMessage: modelCompatibility.message || 'Index model mismatch detected. Please run reindex_project.',
+      developerMessage: `Code embedding model mismatch. Stored: ${JSON.stringify(metadata.embeddingModels)}, Expected: BGE-small (${CODE_EMBEDDING_DIMENSION} dims)`,
+    });
+  }
+
   // SMCP-061: Determine search mode and alpha
   const hybridSearchInfo = metadata.hybridSearch;
   const defaultAlpha = hybridSearchInfo?.defaultAlpha ?? 0.5;
@@ -285,8 +302,9 @@ export async function searchCode(
       });
     }
 
-    // Generate query embedding
-    const embeddingEngine = getEmbeddingEngine();
+    // SMCP-074: Generate query embedding using code embedding engine
+    const embeddingEngine = getCodeEmbeddingEngine();
+    await embeddingEngine.initialize();
     const queryVector = await embeddingEngine.embed(input.query);
 
     logger.debug('searchCode', 'Query embedding generated', {

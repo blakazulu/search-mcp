@@ -19,6 +19,8 @@ import {
   ChunkRecord,
   SearchResult,
   VECTOR_DIMENSION,
+  CODE_VECTOR_DIMENSION,
+  DOCS_VECTOR_DIMENSION,
   TABLE_NAME,
   distanceToScore,
   globToLikePattern,
@@ -51,10 +53,17 @@ function cleanupTempDir(tempDir: string): void {
 }
 
 /**
+ * Generate a random vector with specified dimension
+ */
+function randomVectorWithDimension(dimension: number): number[] {
+  return Array.from({ length: dimension }, () => Math.random() * 2 - 1);
+}
+
+/**
  * Generate a random 384-dimensional vector
  */
 function randomVector(): number[] {
-  return Array.from({ length: VECTOR_DIMENSION }, () => Math.random() * 2 - 1);
+  return randomVectorWithDimension(VECTOR_DIMENSION);
 }
 
 /**
@@ -584,5 +593,74 @@ describe('LanceDBStore', () => {
       await store.insertChunks([createTestChunk()]);
       expect(await store.hasData()).toBe(true);
     });
+  });
+
+  // --------------------------------------------------------------------------
+  // Configurable Vector Dimension Tests
+  // --------------------------------------------------------------------------
+
+  describe('vector dimension configuration', () => {
+    it('should default to CODE_VECTOR_DIMENSION (384)', () => {
+      expect(store.getVectorDimension()).toBe(CODE_VECTOR_DIMENSION);
+      expect(store.getVectorDimension()).toBe(384);
+    });
+
+    it('should accept custom vector dimension in constructor', () => {
+      const customStore = new LanceDBStore(tempDir, DOCS_VECTOR_DIMENSION);
+      expect(customStore.getVectorDimension()).toBe(DOCS_VECTOR_DIMENSION);
+      expect(customStore.getVectorDimension()).toBe(768);
+    });
+
+    it('should accept any custom dimension', () => {
+      const customStore = new LanceDBStore(tempDir, 512);
+      expect(customStore.getVectorDimension()).toBe(512);
+    });
+
+    it('should validate vector dimension in search against configured dimension', async () => {
+      // Create a store with custom dimension (768)
+      const customTempDir = createTempDir();
+      const customStore = new LanceDBStore(customTempDir, 768);
+
+      try {
+        await customStore.open();
+
+        // Create a chunk with 768-dimensional vector
+        const chunk = {
+          ...createTestChunk(),
+          vector: randomVectorWithDimension(768),
+        };
+        await customStore.insertChunks([chunk]);
+
+        // Search with correct dimension should work
+        const results = await customStore.search(randomVectorWithDimension(768), 1);
+        expect(results).toHaveLength(1);
+
+        // Search with wrong dimension should throw
+        await expect(customStore.search(randomVectorWithDimension(384), 1)).rejects.toThrow(
+          /dimension mismatch.*Expected 768.*got 384/
+        );
+      } finally {
+        await customStore.close();
+        cleanupTempDir(customTempDir);
+      }
+    });
+  });
+});
+
+// ============================================================================
+// Dimension Constants Tests
+// ============================================================================
+
+describe('Vector Dimension Constants', () => {
+  it('CODE_VECTOR_DIMENSION should be 384', () => {
+    expect(CODE_VECTOR_DIMENSION).toBe(384);
+  });
+
+  it('DOCS_VECTOR_DIMENSION should be 768', () => {
+    expect(DOCS_VECTOR_DIMENSION).toBe(768);
+  });
+
+  it('VECTOR_DIMENSION should equal CODE_VECTOR_DIMENSION for backward compatibility', () => {
+    expect(VECTOR_DIMENSION).toBe(CODE_VECTOR_DIMENSION);
   });
 });

@@ -22,7 +22,7 @@ import { glob } from 'glob';
 import { getLogger } from '../utils/logger.js';
 import { registerCleanup, unregisterCleanup, CleanupHandler } from '../utils/cleanup.js';
 import { MCPError, ErrorCode, indexNotFound } from '../errors/index.js';
-import { ChunkRecord, SearchResult, VECTOR_DIMENSION, distanceToScore } from './lancedb.js';
+import { ChunkRecord, SearchResult, distanceToScore, CODE_VECTOR_DIMENSION, DOCS_VECTOR_DIMENSION } from './lancedb.js';
 import { getDocsLanceDbPath } from '../utils/paths.js';
 import { escapeSqlString, globToSafeLikePattern } from '../utils/sql.js';
 import { AsyncMutex } from '../utils/asyncMutex.js';
@@ -140,11 +140,18 @@ interface RawSearchResult {
  *
  * Provides a high-level interface for storing and searching documentation chunk embeddings.
  * Uses a separate database path (docs.lancedb/) and table (project_docs_prose) from the code store.
+ * Supports configurable vector dimensions for dual-model embeddings:
+ * - Default: 384 (CODE_VECTOR_DIMENSION) for backward compatibility with current EmbeddingEngine
+ * - Future: 768 (DOCS_VECTOR_DIMENSION) when using docs-specific embedding model (SMCP-074)
  *
  * @example
  * ```typescript
+ * // Use default dimension (384 for backward compatibility)
  * const store = new DocsLanceDBStore('/path/to/index');
  * await store.open();
+ *
+ * // Or specify 768 dimensions for docs embedding model
+ * const docsStore = new DocsLanceDBStore('/path/to/index', DOCS_VECTOR_DIMENSION);
  *
  * // Insert chunks
  * await store.insertChunks(chunks);
@@ -162,6 +169,9 @@ export class DocsLanceDBStore {
   private table: lancedb.Table | null = null;
   private isOpen: boolean = false;
 
+  /** The vector dimension for this store */
+  private readonly vectorDimension: number;
+
   /** Mutex for protecting concurrent database operations */
   private readonly mutex = new AsyncMutex('DocsLanceDBStore');
 
@@ -172,10 +182,21 @@ export class DocsLanceDBStore {
    * Create a new DocsLanceDBStore instance
    *
    * @param indexPath - Path to the index directory (e.g., ~/.mcp/search/indexes/<hash>)
+   * @param vectorDimension - Dimension of embedding vectors (defaults to CODE_VECTOR_DIMENSION = 384 for backward compatibility)
+   *                          Set to DOCS_VECTOR_DIMENSION (768) when using the docs embedding model (SMCP-074)
    */
-  constructor(indexPath: string) {
+  constructor(indexPath: string, vectorDimension: number = CODE_VECTOR_DIMENSION) {
     this.indexPath = indexPath;
     this.dbPath = getDocsLanceDbPath(indexPath);
+    this.vectorDimension = vectorDimension;
+  }
+
+  /**
+   * Get the vector dimension for this store
+   * @returns The dimension of embedding vectors used by this store
+   */
+  getVectorDimension(): number {
+    return this.vectorDimension;
   }
 
   // --------------------------------------------------------------------------
@@ -535,7 +556,7 @@ export class DocsLanceDBStore {
    * Perform vector similarity search
    * Protected by mutex to prevent reads during concurrent write operations.
    *
-   * @param queryVector - Query embedding vector (384 dimensions)
+   * @param queryVector - Query embedding vector (768 dimensions for docs)
    * @param topK - Maximum number of results to return (default: 10)
    * @returns Search results sorted by similarity score (descending)
    */
@@ -544,12 +565,12 @@ export class DocsLanceDBStore {
       return [];
     }
 
-    // Validate vector dimension before acquiring lock
-    if (queryVector.length !== VECTOR_DIMENSION) {
+    // Validate vector dimension against this store's configured dimension (768 for docs)
+    if (queryVector.length !== this.vectorDimension) {
       throw new MCPError({
         code: ErrorCode.INVALID_PATTERN,
         userMessage: 'Invalid search query.',
-        developerMessage: `Query vector dimension mismatch. Expected ${VECTOR_DIMENSION}, got ${queryVector.length}`,
+        developerMessage: `Query vector dimension mismatch. Expected ${this.vectorDimension}, got ${queryVector.length}`,
       });
     }
 

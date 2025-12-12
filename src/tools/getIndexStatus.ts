@@ -23,6 +23,10 @@ import { indexNotFound, MCPError, ErrorCode, isMCPError } from '../errors/index.
 import type { ToolContext } from './searchCode.js';
 import type { StrategyOrchestrator } from '../engines/strategyOrchestrator.js';
 import type { StrategyName } from '../engines/indexingStrategy.js';
+import {
+  getCurrentModelConfig,
+  buildStatusWarning,
+} from '../utils/modelCompatibility.js';
 
 // ============================================================================
 // Input/Output Schemas
@@ -64,6 +68,37 @@ export interface HybridSearchStatus {
 }
 
 /**
+ * Embedding model information for status output (SMCP-074)
+ */
+export interface EmbeddingModelsStatus {
+  /** Code model information */
+  code?: {
+    /** Model name (e.g., 'Xenova/bge-small-en-v1.5') */
+    modelName: string | null;
+    /** Model dimension (e.g., 384) */
+    dimension: number | null;
+  };
+  /** Docs model information */
+  docs?: {
+    /** Model name (e.g., 'Xenova/bge-base-en-v1.5') */
+    modelName: string | null;
+    /** Model dimension (e.g., 768) */
+    dimension: number | null;
+  };
+  /** Current version model info (for comparison) */
+  current?: {
+    /** Current code model name */
+    codeModelName: string;
+    /** Current code model dimension */
+    codeModelDimension: number;
+    /** Current docs model name */
+    docsModelName: string;
+    /** Current docs model dimension */
+    docsModelDimension: number;
+  };
+}
+
+/**
  * Output structure for get_index_status tool
  */
 export interface GetIndexStatusOutput {
@@ -101,6 +136,10 @@ export interface GetIndexStatusOutput {
   pendingFiles?: number;
   /** Hybrid search / FTS information (SMCP-061) */
   hybridSearch?: HybridSearchStatus;
+  /** Embedding model information (SMCP-074) */
+  embeddingModels?: EmbeddingModelsStatus;
+  /** Model mismatch warning (non-blocking for status, unlike search) */
+  modelMismatchWarning?: string;
 }
 
 // ============================================================================
@@ -312,6 +351,50 @@ export async function collectStatus(
     };
   }
 
+  // SMCP-074: Build embedding models status
+  let embeddingModels: EmbeddingModelsStatus | undefined;
+  const currentModels = getCurrentModelConfig();
+
+  if (metadata.embeddingModels) {
+    embeddingModels = {
+      code: {
+        modelName: metadata.embeddingModels.codeModelName ?? null,
+        dimension: metadata.embeddingModels.codeModelDimension ?? null,
+      },
+      docs: {
+        modelName: metadata.embeddingModels.docsModelName ?? null,
+        dimension: metadata.embeddingModels.docsModelDimension ?? null,
+      },
+      current: {
+        codeModelName: currentModels.codeModelName!,
+        codeModelDimension: currentModels.codeModelDimension!,
+        docsModelName: currentModels.docsModelName!,
+        docsModelDimension: currentModels.docsModelDimension!,
+      },
+    };
+  } else {
+    // Legacy index without model info - show current models
+    embeddingModels = {
+      code: {
+        modelName: null,
+        dimension: null,
+      },
+      docs: {
+        modelName: null,
+        dimension: null,
+      },
+      current: {
+        codeModelName: currentModels.codeModelName!,
+        codeModelDimension: currentModels.codeModelDimension!,
+        docsModelName: currentModels.docsModelName!,
+        docsModelDimension: currentModels.docsModelDimension!,
+      },
+    };
+  }
+
+  // SMCP-074: Check for model mismatch (non-blocking warning)
+  const modelMismatchWarning = buildStatusWarning(metadata.embeddingModels);
+
   // Build the output
   const output: GetIndexStatusOutput = {
     status,
@@ -329,6 +412,8 @@ export async function collectStatus(
     indexingStrategy,
     pendingFiles,
     hybridSearch,
+    embeddingModels,
+    modelMismatchWarning,
   };
 
   logger.debug('getIndexStatus', 'Status collected', {
@@ -341,6 +426,9 @@ export async function collectStatus(
     pendingFiles: output.pendingFiles,
     hybridSearchEnabled: output.hybridSearch?.enabled,
     ftsEngine: output.hybridSearch?.ftsEngine,
+    codeModel: output.embeddingModels?.code?.modelName,
+    docsModel: output.embeddingModels?.docs?.modelName,
+    modelMismatchWarning: output.modelMismatchWarning,
   });
 
   return output;

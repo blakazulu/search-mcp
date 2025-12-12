@@ -22,6 +22,10 @@ import { MCPError, ErrorCode, indexNotFound, indexCorrupt } from '../errors/inde
 import { getLanceDbPath } from '../utils/paths.js';
 import { escapeSqlString, globToSafeLikePattern } from '../utils/sql.js';
 import { AsyncMutex } from '../utils/asyncMutex.js';
+import {
+  CODE_EMBEDDING_DIMENSION,
+  DOCS_EMBEDDING_DIMENSION,
+} from '../engines/embedding.js';
 
 // ============================================================================
 // Types and Interfaces
@@ -89,8 +93,17 @@ interface RawSearchResult {
 /** Name of the table storing project chunks */
 const TABLE_NAME = 'project_docs';
 
-/** Embedding vector dimension (MiniLM model) */
-const VECTOR_DIMENSION = 384;
+/**
+ * @deprecated Use CODE_VECTOR_DIMENSION or DOCS_VECTOR_DIMENSION instead.
+ * Default embedding vector dimension (kept for backward compatibility)
+ */
+const VECTOR_DIMENSION = CODE_EMBEDDING_DIMENSION;
+
+/** Vector dimension for code embeddings (384 dims from BGE-small model) */
+const CODE_VECTOR_DIMENSION = CODE_EMBEDDING_DIMENSION;
+
+/** Vector dimension for docs embeddings (768 dims from BGE-base model) */
+const DOCS_VECTOR_DIMENSION = DOCS_EMBEDDING_DIMENSION;
 
 /** Batch size for insert operations */
 const INSERT_BATCH_SIZE = 500;
@@ -222,8 +235,13 @@ function globToLikePattern(globPattern: string): string {
  *
  * @example
  * ```typescript
+ * // Use default dimension (384 for code)
  * const store = new LanceDBStore('/path/to/index');
  * await store.open();
+ *
+ * // Or specify a custom dimension
+ * const docsStore = new LanceDBStore('/path/to/index', DOCS_VECTOR_DIMENSION);
+ * await docsStore.open();
  *
  * // Insert chunks
  * await store.insertChunks(chunks);
@@ -241,6 +259,9 @@ export class LanceDBStore {
   private table: lancedb.Table | null = null;
   private isOpen: boolean = false;
 
+  /** The vector dimension for this store */
+  private readonly vectorDimension: number;
+
   /** Mutex for protecting concurrent database operations */
   private readonly mutex = new AsyncMutex('LanceDBStore');
 
@@ -251,10 +272,20 @@ export class LanceDBStore {
    * Create a new LanceDBStore instance
    *
    * @param indexPath - Path to the index directory (e.g., ~/.mcp/search/indexes/<hash>)
+   * @param vectorDimension - Dimension of embedding vectors (defaults to CODE_VECTOR_DIMENSION = 384)
    */
-  constructor(indexPath: string) {
+  constructor(indexPath: string, vectorDimension: number = CODE_VECTOR_DIMENSION) {
     this.indexPath = indexPath;
     this.dbPath = getLanceDbPath(indexPath);
+    this.vectorDimension = vectorDimension;
+  }
+
+  /**
+   * Get the vector dimension for this store
+   * @returns The dimension of embedding vectors used by this store
+   */
+  getVectorDimension(): number {
+    return this.vectorDimension;
   }
 
   // --------------------------------------------------------------------------
@@ -614,7 +645,7 @@ export class LanceDBStore {
    * Perform vector similarity search
    * Protected by mutex to prevent reads during concurrent write operations.
    *
-   * @param queryVector - Query embedding vector (384 dimensions)
+   * @param queryVector - Query embedding vector (dimension must match store's vectorDimension)
    * @param topK - Maximum number of results to return (default: 10)
    * @returns Search results sorted by similarity score (descending)
    */
@@ -623,12 +654,12 @@ export class LanceDBStore {
       return [];
     }
 
-    // Validate vector dimension before acquiring lock
-    if (queryVector.length !== VECTOR_DIMENSION) {
+    // Validate vector dimension against this store's configured dimension
+    if (queryVector.length !== this.vectorDimension) {
       throw new MCPError({
         code: ErrorCode.INVALID_PATTERN,
         userMessage: 'Invalid search query.',
-        developerMessage: `Query vector dimension mismatch. Expected ${VECTOR_DIMENSION}, got ${queryVector.length}`,
+        developerMessage: `Query vector dimension mismatch. Expected ${this.vectorDimension}, got ${queryVector.length}`,
       });
     }
 
@@ -909,6 +940,8 @@ export class LanceDBStore {
 export {
   TABLE_NAME,
   VECTOR_DIMENSION,
+  CODE_VECTOR_DIMENSION,
+  DOCS_VECTOR_DIMENSION,
   STALE_LOCKFILE_AGE_MS,
   distanceToScore,
   globToLikePattern,

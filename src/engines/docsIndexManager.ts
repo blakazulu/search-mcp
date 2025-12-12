@@ -30,7 +30,12 @@ import { ConfigManager, Config, loadConfig } from '../storage/config.js';
 // Engine imports
 import { IndexingPolicy } from './indexPolicy.js';
 import { chunkDocFile, isDocFile, DOC_FILE_PATTERNS } from './docsChunking.js';
-import { getEmbeddingEngine, EmbeddingEngine } from './embedding.js';
+import {
+  getDocsEmbeddingEngine,
+  EmbeddingEngine,
+  DOCS_MODEL_NAME,
+  DOCS_EMBEDDING_DIMENSION,
+} from './embedding.js';
 
 // Utility imports
 import {
@@ -431,14 +436,15 @@ export async function createDocsIndex(
   const policy = new IndexingPolicy(normalizedProjectPath, config);
   await policy.initialize();
 
-  const store = new DocsLanceDBStore(normalizedIndexPath);
+  // SMCP-074: Use docs embedding engine with 768 dimensions
+  const store = new DocsLanceDBStore(normalizedIndexPath, DOCS_EMBEDDING_DIMENSION);
   const fingerprintsManager = new DocsFingerprintsManager(
     normalizedIndexPath,
     normalizedProjectPath
   );
 
-  // Initialize embedding engine
-  const embeddingEngine = getEmbeddingEngine();
+  // SMCP-074: Initialize docs embedding engine (BGE-base, 768 dims)
+  const embeddingEngine = getDocsEmbeddingEngine();
   await embeddingEngine.initialize();
 
   try {
@@ -522,6 +528,19 @@ export async function createDocsIndex(
     fingerprintsManager.setAll(allHashes);
     await fingerprintsManager.save();
 
+    // SMCP-074: Update metadata with docs model info and stats
+    const metadataManager = new MetadataManager(normalizedIndexPath);
+    const existingMetadata = await metadataManager.load();
+    if (existingMetadata) {
+      // Update docs stats
+      const storageSize = await store.getStorageSize();
+      metadataManager.updateDocsStats(allHashes.size, totalChunks, storageSize);
+      // Save docs embedding model info for migration detection
+      metadataManager.updateDocsModelInfo(DOCS_MODEL_NAME, DOCS_EMBEDDING_DIMENSION);
+      metadataManager.markDocsIndex();
+      await metadataManager.save();
+    }
+
     await store.close();
 
     const durationMs = Date.now() - startTime;
@@ -591,7 +610,8 @@ export async function updateDocFile(
   logger.info('DocsIndexManager', 'Updating doc file', { relativePath });
 
   // Initialize components
-  const store = new DocsLanceDBStore(normalizedIndexPath);
+  // SMCP-074: Use docs embedding engine with 768 dimensions
+  const store = new DocsLanceDBStore(normalizedIndexPath, DOCS_EMBEDDING_DIMENSION);
   await store.open();
 
   const fingerprintsManager = new DocsFingerprintsManager(
@@ -600,7 +620,8 @@ export async function updateDocFile(
   );
   await fingerprintsManager.load();
 
-  const embeddingEngine = getEmbeddingEngine();
+  // SMCP-074: use dedicated docs embedding engine
+  const embeddingEngine = getDocsEmbeddingEngine();
   await embeddingEngine.initialize();
 
   try {
@@ -702,7 +723,8 @@ export async function removeDocFile(
 
   logger.info('DocsIndexManager', 'Removing doc file from index', { relativePath });
 
-  const store = new DocsLanceDBStore(normalizedIndexPath);
+  // SMCP-074: Use docs embedding engine with 768 dimensions
+  const store = new DocsLanceDBStore(normalizedIndexPath, DOCS_EMBEDDING_DIMENSION);
   await store.open();
 
   const fingerprintsManager = new DocsFingerprintsManager(
@@ -774,7 +796,8 @@ export async function applyDocsDelta(
   });
 
   // Initialize components
-  const store = new DocsLanceDBStore(normalizedIndexPath);
+  // SMCP-074: Use docs embedding engine with 768 dimensions
+  const store = new DocsLanceDBStore(normalizedIndexPath, DOCS_EMBEDDING_DIMENSION);
   await store.open();
 
   const fingerprintsManager = new DocsFingerprintsManager(
@@ -783,7 +806,8 @@ export async function applyDocsDelta(
   );
   await fingerprintsManager.load();
 
-  const embeddingEngine = getEmbeddingEngine();
+  // SMCP-074: use dedicated docs embedding engine
+  const embeddingEngine = getDocsEmbeddingEngine();
   await embeddingEngine.initialize();
 
   try {
@@ -955,7 +979,8 @@ export class DocsIndexManager {
     this.indexPath = indexPath
       ? normalizePath(indexPath)
       : getIndexPath(this.projectPath);
-    this.store = new DocsLanceDBStore(this.indexPath);
+    // SMCP-074: Use docs embedding engine with 768 dimensions
+    this.store = new DocsLanceDBStore(this.indexPath, DOCS_EMBEDDING_DIMENSION);
     this.fingerprints = new DocsFingerprintsManager(
       this.indexPath,
       this.projectPath
@@ -1151,7 +1176,8 @@ export class DocsIndexManager {
   async isDocsIndexed(): Promise<boolean> {
     // Try to open and check if there's data
     try {
-      const tempStore = new DocsLanceDBStore(this.indexPath);
+      // SMCP-074: Use docs embedding engine with 768 dimensions
+      const tempStore = new DocsLanceDBStore(this.indexPath, DOCS_EMBEDDING_DIMENSION);
       await tempStore.open();
       const hasData = await tempStore.hasData();
       await tempStore.close();
@@ -1167,7 +1193,8 @@ export class DocsIndexManager {
    * @returns DocsStats with file count, chunk count, etc.
    */
   async getDocsStats(): Promise<DocsStats> {
-    const tempStore = new DocsLanceDBStore(this.indexPath);
+    // SMCP-074: Use docs embedding engine with 768 dimensions
+    const tempStore = new DocsLanceDBStore(this.indexPath, DOCS_EMBEDDING_DIMENSION);
     await tempStore.open();
 
     const totalDocs = await tempStore.countFiles();

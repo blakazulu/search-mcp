@@ -41,7 +41,7 @@ import {
 } from './engines/index.js';
 import { FingerprintsManager } from './storage/fingerprints.js';
 import { DocsFingerprintsManager } from './storage/docsFingerprints.js';
-import { loadConfig, Config } from './storage/config.js';
+import { loadConfig, Config, DEFAULT_CONFIG } from './storage/config.js';
 import { loadMetadata } from './storage/metadata.js';
 
 // Import tool definitions and handlers
@@ -463,7 +463,19 @@ async function executeTool(
         // Initialize orchestrator after create_index completes if not already initialized
         // Load config first (will use defaults if config doesn't exist yet)
         const indexPath = getIndexPath(projectPath);
-        const config = await loadConfig(indexPath);
+
+        // BUG #26 FIX: Wrap config loading in try-catch with fallback to defaults
+        // While loadConfig already handles errors internally, this provides an extra
+        // layer of safety to ensure create_index never fails due to config issues
+        let config: Config;
+        try {
+          config = await loadConfig(indexPath);
+        } catch (error) {
+          logger.warn('server', 'Failed to load config, using defaults', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+          config = { ...DEFAULT_CONFIG };
+        }
 
         // If orchestrator doesn't exist, create dependencies for it
         // but pass to create_index so it can start the strategy after indexing

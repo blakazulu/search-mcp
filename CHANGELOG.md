@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.2] - 2025-12-12
+
+### Fixed
+- **MEDIUM: Stream Resource Leaks in Large File Chunking** (BUG #5, SMCP-076)
+  - Attached error handlers immediately after stream creation to eliminate race window
+  - Added `rejected` flag and `rejectOnce` helper to prevent double rejection
+  - Added `cleanup()` function called from all exit paths
+  - Consolidated duplicate error handlers for cleaner code
+
+- **MEDIUM: Partial Initialization State in Embedding Engine** (BUG #9, SMCP-076)
+  - Wrapped initialization in inner async IIFE for atomic state handling
+  - Used finally block to clear `initializationPromise` only if pipeline not set
+  - Ensures retry works correctly after any initialization failure
+
+- **MEDIUM: Unhandled Promise Rejection in Background Startup Check** (BUG #21, SMCP-076)
+  - Used `Promise.resolve().then()` pattern to catch both synchronous and async errors
+  - All errors now properly logged instead of causing unhandled rejections
+  - Added 2 tests for error handling scenarios
+
+- **MEDIUM: Missing Error Handling for Config Load Failure** (BUG #26, SMCP-076)
+  - Added try-catch around config loading in `create_index` tool handler
+  - Falls back to `DEFAULT_CONFIG` on any config load error
+  - Logs warning about config load failure for debugging
+
 ## [1.3.1] - 2025-12-12
 
 ### Fixed

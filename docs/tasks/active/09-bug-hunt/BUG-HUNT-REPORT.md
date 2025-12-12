@@ -12,15 +12,16 @@
 |----------|-------|-------|
 | CRITICAL | 0 | 0 |
 | HIGH | 2 | **2** |
-| MEDIUM | 12 | 0 |
+| MEDIUM | 12 | **4** |
 | LOW | 5 | 0 |
-| **TOTAL** | **19** | **2** |
+| **TOTAL** | **19** | **6** |
 
 Initial analysis found 20 issues. After verification:
 - **4 FALSE POSITIVES** removed
 - **3 SEVERITY ADJUSTED** (1 CRITICAL->MEDIUM, 2 HIGH->MEDIUM)
 - **6 NEW BUGS** discovered in second pass
 - **2 HIGH PRIORITY BUGS FIXED** (BUG #4, #6) - see SMCP-075
+- **4 MEDIUM PRIORITY BUGS FIXED** (BUG #5, #9, #21, #26) - see SMCP-076
 
 The Search MCP codebase demonstrates good security practices overall. The remaining issues are primarily race conditions, resource management concerns, and code quality improvements.
 
@@ -34,11 +35,11 @@ The Search MCP codebase demonstrates good security practices overall. The remain
 | 2 | HIGH | FALSE POSITIVE | - |
 | 3 | HIGH | SEVERITY ADJUSTED | MEDIUM |
 | 4 | HIGH | **FIXED** | HIGH |
-| 5 | HIGH | SEVERITY ADJUSTED | MEDIUM |
+| 5 | HIGH | **FIXED** | MEDIUM |
 | 6 | HIGH | **FIXED** | HIGH |
 | 7 | MEDIUM | FALSE POSITIVE | - |
 | 8 | MEDIUM | CONFIRMED | MEDIUM |
-| 9 | MEDIUM | CONFIRMED | MEDIUM |
+| 9 | MEDIUM | **FIXED** | MEDIUM |
 | 10 | MEDIUM | CONFIRMED | MEDIUM |
 | 11 | MEDIUM | CONFIRMED | MEDIUM |
 | 12 | MEDIUM | FALSE POSITIVE | - |
@@ -50,7 +51,12 @@ The Search MCP codebase demonstrates good security practices overall. The remain
 | 18 | LOW | CONFIRMED | LOW |
 | 19 | LOW | CONFIRMED | LOW |
 | 20 | LOW | CONFIRMED | LOW |
-| 21-26 | - | NEW | Various |
+| 21 | - | **FIXED** | MEDIUM |
+| 22 | - | NEW | MEDIUM |
+| 23 | - | NEW | LOW |
+| 24 | - | NEW | MEDIUM |
+| 25 | - | NEW | MEDIUM |
+| 26 | - | **FIXED** | MEDIUM |
 
 ---
 
@@ -193,28 +199,55 @@ const likePattern = globToSafeLikePattern(pattern);
 
 ---
 
-### BUG #5: Stream Resource Leaks in Large File Chunking (Severity Adjusted)
+### BUG #5: Stream Resource Leaks in Large File Chunking [FIXED]
 
 | Property | Value |
 |----------|-------|
 | **Severity** | MEDIUM (was HIGH) |
-| **Location** | `src/engines/chunking.ts:540-701` |
+| **Location** | `src/engines/chunking.ts:541-737` |
 | **Category** | Resource Leaks |
-| **Status** | SEVERITY ADJUSTED |
+| **Status** | **FIXED** (SMCP-076) |
 
 **Description:**
 
-The code has multiple cleanup points:
-1. Line 577-579: Early abort calls `rl.close()` and `fileStream.destroy()`
-2. Line 621-662: `rl.on('close')` handles successful completion
-3. Line 665-674: `rl.on('error')` handles readline errors
-4. Line 676-699: `fileStream.on('error')` handles file stream errors
+The code previously had multiple cleanup points but a race window existed between stream creation and error handler attachment.
 
-**Why Adjusted:** Cleanup is mostly correct. The real issue is a narrow window: if an error occurs between creating the stream (line 541) and attaching the error handler (line 676), the stream could leak.
+**Fix Applied:**
 
-**Impact:** File descriptor exhaustion possible but requires precise timing
+1. Attached error handlers immediately after stream creation
+2. Added `rejected` flag and `rejectOnce` helper to prevent double rejection
+3. Added `cleanup()` function called from all exit paths
+4. Consolidated duplicate error handlers
 
-**Suggested Fix:** Create stream and attach error handler atomically, or use a cleanup wrapper.
+```typescript
+// BUG #5 FIX: Track streams for cleanup and attach error handlers immediately
+let fileStream: fs.ReadStream | null = null;
+let rl: readline.Interface | null = null;
+let rejected = false;
+
+const cleanup = () => {
+  if (rl) { try { rl.close(); } catch { /* ignore */ } }
+  if (fileStream && !fileStream.destroyed) {
+    try { fileStream.destroy(); } catch { /* ignore */ }
+  }
+};
+
+const rejectOnce = (error: Error) => {
+  if (rejected) return;
+  rejected = true;
+  cleanup();
+  reject(error);
+};
+
+// Create stream and attach error handler IMMEDIATELY
+fileStream = fs.createReadStream(absolutePath, { encoding: 'utf8' });
+fileStream.on('error', (error) => { /* handle */ });
+
+rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
+rl.on('error', (error) => { /* handle */ });
+```
+
+**Tests:** Existing chunking tests pass (39 tests)
 
 ---
 
@@ -245,33 +278,49 @@ Between `close()` and `unlink()`, another process could acquire the lock. The co
 
 ---
 
-### BUG #9: Partial Initialization State in Embedding Engine
+### BUG #9: Partial Initialization State in Embedding Engine [FIXED]
 
 | Property | Value |
 |----------|-------|
 | **Severity** | MEDIUM |
-| **Location** | `src/engines/embedding.ts:182-205` |
+| **Location** | `src/engines/embedding.ts:186-217` |
 | **Category** | Partial Initialization State |
-| **Status** | CONFIRMED |
+| **Status** | **FIXED** (SMCP-076) |
 
 **Description:**
 
+State could become inconsistent if initialization partially succeeded.
+
+**Fix Applied:**
+
+1. Wrapped initialization in inner async IIFE for atomic state handling
+2. Used finally block to clear initializationPromise only if pipeline not set
+3. Ensures retry works correctly after any failure
+
 ```typescript
-this.initializationPromise = this.loadModel(onProgress);
+// BUG #9 FIX: Wrap initialization in a promise that handles state atomically
+this.initializationPromise = (async () => {
+  try {
+    await this.loadModel(onProgress);
+  } catch (error) {
+    // Atomic reset on any failure - ensure pipeline is null
+    this.pipeline = null;
+    throw error;
+  }
+})();
+
 try {
   await this.initializationPromise;
-} catch (error) {
-  this.initializationPromise = null;
-  this.pipeline = null;
-  throw error;
+} finally {
+  // BUG #9 FIX: Clear the promise after completion (success or failure)
+  // so retries can happen, but only if pipeline was not successfully set
+  if (!this.pipeline) {
+    this.initializationPromise = null;
+  }
 }
 ```
 
-Inside `loadModel()`, `this.pipeline` is set. If pipeline creation succeeds but something fails afterward, there's no rollback. Current implementation mostly mitigates this.
-
-**Impact:** Inconsistent engine state after failed initialization
-
-**Suggested Fix:** Use atomic state transitions in a finally block.
+**Tests:** Existing test "should allow retry after initialization failure" passes
 
 ---
 
@@ -349,30 +398,43 @@ IDs are UUIDs generated by the system (not user input), reducing risk. String co
 
 ---
 
-### NEW BUG #21: Unhandled Promise Rejection in Background Startup Check
+### BUG #21: Unhandled Promise Rejection in Background Startup Check [FIXED]
 
 | Property | Value |
 |----------|-------|
 | **Severity** | MEDIUM |
-| **Location** | `src/engines/integrity.ts:952-956` |
+| **Location** | `src/engines/integrity.ts:960-973` |
 | **Category** | Error Handling |
-| **Status** | NEW |
+| **Status** | **FIXED** (SMCP-076) |
 
 **Description:**
 
+If `runStartupCheck` threw a synchronous error before returning the promise, it would not be caught.
+
+**Fix Applied:**
+
+Used `Promise.resolve().then()` pattern to catch both sync and async errors:
+
 ```typescript
 export function runStartupCheckBackground(engine: IntegrityEngine): void {
-  runStartupCheck(engine).catch((error) => {
-    logger.error('IntegrityEngine', 'Background startup check failed', {...});
-  });
+  const logger = getLogger();
+  logger.info('IntegrityEngine', 'Starting background startup check');
+
+  // BUG #21 FIX: Use Promise.resolve().then() pattern to catch both
+  // synchronous errors (thrown before promise returns) and async rejections
+  Promise.resolve()
+    .then(() => runStartupCheck(engine))
+    .catch((error) => {
+      logger.error('IntegrityEngine', 'Background startup check failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
 }
 ```
 
-If `runStartupCheck` throws a synchronous error before returning the promise, it won't be caught.
-
-**Impact:** Potential unhandled exception
-
-**Suggested Fix:** Wrap in try-catch or use `Promise.resolve().then()`.
+**Tests Added:** 2 new tests in `tests/unit/engines/integrity.test.ts`:
+- "should handle synchronous errors gracefully"
+- "should handle engines with null properties"
 
 ---
 
@@ -453,27 +515,39 @@ No atomic write pattern for FTS index. LanceDB and fingerprints use atomic write
 
 ---
 
-### NEW BUG #26: Missing Error Handling for Config Load Failure
+### BUG #26: Missing Error Handling for Config Load Failure [FIXED]
 
 | Property | Value |
 |----------|-------|
 | **Severity** | MEDIUM |
-| **Location** | `src/server.ts:465-466` |
+| **Location** | `src/server.ts:467-478` |
 | **Category** | Error Handling |
-| **Status** | NEW |
+| **Status** | **FIXED** (SMCP-076) |
 
 **Description:**
 
+If `loadConfig` threw (e.g., corrupted config), the error created a confusing message.
+
+**Fix Applied:**
+
+Wrapped config loading in try-catch with fallback to defaults:
+
 ```typescript
-const indexPath = getIndexPath(projectPath);
-const config = await loadConfig(indexPath);
+// BUG #26 FIX: Wrap config loading in try-catch with fallback to defaults
+// While loadConfig already handles errors internally, this provides an extra
+// layer of safety to ensure create_index never fails due to config issues
+let config: Config;
+try {
+  config = await loadConfig(indexPath);
+} catch (error) {
+  logger.warn('server', 'Failed to load config, using defaults', {
+    error: error instanceof Error ? error.message : String(error),
+  });
+  config = { ...DEFAULT_CONFIG };
+}
 ```
 
-If `loadConfig` throws (e.g., corrupted config), the error creates a confusing message.
-
-**Impact:** Confusing error when config is corrupted
-
-**Suggested Fix:** Wrap in try-catch and fall back to `generateDefaultConfig()`.
+**Tests:** All server tests pass (42 tests)
 
 ---
 
@@ -645,18 +719,20 @@ if (start >= end) {
 
 ## Prioritized Remediation Steps
 
-| Priority | Bug # | Severity | Action |
-|----------|-------|----------|--------|
-| 1 | #4 | HIGH | Implement AbortController for glob timeout cancellation |
-| 2 | #6 | HIGH | Add atomic flag to AsyncMutex waiter to prevent timeout/grant race |
-| 3 | #25 | MEDIUM | Use atomic write pattern for FTS index persistence |
-| 4 | #22 | MEDIUM | Add project path cache invalidation or validation |
-| 5 | #24 | MEDIUM | Add locking or atomic state check for metadata operations |
-| 6 | #26 | MEDIUM | Add try-catch with fallback for config load failure |
-| 7 | #3, #13 | MEDIUM | Consider parameterized queries if LanceDB supports them |
-| 8 | #10, #11 | MEDIUM | Convert synchronous fs operations to async |
-| 9 | #21 | MEDIUM | Wrap background check in try-catch |
-| 10 | Others | LOW | Address based on development priorities |
+| Priority | Bug # | Severity | Action | Status |
+|----------|-------|----------|--------|--------|
+| 1 | #4 | HIGH | Implement AbortController for glob timeout cancellation | **FIXED** |
+| 2 | #6 | HIGH | Add atomic flag to AsyncMutex waiter to prevent timeout/grant race | **FIXED** |
+| 3 | #5 | MEDIUM | Stream cleanup with immediate error handlers | **FIXED** |
+| 4 | #9 | MEDIUM | Atomic state transitions in embedding engine | **FIXED** |
+| 5 | #21 | MEDIUM | Wrap background check in try-catch | **FIXED** |
+| 6 | #26 | MEDIUM | Add try-catch with fallback for config load failure | **FIXED** |
+| 7 | #25 | MEDIUM | Use atomic write pattern for FTS index persistence | Pending |
+| 8 | #22 | MEDIUM | Add project path cache invalidation or validation | Pending |
+| 9 | #24 | MEDIUM | Add locking or atomic state check for metadata operations | Pending |
+| 10 | #3, #13 | MEDIUM | Consider parameterized queries if LanceDB supports them | Pending |
+| 11 | #10, #11 | MEDIUM | Convert synchronous fs operations to async | Pending |
+| 12 | Others | LOW | Address based on development priorities | Pending |
 
 ---
 

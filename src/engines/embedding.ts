@@ -176,6 +176,10 @@ export class EmbeddingEngine {
    * Downloads the model on first use (~90MB to ~/.cache/huggingface/).
    * This operation is idempotent - calling it multiple times is safe.
    *
+   * BUG #9 FIX: Uses atomic state transitions to ensure consistent state
+   * after failures. The initializationPromise is only cleared if the
+   * pipeline was not successfully set, allowing proper retry behavior.
+   *
    * @param onProgress - Optional callback for download progress
    * @throws MCPError with MODEL_DOWNLOAD_FAILED if download fails
    */
@@ -190,17 +194,25 @@ export class EmbeddingEngine {
       return this.initializationPromise;
     }
 
-    // Start initialization
-    this.initializationPromise = this.loadModel(onProgress);
+    // BUG #9 FIX: Wrap initialization in a promise that handles state atomically
+    this.initializationPromise = (async () => {
+      try {
+        await this.loadModel(onProgress);
+      } catch (error) {
+        // Atomic reset on any failure - ensure pipeline is null
+        this.pipeline = null;
+        throw error;
+      }
+    })();
 
     try {
       await this.initializationPromise;
-    } catch (error) {
-      // Reset completely on failure to allow retry
-      // This prevents partial initialization state (Bug #14)
-      this.initializationPromise = null;
-      this.pipeline = null;
-      throw error;
+    } finally {
+      // BUG #9 FIX: Clear the promise after completion (success or failure)
+      // so retries can happen, but only if pipeline was not successfully set
+      if (!this.pipeline) {
+        this.initializationPromise = null;
+      }
     }
   }
 

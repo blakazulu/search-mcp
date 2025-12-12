@@ -538,10 +538,82 @@ async function chunkLargeFile(
   let warningLogged = false;
 
   return new Promise<Chunk[]>((resolve, reject) => {
-    const fileStream = fs.createReadStream(absolutePath, { encoding: 'utf8' });
-    const rl = readline.createInterface({
+    // BUG #5 FIX: Track streams for cleanup and attach error handlers immediately
+    let fileStream: fs.ReadStream | null = null;
+    let rl: readline.Interface | null = null;
+    let rejected = false;
+
+    // Cleanup function to ensure all streams are properly closed
+    const cleanup = () => {
+      if (rl) {
+        try {
+          rl.close();
+        } catch {
+          // Ignore errors during cleanup
+        }
+      }
+      if (fileStream && !fileStream.destroyed) {
+        try {
+          fileStream.destroy();
+        } catch {
+          // Ignore errors during cleanup
+        }
+      }
+    };
+
+    // Helper to reject once and cleanup
+    const rejectOnce = (error: Error) => {
+      if (rejected) return;
+      rejected = true;
+      cleanup();
+      reject(error);
+    };
+
+    // Create file stream and attach error handler IMMEDIATELY
+    fileStream = fs.createReadStream(absolutePath, { encoding: 'utf8' });
+
+    // BUG #5 FIX: Attach error handler immediately after stream creation
+    // This prevents leaks if an error occurs before readline handlers are set up
+    fileStream.on('error', (error) => {
+      const nodeError = error as NodeJS.ErrnoException;
+      if (nodeError.code === 'ENOENT') {
+        rejectOnce(fileNotFound(absolutePath));
+      } else if (nodeError.code === 'EACCES') {
+        rejectOnce(
+          new MCPError({
+            code: ErrorCode.PERMISSION_DENIED,
+            userMessage: 'Access denied. Please check that you have permission to access this file.',
+            developerMessage: `Permission denied reading file: ${absolutePath}`,
+            cause: nodeError,
+          })
+        );
+      } else {
+        rejectOnce(
+          new MCPError({
+            code: ErrorCode.FILE_NOT_FOUND,
+            userMessage: 'Failed to read the file.',
+            developerMessage: `Failed to stream file ${absolutePath}: ${nodeError.message}`,
+            cause: nodeError,
+          })
+        );
+      }
+    });
+
+    rl = readline.createInterface({
       input: fileStream,
       crlfDelay: Infinity,
+    });
+
+    // BUG #5 FIX: Attach readline error handler immediately
+    rl.on('error', (error) => {
+      rejectOnce(
+        new MCPError({
+          code: ErrorCode.FILE_NOT_FOUND,
+          userMessage: 'Failed to read the file.',
+          developerMessage: `Failed to stream file ${absolutePath}: ${error.message}`,
+          cause: error,
+        })
+      );
     });
 
     rl.on('line', (line) => {
@@ -573,10 +645,8 @@ async function chunkLargeFile(
               chunkCount: chunks.length,
               maxChunks,
             });
-            // Close the stream early
-            rl.close();
-            fileStream.destroy();
-            reject(new ResourceLimitError(
+            // BUG #5 FIX: Use rejectOnce for consistent cleanup
+            rejectOnce(new ResourceLimitError(
               'CHUNKS_PER_FILE',
               chunks.length + 1,
               maxChunks,
@@ -619,8 +689,8 @@ async function chunkLargeFile(
     });
 
     rl.on('close', () => {
-      // Skip if we already rejected due to limit exceeded
-      if (limitExceeded) {
+      // BUG #5 FIX: Skip if we already rejected (limit exceeded or error)
+      if (rejected || limitExceeded) {
         return;
       }
 
@@ -628,7 +698,7 @@ async function chunkLargeFile(
       if (currentChunkText.length > 0) {
         // DoS Protection: Final check for chunk limit
         if (chunks.length >= maxChunks) {
-          reject(new ResourceLimitError(
+          rejectOnce(new ResourceLimitError(
             'CHUNKS_PER_FILE',
             chunks.length + 1,
             maxChunks,
@@ -662,41 +732,8 @@ async function chunkLargeFile(
       resolve(chunks);
     });
 
-    rl.on('error', (error) => {
-      reject(
-        new MCPError({
-          code: ErrorCode.FILE_NOT_FOUND,
-          userMessage: 'Failed to read the file.',
-          developerMessage: `Failed to stream file ${absolutePath}: ${error.message}`,
-          cause: error,
-        })
-      );
-    });
-
-    fileStream.on('error', (error) => {
-      const nodeError = error as NodeJS.ErrnoException;
-      if (nodeError.code === 'ENOENT') {
-        reject(fileNotFound(absolutePath));
-      } else if (nodeError.code === 'EACCES') {
-        reject(
-          new MCPError({
-            code: ErrorCode.PERMISSION_DENIED,
-            userMessage: 'Access denied. Please check that you have permission to access this file.',
-            developerMessage: `Permission denied reading file: ${absolutePath}`,
-            cause: nodeError,
-          })
-        );
-      } else {
-        reject(
-          new MCPError({
-            code: ErrorCode.FILE_NOT_FOUND,
-            userMessage: 'Failed to read the file.',
-            developerMessage: `Failed to stream file ${absolutePath}: ${nodeError.message}`,
-            cause: nodeError,
-          })
-        );
-      }
-    });
+    // BUG #5 FIX: Error handlers have been moved to immediately after stream creation
+    // (see lines above) to eliminate the race window where errors could cause leaks
   });
 }
 

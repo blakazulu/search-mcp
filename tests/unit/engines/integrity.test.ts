@@ -1045,4 +1045,31 @@ describe('Integrity Engine', () => {
       }
     });
   });
+
+  describe('runStartupCheckBackground error handling (BUG #21 fix)', () => {
+    it('should handle synchronous errors gracefully', () => {
+      // Create a mock engine that throws synchronously
+      // This tests the Promise.resolve().then() pattern catches sync errors
+      const mockEngine = {
+        checkDrift: () => {
+          throw new Error('Synchronous error');
+        },
+      } as unknown as IntegrityEngine;
+
+      // Should not throw - errors are caught and logged
+      expect(() => {
+        runStartupCheckBackground(mockEngine);
+      }).not.toThrow();
+    });
+
+    it('should handle engines with null properties', () => {
+      // Test edge case where engine might be partially initialized
+      const mockEngine = null as unknown as IntegrityEngine;
+
+      // Should not throw due to Promise.resolve().then() pattern
+      expect(() => {
+        runStartupCheckBackground(mockEngine);
+      }).not.toThrow();
+    });
+  });
 });

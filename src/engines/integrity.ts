@@ -951,18 +951,25 @@ export async function runStartupCheck(engine: IntegrityEngine): Promise<DriftRep
  * Starts the startup check without waiting for it to complete.
  * Logs results when done.
  *
+ * BUG #21 FIX: Wraps in try-catch to handle synchronous errors that may occur
+ * before the promise is returned. Uses Promise.resolve().then() pattern to
+ * ensure all errors (sync and async) are caught.
+ *
  * @param engine - IntegrityEngine instance
  */
 export function runStartupCheckBackground(engine: IntegrityEngine): void {
   const logger = getLogger();
   logger.info('IntegrityEngine', 'Starting background startup check');
 
-  // Run asynchronously without blocking
-  runStartupCheck(engine).catch((error) => {
-    logger.error('IntegrityEngine', 'Background startup check failed', {
-      error: error instanceof Error ? error.message : String(error),
+  // BUG #21 FIX: Use Promise.resolve().then() pattern to catch both
+  // synchronous errors (thrown before promise returns) and async rejections
+  Promise.resolve()
+    .then(() => runStartupCheck(engine))
+    .catch((error) => {
+      logger.error('IntegrityEngine', 'Background startup check failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
     });
-  });
 }
 
 // ============================================================================

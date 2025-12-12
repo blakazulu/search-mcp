@@ -239,6 +239,23 @@ export class AsyncMutex {
  * Allows multiple readers to hold the lock simultaneously,
  * but writers require exclusive access.
  *
+ * BUG #18 DOCUMENTATION: Starvation Potential
+ *
+ * Under extreme contention, reader or writer starvation is possible:
+ * - Current policy gives writers priority when waiting (writerWaiting blocks new readers)
+ * - Continuous writer arrivals can starve readers
+ * - Conversely, if readers are continuously arriving while writerWaiting is false,
+ *   a waiting writer might be delayed
+ *
+ * For most use cases in this codebase, contention is low and this is acceptable.
+ * The ReadWriteLock is primarily used for protecting LanceDB operations where
+ * search (read) and indexing (write) operations are typically well-separated.
+ *
+ * If fairness becomes critical in the future, consider implementing:
+ * - Alternating batches: After each write, allow all waiting readers before next write
+ * - FIFO ordering: Process requests strictly in arrival order
+ * - Timestamped priorities: Give priority based on wait time
+ *
  * @example
  * ```typescript
  * const rwlock = new ReadWriteLock();

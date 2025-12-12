@@ -28,6 +28,7 @@ import {
   expandTilde,
   getExtension,
   getBaseName,
+  clearStorageRootCache,
 } from '../../src/utils/paths.js';
 
 // Mock fs and os modules for testing storage paths
@@ -330,6 +331,8 @@ describe('Path Utilities', () => {
     beforeEach(() => {
       vi.mocked(fs.existsSync).mockReturnValue(false);
       vi.mocked(fs.mkdirSync).mockClear();
+      // BUG #10 FIX: Clear cache to ensure fresh behavior for each test
+      clearStorageRootCache();
     });
 
     describe('getStorageRoot', () => {
@@ -353,6 +356,21 @@ describe('Path Utilities', () => {
       it('should not create directory if exists', () => {
         vi.mocked(fs.existsSync).mockReturnValue(true);
         getStorageRoot();
+        expect(fs.mkdirSync).not.toHaveBeenCalled();
+      });
+
+      it('should cache the result and not call mkdirSync on subsequent calls (BUG #10 FIX)', () => {
+        // First call creates directory
+        const result1 = getStorageRoot();
+        const mkdirCallsAfterFirst = vi.mocked(fs.mkdirSync).mock.calls.length;
+        expect(mkdirCallsAfterFirst).toBeGreaterThan(0);
+
+        // Reset mocks
+        vi.mocked(fs.mkdirSync).mockClear();
+
+        // Second call should use cached value and not call mkdirSync
+        const result2 = getStorageRoot();
+        expect(result2).toBe(result1);
         expect(fs.mkdirSync).not.toHaveBeenCalled();
       });
     });

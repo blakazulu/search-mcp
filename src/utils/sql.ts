@@ -16,6 +16,8 @@
  * - Single quotes: ' -> ''
  * - Null bytes: removed entirely
  * - Control characters (0x00-0x1f): removed entirely
+ * - Semicolons: removed (BUG #15 FIX - defense in depth)
+ * - SQL comment sequences: removed (BUG #15 FIX - defense in depth)
  *
  * @param value - The string value to escape
  * @returns The escaped string safe for SQL queries
@@ -38,7 +40,16 @@ export function escapeSqlString(value: string): string {
     .replace(/\0/g, '')
     // Remove control characters (0x00-0x1f except for common whitespace)
     // Keep tab (0x09), newline (0x0a), carriage return (0x0d)
-    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '');
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
+    // BUG #15 FIX: Additional hardening for defense in depth
+    // Remove semicolons (statement terminator)
+    .replace(/;/g, '')
+    // Remove SQL line comments (--)
+    .replace(/--/g, '')
+    // Remove SQL block comment start (/*)
+    .replace(/\/\*/g, '')
+    // Remove SQL block comment end (*/)
+    .replace(/\*\//g, '');
 }
 
 /**

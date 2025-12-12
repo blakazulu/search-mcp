@@ -61,11 +61,26 @@ describe('SQL Escaping Utilities', () => {
       // Classic SQL injection
       expect(escapeSqlString("test' OR '1'='1")).toBe("test'' OR ''1''=''1");
 
-      // Comment injection
-      expect(escapeSqlString("test'; --")).toBe("test''; --");
+      // Comment injection - BUG #15 FIX: Semicolons and comments are now removed
+      expect(escapeSqlString("test'; --")).toBe("test'' ");
 
-      // Multiple injection attempts
-      expect(escapeSqlString("'; DROP TABLE users; --")).toBe("''; DROP TABLE users; --");
+      // Multiple injection attempts - BUG #15 FIX: Semicolons and comments are now removed
+      expect(escapeSqlString("'; DROP TABLE users; --")).toBe("'' DROP TABLE users ");
+    });
+
+    it('should remove semicolons for defense in depth (BUG #15 FIX)', () => {
+      expect(escapeSqlString('a;b;c')).toBe('abc');
+      expect(escapeSqlString('test; SELECT * FROM users;')).toBe('test SELECT * FROM users');
+    });
+
+    it('should remove SQL comment sequences for defense in depth (BUG #15 FIX)', () => {
+      // Single-line comments
+      expect(escapeSqlString('test--comment')).toBe('testcomment');
+      expect(escapeSqlString('before -- after')).toBe('before  after');
+
+      // Block comments
+      expect(escapeSqlString('test/*comment*/value')).toBe('testcommentvalue');
+      expect(escapeSqlString('before /* middle */ after')).toBe('before  middle  after');
     });
 
     it('should handle combined special characters', () => {
@@ -238,10 +253,13 @@ describe('SQL Escaping Utilities', () => {
 
     it('should handle null byte injection attempts', () => {
       // Null byte injection (common attack vector)
+      // BUG #15 FIX: Semicolons and comments are now removed
       const nullByteAttack = "valid.ts\x00'; DROP TABLE chunks; --";
       const escaped = escapeSqlString(nullByteAttack);
-      expect(escaped).toBe("valid.ts''; DROP TABLE chunks; --");
+      expect(escaped).toBe("valid.ts'' DROP TABLE chunks ");
       expect(escaped).not.toContain('\x00');
+      expect(escaped).not.toContain(';');
+      expect(escaped).not.toContain('--');
     });
 
     it('should handle Unicode bypass attempts', () => {

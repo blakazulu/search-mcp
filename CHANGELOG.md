@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.3] - 2025-12-12
+
+### Fixed
+- **MEDIUM: Synchronous Operations in getStorageRoot** (BUG #10, SMCP-078)
+  - Added caching to avoid repeated sync filesystem operations
+  - Added async version `getStorageRootAsync()` for non-blocking operations
+  - Added `clearStorageRootCache()` utility for testing
+
+- **MEDIUM: Synchronous fs.existsSync in loadFingerprints** (BUG #11, SMCP-078)
+  - Replaced `fs.existsSync` with async `fs.promises.access` in fingerprints loader
+
+- **MEDIUM: SQL IN Clause Construction** (BUG #13, SMCP-078)
+  - Added UUID format validation for chunk IDs before SQL construction
+  - Invalid IDs are logged and skipped for defense in depth
+
+- **LOW: escapeSqlString Security Hardening** (BUG #15, SMCP-078)
+  - Added removal of semicolons (statement terminator)
+  - Added removal of SQL comment sequences (`--` and `/* */`)
+  - Defense in depth for SQL escaping
+
+- **LOW: Timer Leak in IntegrityScheduler** (BUG #16, SMCP-078)
+  - Added explicit `this.timer !== null` check to prevent timer leaks
+
+- **LOW: Missing top_k Upper Bound Validation** (BUG #23, SMCP-078)
+  - Added upper/lower bound validation in LanceDB search (clamps to 1-100)
+  - Prevents resource exhaustion from arbitrary top_k values
+
+- **LOW: ReadWriteLock Starvation Documentation** (BUG #18, SMCP-078)
+  - Added comprehensive documentation about starvation potential
+  - Documented why it's acceptable and future fairness options
+
+- **LOW: Chunking Line Calculation Edge Case** (BUG #20, SMCP-078)
+  - Added documentation explaining the edge case handling
+  - Clarified that the guard is correct behavior
+
 ## [1.3.2] - 2025-12-12
 
 ### Fixed

@@ -356,9 +356,18 @@ const STORAGE_BASE = '.mcp/search';
 const INDEXES_DIR = 'indexes';
 
 /**
+ * Cache for storage root path to avoid redundant filesystem operations.
+ * BUG #10 FIX: Added caching to minimize repeated sync filesystem operations.
+ */
+let storageRootCache: string | null = null;
+
+/**
  * Get the global storage root directory
  *
  * Returns ~/.mcp/search/ and creates it if it doesn't exist.
+ *
+ * BUG #10 FIX: Uses caching to avoid repeated sync filesystem operations.
+ * Once the directory is created and cached, subsequent calls return immediately.
  *
  * @returns Absolute path to the storage root directory
  *
@@ -370,6 +379,11 @@ const INDEXES_DIR = 'indexes';
  * ```
  */
 export function getStorageRoot(): string {
+  // BUG #10 FIX: Return cached value if available
+  if (storageRootCache !== null) {
+    return storageRootCache;
+  }
+
   const homeDir = os.homedir();
   const storageRoot = path.join(homeDir, STORAGE_BASE);
 
@@ -378,7 +392,54 @@ export function getStorageRoot(): string {
     fs.mkdirSync(storageRoot, { recursive: true });
   }
 
+  // BUG #10 FIX: Cache the result
+  storageRootCache = storageRoot;
   return storageRoot;
+}
+
+/**
+ * Get the global storage root directory (async version)
+ *
+ * Async version that uses fs.promises for non-blocking operations.
+ * Caches the result for subsequent calls.
+ *
+ * BUG #10 FIX: Added async version to avoid blocking the event loop.
+ *
+ * @returns Promise resolving to the absolute path to the storage root directory
+ *
+ * @example
+ * ```typescript
+ * await getStorageRootAsync()
+ * // => '/Users/dev/.mcp/search' (Unix)
+ * // => 'C:\\Users\\dev\\.mcp\\search' (Windows)
+ * ```
+ */
+export async function getStorageRootAsync(): Promise<string> {
+  // Return cached value if available
+  if (storageRootCache !== null) {
+    return storageRootCache;
+  }
+
+  const homeDir = os.homedir();
+  const storageRoot = path.join(homeDir, STORAGE_BASE);
+
+  // Create directory if it doesn't exist using async operations
+  try {
+    await fs.promises.access(storageRoot);
+  } catch {
+    await fs.promises.mkdir(storageRoot, { recursive: true });
+  }
+
+  // Cache the result
+  storageRootCache = storageRoot;
+  return storageRoot;
+}
+
+/**
+ * Clear the storage root cache (for testing purposes)
+ */
+export function clearStorageRootCache(): void {
+  storageRootCache = null;
 }
 
 /**

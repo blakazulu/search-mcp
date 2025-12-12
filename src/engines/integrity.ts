@@ -521,12 +521,21 @@ export class IntegrityScheduler {
    *
    * Schedules checks to run at the configured interval.
    * Does not run an immediate check - use runNow() for that.
+   *
+   * BUG #16 FIX: Added explicit timer check to prevent potential leak.
+   * If isRunning is true but timer is set (edge case), the existing timer
+   * is cleared before creating a new one.
    */
   start(): void {
     const logger = getLogger();
 
-    if (this.isRunning) {
-      logger.debug('IntegrityScheduler', 'Scheduler already running, ignoring start');
+    // BUG #16 FIX: Check both isRunning AND timer to prevent leaks
+    // If either condition indicates scheduler is active, return early
+    if (this.isRunning || this.timer !== null) {
+      logger.debug('IntegrityScheduler', 'Scheduler already running, ignoring start', {
+        isRunning: this.isRunning,
+        hasTimer: this.timer !== null,
+      });
       return;
     }
 

@@ -681,6 +681,14 @@ async function chunkLargeFile(
 
         // Start new chunk with overlap + current line
         currentChunkText = overlapText + lineWithNewline;
+        // BUG #20 DOCUMENTATION: Edge case in line calculation
+        // When overlap text contains many newlines (approaching currentLine count),
+        // the calculation can produce values < 1. This happens when:
+        // 1. Overlap text spans many lines relative to chunk position
+        // 2. Early in the file where currentLine is small
+        // The guard below ensures we never report invalid line numbers.
+        // This is correct behavior - it means the overlap includes content from
+        // near the beginning of the file, so startLine should be 1.
         currentChunkStartLine = currentLine - countLines(overlapText) + 1;
         if (currentChunkStartLine < 1) currentChunkStartLine = 1;
       }

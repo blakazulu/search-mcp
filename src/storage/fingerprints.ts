@@ -89,8 +89,11 @@ export async function loadFingerprints(indexPath: string): Promise<Fingerprints>
   const fingerprintsPath = getFingerprintsPath(indexPath);
 
   try {
-    // Check if fingerprints file exists
-    if (!fs.existsSync(fingerprintsPath)) {
+    // BUG #11 FIX: Use async fs.promises.access instead of sync fs.existsSync
+    // Check if fingerprints file exists using async operation
+    try {
+      await fs.promises.access(fingerprintsPath);
+    } catch {
       logger.debug('FingerprintsManager', 'No fingerprints file found, returning empty map', {
         fingerprintsPath,
       });

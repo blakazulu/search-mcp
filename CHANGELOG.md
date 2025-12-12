@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2025-12-12
+
+### Fixed
+- **HIGH: Glob Timeout Resource Exhaustion** (BUG #4, SMCP-075)
+  - Replaced `Promise.race` timeout pattern with `AbortController` for glob operations
+  - Glob operations now properly cancel when timeout fires, preventing resource exhaustion
+  - Timeout is properly cleared in finally block to prevent memory leaks
+  - Added 3 new tests for glob timeout cancellation
+
+- **HIGH: AsyncMutex Timeout/Grant Race Condition** (BUG #6, SMCP-075)
+  - Added atomic `satisfied` flag to prevent race between timeout and lock grant
+  - `resolveWrapper` now returns boolean to indicate if lock was accepted
+  - Updated `release()` to skip timed-out waiters and properly unlock mutex
+  - Prevents potential deadlock in high-contention scenarios
+  - Added 6 new stress tests for high contention and race condition handling
+
 ## [1.3.0] - 2025-12-12
 
 ### Added

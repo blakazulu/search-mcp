@@ -19,9 +19,15 @@ import { getLogger } from './logger.js';
 // ============================================================================
 
 /**
- * Function queued for lock acquisition
+ * Function queued for lock acquisition in AsyncMutex
+ * Returns true if the lock was accepted, false if already satisfied (e.g., by timeout)
  */
-type QueuedResolver = () => void;
+type MutexQueuedResolver = () => boolean;
+
+/**
+ * Simple resolver function for ReadWriteLock (no timeout support needed)
+ */
+type RWLockResolver = () => void;
 
 // ============================================================================
 // AsyncMutex Class
@@ -56,7 +62,7 @@ export class AsyncMutex {
   private locked = false;
 
   /** Queue of functions waiting for the lock */
-  private queue: QueuedResolver[] = [];
+  private queue: MutexQueuedResolver[] = [];
 
   /** Optional name for logging purposes */
   private readonly name: string;
@@ -103,12 +109,20 @@ export class AsyncMutex {
     // Create a promise that resolves when we get the lock
     return new Promise<void>((resolve, reject) => {
       let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+      // Atomic flag to prevent race condition between timeout and lock grant
+      // This ensures that only one of timeout or grant can succeed
+      let satisfied = false;
 
-      const resolveWrapper = () => {
+      const resolveWrapper = (): boolean => {
+        // If already satisfied (by timeout), return false to indicate
+        // the lock was not accepted and should be passed to next waiter
+        if (satisfied) return false;
+        satisfied = true;
         if (timeoutHandle !== undefined) {
           clearTimeout(timeoutHandle);
         }
         resolve();
+        return true;
       };
 
       this.queue.push(resolveWrapper);
@@ -116,17 +130,22 @@ export class AsyncMutex {
       // Set up timeout if provided
       if (timeout !== undefined && timeout > 0) {
         timeoutHandle = setTimeout(() => {
+          // If already satisfied (by grant), do nothing
+          if (satisfied) return;
+          satisfied = true;
+
           // Remove from queue
           const index = this.queue.indexOf(resolveWrapper);
           if (index !== -1) {
             this.queue.splice(index, 1);
-            const logger = getLogger();
-            logger.warn(this.name, 'Lock acquisition timed out', {
-              timeout,
-              queueLength: this.queue.length,
-            });
-            reject(new Error(`Lock acquisition timed out after ${timeout}ms`));
           }
+
+          const logger = getLogger();
+          logger.warn(this.name, 'Lock acquisition timed out', {
+            timeout,
+            queueLength: this.queue.length,
+          });
+          reject(new Error(`Lock acquisition timed out after ${timeout}ms`));
         }, timeout);
       }
     });
@@ -138,6 +157,9 @@ export class AsyncMutex {
    * If there are waiters in the queue, the next one will be given the lock.
    * Otherwise, the mutex becomes unlocked.
    *
+   * If a waiter has already timed out (satisfied flag), we continue to the next waiter.
+   * This prevents deadlock when timeout and release race.
+   *
    * @throws Error if release is called when the mutex is not locked
    */
   release(): void {
@@ -147,14 +169,24 @@ export class AsyncMutex {
       return;
     }
 
-    const next = this.queue.shift();
-    if (next) {
-      // Pass the lock to the next waiter
-      // Keep locked = true since we're transferring ownership
-      next();
-    } else {
-      this.locked = false;
+    // Try to pass the lock to waiting tasks
+    // If a waiter has already timed out, try the next one
+    while (this.queue.length > 0) {
+      const next = this.queue.shift();
+      if (next) {
+        // Pass the lock to this waiter
+        // Returns true if waiter accepted the lock, false if already timed out
+        const accepted = next();
+        if (accepted) {
+          // Lock successfully transferred, keep locked = true
+          return;
+        }
+        // Waiter had already timed out, try next one
+      }
     }
+
+    // No waiters (or all had timed out), unlock
+    this.locked = false;
   }
 
   /**
@@ -233,10 +265,10 @@ export class ReadWriteLock {
   private writerWaiting = false;
 
   /** Queue of waiting readers */
-  private readerQueue: QueuedResolver[] = [];
+  private readerQueue: RWLockResolver[] = [];
 
   /** Queue of waiting writers */
-  private writerQueue: QueuedResolver[] = [];
+  private writerQueue: RWLockResolver[] = [];
 
   /** Optional name for logging purposes */
   private readonly name: string;

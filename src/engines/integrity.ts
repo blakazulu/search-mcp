@@ -152,24 +152,21 @@ export async function scanCurrentState(
   const globPattern = '**/*';
   let allFiles: string[];
 
+  // DoS Protection: Use AbortController for proper cancellation
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), GLOB_TIMEOUT_MS);
+
   try {
     // DoS Protection: Use timeout and depth limit for glob
-    const globPromise = glob(globPattern, {
+    const files = await glob(globPattern, {
       cwd: normalizedProjectPath,
       nodir: true,
       dot: true,
       absolute: false,
       maxDepth: maxDepth,
+      signal: controller.signal,
     });
 
-    // Apply timeout
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => {
-        reject(new Error(`Glob operation timed out after ${GLOB_TIMEOUT_MS}ms`));
-      }, GLOB_TIMEOUT_MS);
-    });
-
-    const files = await Promise.race([globPromise, timeoutPromise]);
     allFiles = files.map(f => f.replace(/\\/g, '/'));
 
     // DoS Protection: Check result count
@@ -200,7 +197,17 @@ export async function scanCurrentState(
   } catch (error) {
     // Re-throw ResourceLimitError
     if (error instanceof ResourceLimitError) {
+      clearTimeout(timeoutId);
       throw error;
+    }
+
+    // Handle abort error (timeout)
+    if (error instanceof Error && error.name === 'AbortError') {
+      logger.error('IntegrityEngine', 'Glob operation timed out', {
+        projectPath: normalizedProjectPath,
+        timeoutMs: GLOB_TIMEOUT_MS,
+      });
+      return currentState;
     }
 
     logger.error('IntegrityEngine', 'Failed to scan directory', {
@@ -208,6 +215,8 @@ export async function scanCurrentState(
       error: error instanceof Error ? error.message : String(error),
     });
     return currentState;
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   // Process files in batches for better performance

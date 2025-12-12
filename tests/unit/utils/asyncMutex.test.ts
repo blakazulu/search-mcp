@@ -671,3 +671,190 @@ describe('IndexingLock', () => {
     });
   });
 });
+
+describe('AsyncMutex timeout/grant race condition (BUG #6 fix)', () => {
+  describe('timeout race handling', () => {
+    it('should not deadlock when timeout and release race', async () => {
+      const mutex = new AsyncMutex('race-test');
+
+      // Hold the lock
+      await mutex.acquire();
+
+      // Start multiple waiters with very short timeouts
+      const results: string[] = [];
+      const promises: Promise<void>[] = [];
+
+      for (let i = 0; i < 5; i++) {
+        promises.push(
+          mutex.acquire(10).then(() => {
+            results.push(`acquired-${i}`);
+            mutex.release();
+          }).catch(() => {
+            results.push(`timeout-${i}`);
+          })
+        );
+      }
+
+      // Release after a delay to create race conditions
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      mutex.release();
+
+      // Wait for all to complete
+      await Promise.all(promises);
+
+      // Verify no deadlock - all waiters should have resolved (either acquired or timed out)
+      expect(results.length).toBe(5);
+
+      // Mutex should be unlocked at the end
+      expect(mutex.isLocked).toBe(false);
+    });
+
+    it('should handle interleaved timeouts correctly', async () => {
+      const mutex = new AsyncMutex('interleave-test');
+      await mutex.acquire();
+
+      // Start waiters with staggered timeouts
+      const p1 = mutex.acquire(10).catch(() => 'timeout-1');
+      const p2 = mutex.acquire(50).then(() => {
+        mutex.release();
+        return 'acquired-2';
+      });
+      const p3 = mutex.acquire(15).catch(() => 'timeout-3');
+
+      // Wait for first timeouts to fire
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      // Release the lock - should go to p2 (the one that didn't timeout)
+      mutex.release();
+
+      const results = await Promise.all([p1, p2, p3]);
+
+      // p1 and p3 should have timed out, p2 should have acquired
+      expect(results).toContain('timeout-1');
+      expect(results).toContain('acquired-2');
+      expect(results).toContain('timeout-3');
+
+      // Mutex should be unlocked
+      expect(mutex.isLocked).toBe(false);
+    });
+
+    it('should skip timed-out waiters and grant to next valid waiter', async () => {
+      const mutex = new AsyncMutex('skip-test');
+      await mutex.acquire();
+
+      let secondAcquired = false;
+
+      // First waiter with very short timeout
+      const p1 = mutex.acquire(5).catch(() => 'timeout-1');
+
+      // Second waiter with longer timeout
+      const p2 = mutex.acquire(200).then(() => {
+        secondAcquired = true;
+        mutex.release();
+        return 'acquired-2';
+      });
+
+      // Wait for first timeout to fire
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      // Release - should skip the timed-out waiter and grant to second
+      mutex.release();
+
+      const results = await Promise.all([p1, p2]);
+
+      expect(results).toContain('timeout-1');
+      expect(results).toContain('acquired-2');
+      expect(secondAcquired).toBe(true);
+      expect(mutex.isLocked).toBe(false);
+    });
+
+    it('should handle all waiters timing out', async () => {
+      const mutex = new AsyncMutex('all-timeout-test');
+      await mutex.acquire();
+
+      // Start waiters that will all timeout
+      const promises = [
+        mutex.acquire(5).catch(() => 'timeout-1'),
+        mutex.acquire(5).catch(() => 'timeout-2'),
+        mutex.acquire(5).catch(() => 'timeout-3'),
+      ];
+
+      // Wait for all timeouts
+      await new Promise((resolve) => setTimeout(resolve, 30));
+
+      // Queue should be empty now (all removed by timeout)
+      expect(mutex.queueLength).toBe(0);
+
+      // Release - should just unlock since no valid waiters
+      mutex.release();
+
+      const results = await Promise.all(promises);
+
+      expect(results).toEqual(['timeout-1', 'timeout-2', 'timeout-3']);
+      expect(mutex.isLocked).toBe(false);
+    });
+  });
+
+  describe('high contention stress test', () => {
+    it('should handle many concurrent acquires with timeouts without deadlock', async () => {
+      const mutex = new AsyncMutex('stress-test');
+      const concurrency = 20;
+      const results: string[] = [];
+      const promises: Promise<void>[] = [];
+
+      // Start many concurrent operations
+      for (let i = 0; i < concurrency; i++) {
+        promises.push(
+          mutex.withLock(async () => {
+            // Small random delay to create more race conditions
+            await new Promise((resolve) => setTimeout(resolve, Math.random() * 10));
+            results.push(`completed-${i}`);
+          }, 100).catch(() => {
+            results.push(`timeout-${i}`);
+          })
+        );
+      }
+
+      // Wait for all to complete
+      await Promise.all(promises);
+
+      // All operations should have completed (either executed or timed out)
+      expect(results.length).toBe(concurrency);
+
+      // Mutex should be unlocked at the end
+      expect(mutex.isLocked).toBe(false);
+      expect(mutex.queueLength).toBe(0);
+    }, 10000);
+
+    it('should maintain FIFO order for non-timed-out waiters', async () => {
+      const mutex = new AsyncMutex('fifo-test');
+      const order: number[] = [];
+
+      await mutex.acquire();
+
+      // Queue multiple waiters without timeout
+      const p1 = mutex.acquire().then(() => {
+        order.push(1);
+        mutex.release();
+      });
+
+      const p2 = mutex.acquire().then(() => {
+        order.push(2);
+        mutex.release();
+      });
+
+      const p3 = mutex.acquire().then(() => {
+        order.push(3);
+        mutex.release();
+      });
+
+      mutex.release();
+
+      await Promise.all([p1, p2, p3]);
+
+      // Should be in FIFO order
+      expect(order).toEqual([1, 2, 3]);
+      expect(mutex.isLocked).toBe(false);
+    });
+  });
+});

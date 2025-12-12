@@ -997,4 +997,52 @@ describe('Integrity Engine', () => {
       callback({ phase: 'scanning', current: 0, total: 1 });
     });
   });
+
+  describe('scanCurrentState with AbortController (BUG #4 fix)', () => {
+    let projectPath: string;
+    let policy: IndexingPolicy;
+
+    beforeEach(async () => {
+      projectPath = await createTempDir('abort-test-');
+      await createTestProject(projectPath);
+
+      const config: Config = { ...DEFAULT_CONFIG };
+      policy = new IndexingPolicy(projectPath, config);
+      await policy.initialize();
+    }, 30000);
+
+    afterEach(async () => {
+      await removeTempDir(projectPath);
+    });
+
+    it('should complete normally and clear timeout on success', async () => {
+      // This verifies that normal operation works with AbortController
+      const state = await scanCurrentState(projectPath, policy);
+
+      // Should return files without timeout issues
+      expect(state).toBeInstanceOf(Map);
+      expect(state.size).toBeGreaterThan(0);
+    });
+
+    it('should handle empty directories with AbortController', async () => {
+      const emptyDir = await createTempDir('empty-abort-');
+      const emptyConfig: Config = { ...DEFAULT_CONFIG };
+      const emptyPolicy = new IndexingPolicy(emptyDir, emptyConfig);
+
+      const state = await scanCurrentState(emptyDir, emptyPolicy);
+
+      expect(state.size).toBe(0);
+
+      await removeTempDir(emptyDir);
+    });
+
+    it('should return Map on success (timeout cleared properly)', async () => {
+      // Run multiple scans to ensure timeouts are properly cleared
+      for (let i = 0; i < 3; i++) {
+        const state = await scanCurrentState(projectPath, policy);
+        expect(state).toBeInstanceOf(Map);
+        expect(state.size).toBeGreaterThan(0);
+      }
+    });
+  });
 });

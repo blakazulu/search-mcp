@@ -146,7 +146,7 @@ describe('Config Manager', () => {
         expect(result.data.indexDocs).toBe(true);
         expect(result.data.enhancedToolDescriptions).toBe(false);
         expect(result.data.indexingStrategy).toBe('realtime');
-        expect(result.data.chunkingStrategy).toBe('character');
+        expect(result.data.chunkingStrategy).toBe('code-aware');
       }
     });
 
@@ -270,7 +270,7 @@ describe('Config Manager', () => {
       if (result.success) {
         expect(result.data.hybridSearch.enabled).toBe(true);
         expect(result.data.hybridSearch.ftsEngine).toBe('auto');
-        expect(result.data.hybridSearch.defaultAlpha).toBe(0.7);
+        expect(result.data.hybridSearch.defaultAlpha).toBe(0.7); // Explicit value, not default
       }
     });
 
@@ -365,7 +365,7 @@ describe('Config Manager', () => {
       expect(DEFAULT_CONFIG.hybridSearch).toEqual({
         enabled: true,
         ftsEngine: 'auto',
-        defaultAlpha: 0.7,
+        defaultAlpha: 0.5,
       });
     });
 
@@ -383,7 +383,7 @@ describe('Config Manager', () => {
     it('should have correct defaults', () => {
       expect(DEFAULT_HYBRID_SEARCH.enabled).toBe(true);
       expect(DEFAULT_HYBRID_SEARCH.ftsEngine).toBe('auto');
-      expect(DEFAULT_HYBRID_SEARCH.defaultAlpha).toBe(0.7);
+      expect(DEFAULT_HYBRID_SEARCH.defaultAlpha).toBe(0.5);
     });
 
     it('should match HybridSearchSchema defaults', () => {
@@ -554,7 +554,7 @@ describe('Config Manager', () => {
       expect(loaded.hybridSearch).toBeDefined();
       expect(loaded.hybridSearch.enabled).toBe(true);
       expect(loaded.hybridSearch.ftsEngine).toBe('auto');
-      expect(loaded.hybridSearch.defaultAlpha).toBe(0.7);
+      expect(loaded.hybridSearch.defaultAlpha).toBe(0.5);
     });
 
     it('should load custom docPatterns and indexDocs', async () => {

@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Default Configuration Optimization** - Updated defaults based on full codebase benchmark testing
+  - Changed `hybridSearch.defaultAlpha` from `0.7` to `0.5` (balanced hybrid)
+    - Achieves 43x token efficiency vs grep (up from 40.9x)
+    - Same precision (32% P@5), better balance of semantic + keyword search
+  - Changed `chunkingStrategy` from `"character"` to `"code-aware"`
+    - Respects code boundaries (functions, classes) for better semantic chunks
+    - Slightly better search latency in benchmarks
+  - Updated documentation to reflect new defaults
+
+### Performance
+- Full codebase testing shows new defaults achieve:
+  - 43x fewer tokens than grep (vs 40.9x with old defaults)
+  - Same search precision (32% Precision@5)
+  - Better semantic understanding with balanced alpha
+
 ## [1.3.3] - 2025-12-12
 
 ### Fixed

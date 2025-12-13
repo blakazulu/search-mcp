@@ -62,10 +62,12 @@ The config file is **auto-generated** on first indexing with sensible defaults. 
 
   "indexingStrategy": "realtime",
 
+  "chunkingStrategy": "code-aware",
+
   "hybridSearch": {
     "enabled": true,
     "ftsEngine": "auto",
-    "defaultAlpha": 0.7
+    "defaultAlpha": 0.5
   },
 
   "_hardcodedExcludes": [
@@ -109,9 +111,10 @@ The config file is **auto-generated** on first indexing with sensible defaults. 
 | `indexDocs` | `boolean` | `true` | Enable documentation indexing (separate from code) |
 | `enhancedToolDescriptions` | `boolean` | `false` | Add AI hints to tool descriptions |
 | `indexingStrategy` | `string` | `"realtime"` | When to index: `"realtime"`, `"lazy"`, or `"git"` |
+| `chunkingStrategy` | `string` | `"code-aware"` | Chunking: `"code-aware"` (semantic) or `"character"` (fixed) |
 | `hybridSearch.enabled` | `boolean` | `true` | Enable hybrid search (vector + keyword) |
 | `hybridSearch.ftsEngine` | `string` | `"auto"` | FTS engine: `"auto"`, `"js"`, or `"native"` |
-| `hybridSearch.defaultAlpha` | `number` | `0.7` | Default semantic/keyword weight (0-1) |
+| `hybridSearch.defaultAlpha` | `number` | `0.5` | Default semantic/keyword weight (0-1) |
 
 ---
 
@@ -154,15 +157,15 @@ The `defaultAlpha` controls the balance between semantic and keyword search:
 
 ```
 alpha = 1.0  ->  100% semantic (same as mode="vector")
-alpha = 0.7  ->  70% semantic, 30% keyword (good for code - default)
-alpha = 0.5  ->  50/50 balanced
+alpha = 0.7  ->  70% semantic, 30% keyword (semantic-heavy)
+alpha = 0.5  ->  50/50 balanced (default - optimal for most use cases)
 alpha = 0.3  ->  30% semantic, 70% keyword (good for exact matches)
 alpha = 0.0  ->  100% keyword (same as mode="fts")
 ```
 
 **Recommended values:**
-- **Code search:** `0.7` - Semantic understanding with keyword boost for function names
-- **Documentation search:** `0.5-0.7` - Balance for natural language
+- **General use:** `0.5` - Best token efficiency (43x vs grep) with same precision
+- **Conceptual queries:** `0.7` - Favor semantic understanding
 - **API/symbol search:** `0.3` - Favor exact keyword matches
 
 You can also override alpha per-search using the `alpha` parameter in `search_code` or `search_docs`.

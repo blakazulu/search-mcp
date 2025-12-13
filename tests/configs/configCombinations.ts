@@ -58,11 +58,11 @@ export const BASE_CONFIG: Partial<Config> = {
   indexDocs: true,
   enhancedToolDescriptions: false,
   indexingStrategy: 'realtime',
-  chunkingStrategy: 'character',
+  chunkingStrategy: 'code-aware',
   hybridSearch: {
     enabled: true,
     ftsEngine: 'auto',
-    defaultAlpha: 0.7,
+    defaultAlpha: 0.5,
   },
 };
 
@@ -154,7 +154,7 @@ export const ALPHA_CONFIGS: ConfigCombination[] = [
   },
   {
     name: 'alpha-0.5',
-    description: 'Balanced hybrid search (alpha=0.5, 50/50)',
+    description: 'Balanced hybrid search (alpha=0.5, default)',
     category: 'alpha',
     config: createConfig({
       hybridSearch: {
@@ -166,7 +166,7 @@ export const ALPHA_CONFIGS: ConfigCombination[] = [
   },
   {
     name: 'alpha-0.7',
-    description: 'Semantic-heavy hybrid search (alpha=0.7, default)',
+    description: 'Semantic-heavy hybrid search (alpha=0.7)',
     category: 'alpha',
     config: createConfig({
       hybridSearch: {
@@ -202,7 +202,7 @@ export const FTS_ENGINE_CONFIGS: ConfigCombination[] = [
       hybridSearch: {
         enabled: true,
         ftsEngine: 'auto',
-        defaultAlpha: 0.7,
+        defaultAlpha: 0.5,
       },
     }),
   },
@@ -214,7 +214,7 @@ export const FTS_ENGINE_CONFIGS: ConfigCombination[] = [
       hybridSearch: {
         enabled: true,
         ftsEngine: 'js',
-        defaultAlpha: 0.7,
+        defaultAlpha: 0.5,
       },
     }),
   },
@@ -226,7 +226,7 @@ export const FTS_ENGINE_CONFIGS: ConfigCombination[] = [
       hybridSearch: {
         enabled: true,
         ftsEngine: 'native',
-        defaultAlpha: 0.7,
+        defaultAlpha: 0.5,
       },
     }),
   },
@@ -276,7 +276,7 @@ export const CHUNKING_CONFIGS: ConfigCombination[] = [
   },
   {
     name: 'chunking-code-aware',
-    description: 'Code-aware chunking (semantic boundaries)',
+    description: 'Code-aware chunking (semantic boundaries, default)',
     category: 'chunking',
     config: createConfig({
       chunkingStrategy: 'code-aware',
@@ -306,7 +306,7 @@ export const EDGE_CASE_CONFIGS: ConfigCombination[] = [
       hybridSearch: {
         enabled: true,
         ftsEngine: 'native',
-        defaultAlpha: 0.7,
+        defaultAlpha: 0.5,
       },
     }),
   },
@@ -318,7 +318,7 @@ export const EDGE_CASE_CONFIGS: ConfigCombination[] = [
       hybridSearch: {
         enabled: false,
         ftsEngine: 'auto',
-        defaultAlpha: 0.7,
+        defaultAlpha: 0.5,
       },
     }),
   },

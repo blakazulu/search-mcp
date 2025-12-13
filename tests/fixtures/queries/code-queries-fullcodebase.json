@@ -1,0 +1,113 @@
+{
+  "description": "Test queries for code search with expected results (full codebase)",
+  "version": "1.0.0",
+  "targetFixture": "search-mcp (full codebase)",
+  "queries": [
+    {
+      "id": "mcp-server",
+      "query": "how does the MCP server handle requests",
+      "type": "Conceptual",
+      "description": "Tests semantic understanding of MCP server flow",
+      "expectedTopFiles": [
+        "src/server.ts",
+        "src/tools/index.ts"
+      ],
+      "keywords": ["Server", "CallToolRequest", "handleToolCall", "MCP"]
+    },
+    {
+      "id": "hash-compute",
+      "query": "compute file hash SHA256",
+      "type": "Exact",
+      "description": "Tests exact function name lookup",
+      "expectedTopFiles": [
+        "src/utils/hash.ts"
+      ],
+      "keywords": ["computeHash", "SHA256", "hashFile"]
+    },
+    {
+      "id": "lancedb-store",
+      "query": "LanceDB vector database storage",
+      "type": "Technical",
+      "description": "Tests specific technology/pattern search",
+      "expectedTopFiles": [
+        "src/storage/lancedb.ts",
+        "src/storage/docsLancedb.ts"
+      ],
+      "keywords": ["LanceDB", "vectorStore", "addVectors", "search"]
+    },
+    {
+      "id": "chunking-strategy",
+      "query": "text chunking with overlap",
+      "type": "Pattern",
+      "description": "Tests code pattern recognition",
+      "expectedTopFiles": [
+        "src/engines/chunking.ts",
+        "src/engines/codeAwareChunking.ts"
+      ],
+      "keywords": ["chunk", "overlap", "splitText", "CHUNK_SIZE"]
+    },
+    {
+      "id": "error-handling",
+      "query": "MCPError error handling",
+      "type": "Pattern",
+      "description": "Tests cross-cutting concern search",
+      "expectedTopFiles": [
+        "src/errors/index.ts"
+      ],
+      "keywords": ["MCPError", "wrapError", "ErrorCode", "createError"]
+    },
+    {
+      "id": "hybrid-search",
+      "query": "hybrid search combining vector and keyword",
+      "type": "Technical",
+      "description": "Tests technical implementation search",
+      "expectedTopFiles": [
+        "src/engines/hybridSearch.ts"
+      ],
+      "keywords": ["hybridSearch", "alpha", "fuse", "vector", "FTS"]
+    },
+    {
+      "id": "indexing-strategy",
+      "query": "realtime lazy git indexing strategy",
+      "type": "Implementation",
+      "description": "Tests implementation detail search",
+      "expectedTopFiles": [
+        "src/engines/indexingStrategy.ts",
+        "src/engines/strategies/realtimeStrategy.ts",
+        "src/engines/strategies/lazyStrategy.ts"
+      ],
+      "keywords": ["IndexingStrategy", "realtime", "lazy", "git", "onFileChange"]
+    },
+    {
+      "id": "embedding-model",
+      "query": "embedding model transformers pipeline",
+      "type": "Technical",
+      "description": "Tests algorithm/data structure search",
+      "expectedTopFiles": [
+        "src/engines/embedding.ts"
+      ],
+      "keywords": ["EmbeddingEngine", "pipeline", "transformers", "embed"]
+    },
+    {
+      "id": "file-watching",
+      "query": "file watcher chokidar events",
+      "type": "Conceptual",
+      "description": "Tests semantic understanding of file system monitoring",
+      "expectedTopFiles": [
+        "src/engines/fileWatcher.ts"
+      ],
+      "keywords": ["FileWatcher", "chokidar", "watchDirectory", "onChange"]
+    },
+    {
+      "id": "config-management",
+      "query": "project configuration management",
+      "type": "Broad",
+      "description": "Tests cross-cutting config concern",
+      "expectedTopFiles": [
+        "src/storage/config.ts",
+        "src/storage/metadata.ts"
+      ],
+      "keywords": ["ConfigManager", "ProjectConfig", "loadConfig", "saveConfig"]
+    }
+  ]
+}

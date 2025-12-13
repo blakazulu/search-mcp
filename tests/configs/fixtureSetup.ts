@@ -304,6 +304,70 @@ export async function deleteIndex(projectPath: string): Promise<void> {
 }
 
 /**
+ * Delete index with retry logic for Windows file locking issues.
+ * SQLite databases may hold file locks that take time to release.
+ *
+ * @param projectPath - Path to the project
+ * @param maxRetries - Maximum number of retry attempts (default: 5)
+ * @param delayMs - Base delay between retries in ms (default: 500)
+ */
+export async function deleteIndexWithRetry(
+  projectPath: string,
+  maxRetries = 5,
+  delayMs = 500
+): Promise<void> {
+  const { getIndexPath } = await import('../../src/utils/paths.js');
+  const indexPath = getIndexPath(projectPath);
+
+  // Force garbage collection if available (helps release file handles)
+  if (typeof global.gc === 'function') {
+    global.gc();
+  }
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      // Wait before retry attempts (with exponential backoff)
+      if (attempt > 0) {
+        await new Promise(resolve => setTimeout(resolve, delayMs * attempt));
+      }
+      removeDirSync(indexPath);
+      return; // Success
+    } catch (error) {
+      const isLastAttempt = attempt === maxRetries - 1;
+
+      if (isLastAttempt) {
+        // Last attempt failed - try to clean up non-SQLite files at least
+        console.warn(`Warning: Could not delete index after ${maxRetries} attempts (file may be locked)`);
+        try {
+          const nonSqliteFiles = [
+            'metadata.json',
+            'fingerprints.json',
+            'docs-fingerprints.json',
+            'config.json',
+            'code-fts.json',
+            'docs-fts.json',
+          ];
+          for (const file of nonSqliteFiles) {
+            const filePath = path.join(indexPath, file);
+            if (fs.existsSync(filePath)) {
+              try {
+                fs.unlinkSync(filePath);
+              } catch {
+                // Ignore individual file deletion failures
+              }
+            }
+          }
+        } catch {
+          // Ignore partial cleanup errors
+        }
+        return;
+      }
+      // Not last attempt - continue to next retry
+    }
+  }
+}
+
+/**
  * Check if an index exists for a project
  *
  * @param projectPath - Path to the project

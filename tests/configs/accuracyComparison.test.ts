@@ -39,53 +39,10 @@ import {
 } from './comparisonMetrics.js';
 import {
   createIndexWithCombination,
-  deleteIndex,
+  deleteIndexWithRetry,
   loadQueries,
   getFixturePath,
 } from './fixtureSetup.js';
-
-// ============================================================================
-// Utility Functions
-// ============================================================================
-
-/**
- * Delete index with retry logic for Windows file locking issues
- */
-async function deleteIndexWithRetry(projectPath: string, maxRetries = 5, delayMs = 1000): Promise<void> {
-  // Force garbage collection if available (helps release file handles)
-  if (global.gc) {
-    global.gc();
-  }
-
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      // Wait a bit before first attempt to allow file handles to be released
-      if (i > 0) {
-        await new Promise(resolve => setTimeout(resolve, delayMs * i));
-      }
-      await deleteIndex(projectPath);
-      return;
-    } catch (error) {
-      if (i === maxRetries - 1) {
-        console.warn(`Warning: Could not delete index after ${maxRetries} attempts. This may affect subsequent tests.`);
-        // Try to at least clean up non-SQLite files
-        try {
-          const { getIndexPath } = await import('../../src/utils/paths.js');
-          const indexPath = getIndexPath(projectPath);
-          // Remove non-SQLite files individually
-          const filesToRemove = ['metadata.json', 'fingerprints.json', 'config.json', 'code-fts.json', 'docs-fts.json'];
-          for (const file of filesToRemove) {
-            const filePath = path.join(indexPath, file);
-            if (fs.existsSync(filePath)) {
-              try { fs.unlinkSync(filePath); } catch { /* ignore */ }
-            }
-          }
-        } catch { /* ignore partial cleanup */ }
-        return;
-      }
-    }
-  }
-}
 import {
   MetricsCollector,
   getMemoryUsageMB,
@@ -174,10 +131,13 @@ const FULL_CODEBASE = process.env.FULL_CODEBASE === 'true';
 
 function loadComparisonQueries(): ComparisonQuery[] {
   const queriesDir = path.join(__dirname, '..', 'fixtures', 'queries');
-  const queryPath = path.join(queriesDir, 'comparison-queries.json');
+
+  // Use different query files for full codebase vs synthetic fixture
+  const queryFileName = FULL_CODEBASE ? 'comparison-queries-fullcodebase.json' : 'comparison-queries.json';
+  const queryPath = path.join(queriesDir, queryFileName);
 
   if (!fs.existsSync(queryPath)) {
-    console.warn('Could not load comparison-queries.json');
+    console.warn(`Could not load ${queryFileName}`);
     return [];
   }
 
@@ -330,6 +290,14 @@ describe('Accuracy Comparison Tests (MCP vs Grep vs D&D)', { timeout: TEST_TIMEO
 
       // Clean up index (with retry for Windows file locking)
       await deleteIndexWithRetry(projectPath);
+
+      // Force garbage collection between configs to release memory
+      // This prevents memory pressure from accumulating across config tests
+      if (typeof global.gc === 'function') {
+        global.gc();
+        await new Promise(resolve => setTimeout(resolve, 100));
+        global.gc();
+      }
     });
 
     it('should index files successfully', () => {

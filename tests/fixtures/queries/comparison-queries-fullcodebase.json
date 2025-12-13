@@ -1,0 +1,132 @@
+{
+  "description": "10 diverse queries for MCP vs Grep vs Drag-and-Drop comparison testing (full codebase)",
+  "version": "1.0.0",
+  "targetFixture": "search-mcp (full codebase)",
+  "queries": [
+    {
+      "id": 1,
+      "query": "how does file watching work",
+      "type": "Conceptual",
+      "description": "Tests semantic understanding of file system monitoring concepts",
+      "grepPatterns": ["watch", "watcher", "file.*change", "FileWatcher", "chokidar"],
+      "relevantFiles": ["src/engines/fileWatcher.ts", "src/engines/integrity.ts"],
+      "expectedTopFiles": ["src/engines/fileWatcher.ts", "fileWatcher.ts"],
+      "dragDropFiles": ["src/engines/fileWatcher.ts", "src/engines/integrity.ts", "src/engines/strategyOrchestrator.ts"]
+    },
+    {
+      "id": 2,
+      "query": "error handling patterns",
+      "type": "Pattern",
+      "description": "Tests code pattern recognition across error handling",
+      "grepPatterns": ["error", "catch", "throw", "MCPError", "wrapError"],
+      "relevantFiles": ["src/errors/index.ts"],
+      "expectedTopFiles": ["src/errors/index.ts", "errors/index.ts", "errors"],
+      "dragDropFiles": ["src/errors/index.ts"]
+    },
+    {
+      "id": 3,
+      "query": "LanceDB vector search",
+      "type": "Technical",
+      "description": "Tests specific technology/database pattern search",
+      "grepPatterns": ["lancedb", "vector", "search", "embedding", "LanceDB"],
+      "relevantFiles": ["src/storage/lancedb.ts", "src/storage/docsLancedb.ts"],
+      "expectedTopFiles": ["src/storage/lancedb.ts", "lancedb.ts", "storage/lancedb"],
+      "dragDropFiles": ["src/storage/lancedb.ts", "src/storage/docsLancedb.ts", "src/tools/searchCode.ts"]
+    },
+    {
+      "id": 4,
+      "query": "security vulnerabilities",
+      "type": "Broad",
+      "description": "Tests cross-cutting security concerns across codebase",
+      "grepPatterns": ["security", "vulnerab", "sanitize", "safe", "symlink", "secure"],
+      "relevantFiles": ["src/utils/secureFileAccess.ts", "src/engines/indexPolicy.ts"],
+      "expectedTopFiles": ["src/utils/secureFileAccess.ts", "secureFileAccess.ts", "security"],
+      "dragDropFiles": ["src/utils/secureFileAccess.ts", "src/utils/paths.ts", "src/engines/indexPolicy.ts"]
+    },
+    {
+      "id": 5,
+      "query": "configuration options",
+      "type": "Documentation",
+      "description": "Tests configuration and documentation search",
+      "grepPatterns": ["config", "option", "setting", "Config", "ProjectConfig"],
+      "relevantFiles": ["src/storage/config.ts", "docs/configuration.md"],
+      "expectedTopFiles": ["src/storage/config.ts", "config.ts", "configuration.md"],
+      "dragDropFiles": ["src/storage/config.ts", "src/storage/metadata.ts", "docs/configuration.md"]
+    },
+    {
+      "id": 6,
+      "query": "hash file content",
+      "type": "Exact",
+      "description": "Tests exact function name lookup",
+      "grepPatterns": ["hash", "SHA256", "computeHash"],
+      "relevantFiles": ["src/utils/hash.ts"],
+      "expectedTopFiles": ["src/utils/hash.ts", "hash.ts"],
+      "dragDropFiles": ["src/utils/hash.ts"]
+    },
+    {
+      "id": 7,
+      "query": "how to create an index",
+      "type": "How-to",
+      "description": "Tests user intent / action-oriented query",
+      "grepPatterns": ["create.*index", "createIndex", "IndexManager"],
+      "relevantFiles": ["src/tools/createIndex.ts", "src/engines/indexManager.ts"],
+      "expectedTopFiles": ["src/tools/createIndex.ts", "createIndex.ts", "indexManager.ts"],
+      "dragDropFiles": ["src/tools/createIndex.ts", "src/engines/indexManager.ts"]
+    },
+    {
+      "id": 8,
+      "query": "embedding model initialization",
+      "type": "Implementation",
+      "description": "Tests specific implementation detail search",
+      "grepPatterns": ["embedding", "model", "pipeline", "transformers", "initialize"],
+      "relevantFiles": ["src/engines/embedding.ts"],
+      "expectedTopFiles": ["src/engines/embedding.ts", "embedding.ts"],
+      "dragDropFiles": ["src/engines/embedding.ts"]
+    },
+    {
+      "id": 9,
+      "query": "MCP tool handler",
+      "type": "API",
+      "description": "Tests API/interface search patterns",
+      "grepPatterns": ["tool", "handler", "MCP", "server", "CallToolRequest"],
+      "relevantFiles": ["src/server.ts", "src/tools/index.ts"],
+      "expectedTopFiles": ["src/server.ts", "server.ts", "tools/index.ts"],
+      "dragDropFiles": ["src/server.ts", "src/tools/index.ts"]
+    },
+    {
+      "id": 10,
+      "query": "performance optimization",
+      "type": "Conceptual-Broad",
+      "description": "Tests abstract concept search across codebase",
+      "grepPatterns": ["performance", "optim", "cache", "memory", "fast", "efficient"],
+      "relevantFiles": ["src/utils/memory.ts", "src/utils/limits.ts"],
+      "expectedTopFiles": ["src/utils/memory.ts", "memory.ts", "limits.ts"],
+      "dragDropFiles": ["src/utils/memory.ts", "src/utils/limits.ts", "src/engines/embedding.ts"]
+    }
+  ],
+  "metrics": {
+    "description": "Metrics to collect for each query",
+    "mcp": {
+      "toolCalls": "Number of MCP tool calls (always 1 for search_code)",
+      "resultsReturned": "Number of results after deduplication",
+      "rawResults": "Number of results before deduplication",
+      "totalChars": "Total characters in results",
+      "estimatedTokens": "Estimated tokens (chars / 4)",
+      "searchTimeMs": "Search latency in milliseconds",
+      "relevance": "HIGH, MEDIUM, or LOW based on expectedTopFiles match"
+    },
+    "grep": {
+      "toolCallsNeeded": "1 grep + N file reads",
+      "filesMatched": "Number of files matching grep patterns",
+      "totalMatches": "Total line matches across files",
+      "totalChars": "Total characters if all matched files read",
+      "estimatedTokens": "Estimated tokens for grep approach"
+    },
+    "dragDrop": {
+      "userEffort": "LOW, MEDIUM, HIGH, or VERY HIGH",
+      "filesNeeded": "Array of files user would need to manually select",
+      "totalChars": "Total characters in selected files",
+      "estimatedTokens": "Estimated tokens for drag-and-drop approach"
+    }
+  }
+}

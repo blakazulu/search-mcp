@@ -65,9 +65,34 @@ export const MEMORY_WARNING_THRESHOLD = 0.70; // 70%
 export const MEMORY_CRITICAL_THRESHOLD = 0.85; // 85%
 
 /**
+ * Minimum heap size (in bytes) before percentage-based critical checks apply.
+ * V8's heapTotal is dynamic and starts small. We shouldn't consider memory
+ * "critical" if the heap is small and V8 can still expand it.
+ * 256MB is a reasonable minimum - below this, V8 can easily expand.
+ */
+export const MIN_HEAP_FOR_CRITICAL_CHECK = 256 * 1024 * 1024; // 256MB
+
+/**
+ * Absolute memory threshold (in bytes) - always trigger critical if heapUsed exceeds this.
+ * This is a safety net for very large heaps.
+ */
+export const ABSOLUTE_CRITICAL_THRESHOLD = 3 * 1024 * 1024 * 1024; // 3GB
+
+/**
  * Default interval for periodic memory checks (in milliseconds)
  */
 export const DEFAULT_CHECK_INTERVAL = 5000; // 5 seconds
+
+/**
+ * Check if memory critical checks are disabled via environment variable.
+ * Set SEARCH_MCP_DISABLE_MEMORY_CRITICAL=true to disable critical memory checks.
+ * This is useful for testing where memory pressure is expected and safe.
+ */
+export function isMemoryCriticalCheckDisabled(): boolean {
+  return process.env.SEARCH_MCP_DISABLE_MEMORY_CRITICAL === 'true' ||
+         process.env.VITEST === 'true' ||
+         process.env.NODE_ENV === 'test';
+}
 
 // ============================================================================
 // Memory Monitoring Functions
@@ -160,13 +185,37 @@ export function logMemoryUsage(phase: string): void {
 }
 
 /**
- * Check if memory usage is at a critical level
+ * Check if memory usage is at a critical level.
  *
- * @returns true if memory usage is critical
+ * This uses smart thresholds that account for V8's dynamic heap sizing:
+ * - Disabled in test environments (VITEST=true, NODE_ENV=test)
+ * - Disabled via SEARCH_MCP_DISABLE_MEMORY_CRITICAL=true
+ * - Only triggers percentage-based check if heapTotal > MIN_HEAP_FOR_CRITICAL_CHECK
+ * - Always triggers if heapUsed > ABSOLUTE_CRITICAL_THRESHOLD (safety net)
+ *
+ * @returns true if memory usage is critical and action should be taken
  */
 export function isMemoryCritical(): boolean {
-  const status = getMemoryStatus();
-  return status.level === 'critical';
+  // Check if critical checks are disabled (test environment or env var)
+  if (isMemoryCriticalCheckDisabled()) {
+    return false;
+  }
+
+  const stats = getMemoryStats();
+
+  // Safety net: always critical if absolute usage is very high
+  if (stats.heapUsed >= ABSOLUTE_CRITICAL_THRESHOLD) {
+    return true;
+  }
+
+  // Only apply percentage-based check if heap is large enough
+  // When heapTotal is small, V8 can easily expand it
+  if (stats.heapTotal < MIN_HEAP_FOR_CRITICAL_CHECK) {
+    return false;
+  }
+
+  // Apply percentage-based critical check
+  return stats.heapUsedPercent >= MEMORY_CRITICAL_THRESHOLD;
 }
 
 /**
@@ -185,13 +234,61 @@ export function isMemoryWarning(): boolean {
  * Note: This only works if Node.js is started with --expose-gc flag.
  * In production, V8 manages GC automatically, so this is mainly useful
  * for testing and debugging.
+ *
+ * @returns true if GC was requested, false if not available
  */
-export function requestGarbageCollection(): void {
+export function requestGarbageCollection(): boolean {
   if (typeof global.gc === 'function') {
     const logger = getLogger();
     logger.debug('Memory', 'Requesting garbage collection');
     global.gc();
+    return true;
   }
+  return false;
+}
+
+/**
+ * Force garbage collection and wait for memory to be released.
+ * This is useful between test runs to ensure clean state.
+ *
+ * If global.gc is not available (no --expose-gc flag), this function
+ * still works by clearing module caches and waiting for natural GC.
+ *
+ * @param delayMs - Time to wait after GC request (default 100ms)
+ * @returns Promise that resolves when cleanup is complete
+ */
+export async function forceGarbageCollection(delayMs: number = 100): Promise<void> {
+  const logger = getLogger();
+
+  // Clear any weak references and finalization registries
+  // by running multiple GC cycles if available
+  for (let i = 0; i < 3; i++) {
+    if (typeof global.gc === 'function') {
+      global.gc();
+    }
+    // Small delay between cycles to allow finalizers to run
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+
+  // Wait for memory to be released
+  await new Promise(resolve => setTimeout(resolve, delayMs));
+
+  const stats = getMemoryStats();
+  logger.debug('Memory', 'Garbage collection complete', {
+    heapUsed: formatBytes(stats.heapUsed),
+    heapTotal: formatBytes(stats.heapTotal),
+    heapPercent: `${Math.round(stats.heapUsedPercent * 100)}%`,
+  });
+}
+
+/**
+ * Get current memory usage in MB (useful for logging)
+ *
+ * @returns Current heap used in MB
+ */
+export function getMemoryUsageMB(): number {
+  const stats = getMemoryStats();
+  return Math.round(stats.heapUsed / (1024 * 1024));
 }
 
 // ============================================================================

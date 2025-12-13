@@ -33,7 +33,7 @@ import {
   setupFixture,
   cleanupFixture,
   createIndexWithCombination,
-  deleteIndex,
+  deleteIndexWithRetry,
   loadQueries,
   getFixturePath,
   type FixtureContext,
@@ -105,24 +105,28 @@ function loadAllQueries(): CodeQuery[] {
   let codeQueries: CodeQuery[] = [];
   let comparisonQueries: CodeQuery[] = [];
 
+  // Use different query files for full codebase vs synthetic fixture
+  const codeQueryFileName = FULL_CODEBASE ? 'code-queries-fullcodebase.json' : 'code-queries.json';
+  const comparisonQueryFileName = FULL_CODEBASE ? 'comparison-queries-fullcodebase.json' : 'comparison-queries.json';
+
   try {
-    const codeQueryPath = path.join(queriesDir, 'code-queries.json');
+    const codeQueryPath = path.join(queriesDir, codeQueryFileName);
     if (fs.existsSync(codeQueryPath)) {
       const codeQueryFile: QueryFile = JSON.parse(fs.readFileSync(codeQueryPath, 'utf-8'));
       codeQueries = codeQueryFile.queries;
     }
   } catch (error) {
-    console.warn('Could not load code-queries.json');
+    console.warn(`Could not load ${codeQueryFileName}`);
   }
 
   try {
-    const comparisonQueryPath = path.join(queriesDir, 'comparison-queries.json');
+    const comparisonQueryPath = path.join(queriesDir, comparisonQueryFileName);
     if (fs.existsSync(comparisonQueryPath)) {
       const comparisonQueryFile: QueryFile = JSON.parse(fs.readFileSync(comparisonQueryPath, 'utf-8'));
       comparisonQueries = comparisonQueryFile.queries;
     }
   } catch (error) {
-    console.warn('Could not load comparison-queries.json');
+    console.warn(`Could not load ${comparisonQueryFileName}`);
   }
 
   // Combine queries, avoiding duplicates by id
@@ -296,7 +300,7 @@ describe('Config Matrix Tests', { timeout: TEST_TIMEOUT * 30 }, () => {
       projectPath = getProjectPath();
 
       // Clean up any existing index first
-      await deleteIndex(projectPath);
+      await deleteIndexWithRetry(projectPath);
 
       // Create index with this config
       console.log(`\n  Creating index for config: ${config.name}`);
@@ -329,7 +333,15 @@ describe('Config Matrix Tests', { timeout: TEST_TIMEOUT * 30 }, () => {
       }
 
       // Clean up index after tests
-      await deleteIndex(projectPath);
+      await deleteIndexWithRetry(projectPath);
+
+      // Force garbage collection between configs to release memory
+      // This prevents memory pressure from accumulating across config tests
+      if (typeof global.gc === 'function') {
+        global.gc();
+        await new Promise(resolve => setTimeout(resolve, 100));
+        global.gc();
+      }
     });
 
     it('should index files successfully', () => {

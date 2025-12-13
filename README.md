@@ -1,8 +1,9 @@
 # Search MCP 🔍
 
-**Make your AI 20x smarter about your code.**
+**Make your AI 40x smarter about your code.**
 
 ```bash
+npm i @liraz-sbz/search-mcp
 npx @liraz-sbz/search-mcp
 ```
 
@@ -148,13 +149,13 @@ See more [examples and use cases](docs/examples.md).
 
 | Metric | Value |
 |--------|-------|
-| **Efficiency vs Grep** | 20.4x faster |
-| **Search speed** | 14-17ms |
+| **Efficiency vs Grep** | 40-43x fewer tokens |
+| **Search speed** | 14-315ms (config dependent) |
 | **Tokens per query** | ~7,800 |
 
 Semantic search returns focused code chunks instead of entire files. Your AI stays under context limits even on large codebases.
 
-[Full benchmark details →](docs/search-comparison-test.md)
+[Full benchmark details →](docs/search-comparison-test.md) | [Full codebase analysis →](tests/reports/full-codebase-analysis-2025-12-13.md)
 
 ---
 

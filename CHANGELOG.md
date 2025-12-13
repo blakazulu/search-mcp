@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.5] - 2025-12-13
+
+### Changed
+- **Documentation Updates** - Updated README and benchmark docs with full codebase test results
+  - Updated headline efficiency claim from "20x" to "40x" based on full codebase benchmarks
+  - Updated performance table: "40-43x fewer tokens" (was "20.4x faster")
+  - Added install command (`npm i`) alongside run command in README
+  - Updated search-comparison-test.md with full codebase efficiency numbers
+  - Added link to full codebase analysis report
+
 ## [1.3.4] - 2025-12-13
 
 ### Changed

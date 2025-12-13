@@ -5,6 +5,9 @@ This document presents **actual benchmark results** comparing three approaches:
 2. **Manual Grep+Read** - AI searches with Grep, then reads files
 3. **Drag-and-Drop** - User manually attaches files to AI chat
 
+> **Latest Results (Full Codebase)**: MCP achieves **40-43x token efficiency** vs grep on a 249-file codebase.
+> See the [full codebase analysis report](../tests/reports/full-codebase-analysis-2025-12-13.md) for comprehensive benchmarks.
+
 > **Note**: These results are from automated benchmarks. Run them yourself with:
 > ```bash
 > npm run test:configs           # Config matrix tests (synthetic fixture)
@@ -293,10 +296,12 @@ The following optimizations are now active in MCP search:
 
 **MCP semantic search is the clear winner for exploratory code searches:**
 
-| Comparison | Efficiency Gain |
-|------------|-----------------|
-| MCP vs Manual Grep+Read | **~20.4x** more efficient |
-| MCP vs Optimal Drag-and-Drop | **~1.7x** more efficient |
+| Comparison | Efficiency Gain (Synthetic) | Efficiency Gain (Full Codebase) |
+|------------|-----------------------------|---------------------------------|
+| MCP vs Manual Grep+Read | ~20.4x more efficient | **40-43x more efficient** |
+| MCP vs Optimal Drag-and-Drop | ~1.7x more efficient | ~1.2-1.3x more efficient |
+
+> **Note:** Full codebase tests (249 files) show higher efficiency gains than synthetic fixtures (25 files) because larger codebases have more irrelevant content that grep matches.
 
 ### Why MCP Wins
 
@@ -314,7 +319,7 @@ The following optimizations are now active in MCP search:
 
 ### Bottom Line
 
-For AI assistants working with code, MCP enables asking questions about large codebases that would otherwise be impractical. The ~20.4x efficiency gain over grep means the difference between "context limit exceeded" and "here's your answer in 20ms."
+For AI assistants working with code, MCP enables asking questions about large codebases that would otherwise be impractical. The **40-43x efficiency gain** over grep means the difference between "context limit exceeded" and "here's your answer in milliseconds."
 
 ---
 
@@ -334,12 +339,12 @@ We also tested 21 different configuration combinations to find optimal settings:
 
 | Alpha | Description | MCP vs Grep | Best For |
 |-------|-------------|-------------|----------|
-| 0.0 | Pure FTS/keyword | 1.9x | Exact matches |
-| 0.5 | Balanced hybrid | **2.5x** | General queries |
-| 0.7 | Default (semantic-heavy) | 2.0x | Conceptual queries |
-| 1.0 | Pure semantic | 2.0x | Abstract concepts |
+| 0.0 | Pure FTS/keyword | 37.9x | Exact matches |
+| 0.5 | **Default (balanced hybrid)** | **43x** | General queries |
+| 0.7 | Semantic-heavy | 40.9x | Conceptual queries |
+| 1.0 | Pure semantic | 40.9x | Abstract concepts |
 
-**Recommendation:** `alpha=0.5` provides the best balance of efficiency and relevance.
+**Default:** `alpha=0.5` provides the best balance of efficiency and relevance (as of v1.3.4).
 
 ### Deduplication Effectiveness
 

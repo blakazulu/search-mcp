@@ -49,8 +49,10 @@ import { loadMetadata } from './storage/metadata.js';
 import {
   createIndexTool,
   createIndex,
+  formatProgressMessage,
   type CreateIndexContext,
 } from './tools/createIndex.js';
+import type { IndexProgress } from './engines/indexManager.js';
 import {
   searchCodeTool,
   searchCode,
@@ -505,13 +507,35 @@ async function executeTool(
           );
         }
 
+        // Create progress callback for logging and stderr output
+        let lastProgressMessage = '';
+        const onProgress = (progress: IndexProgress) => {
+          const message = formatProgressMessage(progress);
+          // Only log/output if message changed (avoid spam)
+          if (message !== lastProgressMessage) {
+            lastProgressMessage = message;
+            // Log to file for debugging
+            logger.info('indexing', message, {
+              phase: progress.phase,
+              current: progress.current,
+              total: progress.total,
+              file: progress.currentFile,
+            });
+            // Write to stderr for CLI visibility (MCP uses stdout for JSON-RPC)
+            process.stderr.write(`\r${message}`.padEnd(80) + '\r');
+          }
+        };
+
         const context: CreateIndexContext = {
           projectPath,
           orchestrator: orchestrator || undefined,
           config: orchestrator ? config : undefined,
           confirmed: true, // MCP confirmation already handled at protocol level
+          onProgress,
         };
         result = await createIndex({}, context);
+        // Clear progress line
+        process.stderr.write('\r'.padEnd(80) + '\r');
 
         // If orchestrator was created, store it and the config in context
         if (orchestrator && !serverContext.orchestrator) {
@@ -582,11 +606,30 @@ async function executeTool(
       case 'reindex_project': {
         // MCP handles confirmation via requiresConfirmation flag on the tool definition
         // When we reach this point, the user has already confirmed (if required)
+
+        // Create progress callback for logging and stderr output
+        let lastReindexProgressMessage = '';
+        const onReindexProgress = (progress: IndexProgress) => {
+          const message = formatProgressMessage(progress);
+          if (message !== lastReindexProgressMessage) {
+            lastReindexProgressMessage = message;
+            logger.info('reindexing', message, {
+              phase: progress.phase,
+              current: progress.current,
+              total: progress.total,
+              file: progress.currentFile,
+            });
+            process.stderr.write(`\r${message}`.padEnd(80) + '\r');
+          }
+        };
+
         const context: ReindexProjectContext = {
           projectPath,
           confirmed: true, // MCP confirmation already handled at protocol level
+          onProgress: onReindexProgress,
         };
         result = await reindexProject({}, context);
+        process.stderr.write('\r'.padEnd(80) + '\r');
         break;
       }
 

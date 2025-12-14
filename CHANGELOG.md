@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Full stack traces logged for all errors
   - `get_index_status` tool now returns `logPath` field
   - Support for `DEBUG=1` or `SEARCH_MCP_DEBUG=1` environment variables for verbose logging
+- **Progress Reporting** - Real-time indexing progress visibility
+  - Progress logged to file during `create_index` and `reindex_project` operations
+  - Progress written to stderr (visible when running MCP server directly)
+  - Shows phase (scanning/chunking/embedding/storing), file count, and current file
 
 ### Changed
 - Updated README troubleshooting section with new CLI options and debug mode info

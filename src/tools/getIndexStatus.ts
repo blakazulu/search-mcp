@@ -110,6 +110,8 @@ export interface GetIndexStatusOutput {
   indexPath?: string;
   /** Absolute path to the config file */
   configPath?: string;
+  /** Absolute path to the log file (for debugging) */
+  logPath?: string;
   /** Total number of files indexed */
   totalFiles?: number;
   /** Total number of chunks in the index */
@@ -336,8 +338,9 @@ export async function collectStatus(
     }
   }
 
-  // Get config path
+  // Get config path and log path
   const configPath = getConfigPath(indexPath);
+  const logPath = `${indexPath}/logs/search-mcp.log`;
 
   // SMCP-061: Build hybrid search status
   let hybridSearch: HybridSearchStatus | undefined;
@@ -401,6 +404,7 @@ export async function collectStatus(
     projectPath: metadata.projectPath,
     indexPath,
     configPath,
+    logPath,
     totalFiles: metadata.stats.totalFiles,
     totalChunks: metadata.stats.totalChunks,
     lastUpdated,

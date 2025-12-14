@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.9] - 2025-12-14
+
+### Added
+- **Debugging Support** - Better logging and error messages for troubleshooting
+  - New `--logs` CLI command to show log file locations for each indexed project
+  - Error messages now include log file path for easy debugging
+  - Full stack traces logged for all errors
+  - `get_index_status` tool now returns `logPath` field
+  - Support for `DEBUG=1` or `SEARCH_MCP_DEBUG=1` environment variables for verbose logging
+
+### Changed
+- Updated README troubleshooting section with new CLI options and debug mode info
+
 ## [1.3.8] - 2025-12-14
 
 ### Changed

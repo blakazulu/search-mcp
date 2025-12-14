@@ -327,9 +327,12 @@ npm uninstall -g @liraz-sbz/search-mcp
 **CLI options:**
 ```bash
 npx --yes @liraz-sbz/search-mcp@latest --setup    # Configure MCP clients
+npx --yes @liraz-sbz/search-mcp@latest --logs     # Show log file locations
 npx --yes @liraz-sbz/search-mcp@latest --help     # Show help
 npx --yes @liraz-sbz/search-mcp@latest --version  # Show version
 ```
+
+**Debug mode:** Set `DEBUG=1` or `SEARCH_MCP_DEBUG=1` environment variable for verbose logging.
 
 For all error codes and solutions, see the [Troubleshooting Guide](docs/troubleshooting.md).
 

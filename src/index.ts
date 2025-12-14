@@ -18,7 +18,7 @@
  */
 
 import { startServer } from './server.js';
-import { runSetup, printHelp, printVersion } from './cli/setup.js';
+import { runSetup, printHelp, printVersion, showLogs } from './cli/setup.js';
 
 // Parse CLI arguments
 const args = process.argv.slice(2);
@@ -37,6 +37,11 @@ async function main() {
 
   if (args.includes('--setup') || args.includes('setup')) {
     await runSetup();
+    process.exit(0);
+  }
+
+  if (args.includes('--logs') || args.includes('logs')) {
+    showLogs();
     process.exit(0);
   }
 

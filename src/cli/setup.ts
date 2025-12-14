@@ -372,6 +372,78 @@ export function printVersion(): void {
 }
 
 /**
+ * Show log file locations
+ */
+export function showLogs(): void {
+  const home = os.homedir();
+  const indexesDir = path.join(home, '.mcp', 'search', 'indexes');
+
+  console.log('');
+  print('Search MCP Log Files', 'cyan');
+  print('====================', 'cyan');
+  console.log('');
+
+  // Check if indexes directory exists
+  if (!fs.existsSync(indexesDir)) {
+    print('No indexes found. Create an index first to generate logs.', 'yellow');
+    console.log('');
+    return;
+  }
+
+  // List all index directories
+  try {
+    const entries = fs.readdirSync(indexesDir, { withFileTypes: true });
+    const indexDirs = entries.filter(e => e.isDirectory());
+
+    if (indexDirs.length === 0) {
+      print('No indexes found. Create an index first to generate logs.', 'yellow');
+      console.log('');
+      return;
+    }
+
+    print(`Found ${indexDirs.length} index(es):`, 'green');
+    console.log('');
+
+    for (const dir of indexDirs) {
+      const indexPath = path.join(indexesDir, dir.name);
+      const metadataPath = path.join(indexPath, 'metadata.json');
+      const logPath = path.join(indexPath, 'logs', 'search-mcp.log');
+
+      // Try to read project path from metadata
+      let projectPath = 'Unknown project';
+      try {
+        if (fs.existsSync(metadataPath)) {
+          const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf-8'));
+          projectPath = metadata.projectPath || projectPath;
+        }
+      } catch {
+        // Ignore metadata read errors
+      }
+
+      const logExists = fs.existsSync(logPath);
+
+      console.log(`  Project: ${projectPath}`);
+      console.log(`  Index:   ${dir.name}`);
+      if (logExists) {
+        const stats = fs.statSync(logPath);
+        const sizeKB = Math.round(stats.size / 1024);
+        print(`  Log:     ${logPath} (${sizeKB} KB)`, 'green');
+      } else {
+        print(`  Log:     (no log file yet)`, 'dim');
+      }
+      console.log('');
+    }
+
+    print('To share logs for debugging:', 'cyan');
+    console.log('  1. Find the log file for your project above');
+    console.log('  2. Copy the contents and share with the developer');
+    console.log('');
+  } catch (error) {
+    print(`Error reading indexes: ${error}`, 'red');
+  }
+}
+
+/**
  * Print help
  */
 export function printHelp(): void {
@@ -383,6 +455,7 @@ Usage:
 
 Options:
   --setup     Configure MCP clients to use search-mcp
+  --logs      Show log file locations for debugging
   --version   Show version number
   --help      Show this help message
 

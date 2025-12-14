@@ -278,6 +278,24 @@ class FileLogger implements Logger {
 let loggerInstance: FileLogger | null = null;
 
 /**
+ * Get log level from environment variables
+ * Supports DEBUG=1, DEBUG=true, SEARCH_MCP_DEBUG=1, or LOG_LEVEL=debug
+ */
+function getLogLevelFromEnv(): LogLevel {
+  const debug = process.env.DEBUG || process.env.SEARCH_MCP_DEBUG;
+  if (debug === '1' || debug === 'true' || debug?.toLowerCase() === 'debug') {
+    return LogLevel.DEBUG;
+  }
+
+  const logLevel = process.env.LOG_LEVEL || process.env.SEARCH_MCP_LOG_LEVEL;
+  if (logLevel) {
+    return parseLogLevel(logLevel);
+  }
+
+  return LogLevel.INFO;
+}
+
+/**
  * Create a new logger instance with the specified index path
  * @param indexPath Path to the index directory (logs stored in <indexPath>/logs/)
  * @param config Additional configuration options
@@ -293,11 +311,18 @@ export function createLogger(
 
 /**
  * Get the existing logger instance, or create a console-only logger if none exists
+ * Respects DEBUG, SEARCH_MCP_DEBUG, LOG_LEVEL, and SEARCH_MCP_LOG_LEVEL env vars
  */
 export function getLogger(): Logger {
   if (!loggerInstance) {
-    // Create a console-only logger as fallback
-    loggerInstance = new FileLogger();
+    // Create a console-only logger as fallback with env-based log level
+    const level = getLogLevelFromEnv();
+    loggerInstance = new FileLogger({ level });
+
+    // Log at debug level if debug mode is enabled
+    if (level === LogLevel.DEBUG) {
+      loggerInstance.debug('logger', 'Debug logging enabled via environment variable');
+    }
   }
   return loggerInstance;
 }

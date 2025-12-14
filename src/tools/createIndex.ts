@@ -343,19 +343,39 @@ export async function createIndex(
 
     return output;
   } catch (error) {
-    // If it's already an MCPError, re-throw
+    // Get log path for user message
+    const indexPath = getIndexPath(projectPath);
+    const logPath = `${indexPath}/logs/search-mcp.log`;
+
+    // If it's already an MCPError, log and re-throw with log path hint
     if (isMCPError(error)) {
-      throw error;
+      logger.error('createIndex', 'Index creation failed', {
+        error: error.message,
+        code: error.code,
+        stack: error.stack,
+      });
+      // Create new error with enhanced message including log path
+      throw new MCPError({
+        code: error.code,
+        userMessage: `${error.userMessage}\n\nFor debugging, check logs at: ${logPath}`,
+        developerMessage: error.developerMessage,
+        cause: error.cause,
+      });
     }
 
-    // Wrap unexpected errors
+    // Wrap unexpected errors with full stack trace
     const message = error instanceof Error ? error.message : String(error);
-    logger.error('createIndex', 'Unexpected error during index creation', { error: message });
+    const stack = error instanceof Error ? error.stack : undefined;
+    logger.error('createIndex', 'Unexpected error during index creation', {
+      error: message,
+      stack,
+      projectPath,
+    });
 
     throw new MCPError({
       code: ErrorCode.INDEX_CORRUPT,
-      userMessage: 'Failed to create the search index. Please try again.',
-      developerMessage: `Unexpected error during index creation: ${message}`,
+      userMessage: `Failed to create the search index. Please try again.\n\nFor debugging, check logs at: ${logPath}`,
+      developerMessage: `Unexpected error during index creation: ${message}\nStack: ${stack}`,
       cause: error instanceof Error ? error : undefined,
     });
   } finally {

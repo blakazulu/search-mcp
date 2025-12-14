@@ -136,6 +136,11 @@ export const HARDCODED_DENY_PATTERNS = {
     'vendor/**',
     '.venv/**',
     'venv/**',
+    '.yarn/**',
+    '.pnpm-store/**',
+    'Pods/**',
+    '.bundle/**',
+    'deps/**',
   ],
   /** Version control system directories */
   versionControl: [
@@ -143,15 +148,31 @@ export const HARDCODED_DENY_PATTERNS = {
     '.hg/**',
     '.svn/**',
   ],
-  /** Build output directories */
+  /** Build output directories and framework caches */
   buildArtifacts: [
     'dist/**',
     'build/**',
     'out/**',
     'target/**',
+    'bin/**',
+    'obj/**',
     '__pycache__/**',
+    '_build/**',
+    '.build/**',
+    '.output/**',
     '.next/**',
     '.nuxt/**',
+    '.angular/**',
+    '.svelte-kit/**',
+    '.astro/**',
+    '.turbo/**',
+    '.parcel-cache/**',
+    '.cache/**',
+    '.gradle/**',
+    '.mvn/**',
+    '.expo/**',
+    '.docusaurus/**',
+    '.storybook-static/**',
   ],
   /** Sensitive files that should never be indexed */
   secrets: [
@@ -176,15 +197,34 @@ export const HARDCODED_DENY_PATTERNS = {
   ideConfig: [
     '.idea/**',
     '.vscode/**',
+    '.fleet/**',
     '.DS_Store',
     '*.swp',
     '*.swo',
+    '*.sublime-workspace',
   ],
   /** Test coverage and cache directories */
   testing: [
     'coverage/**',
     '.nyc_output/**',
     '.pytest_cache/**',
+    '.hypothesis/**',
+    '.tox/**',
+    'htmlcov/**',
+  ],
+  /** Linter and type checker caches */
+  linterCaches: [
+    '.mypy_cache/**',
+    '.ruff_cache/**',
+    '.eslintcache',
+    '.stylelintcache',
+  ],
+  /** Cloud and deployment caches */
+  cloudDeploy: [
+    '.terraform/**',
+    '.serverless/**',
+    '.vercel/**',
+    '.netlify/**',
   ],
 } as const;
 
@@ -376,21 +416,28 @@ async function loadNestedGitignores(
 
       // Skip directories that are in the hardcoded deny list
       const dirName = entry.name;
-      if (
-        dirName === 'node_modules' ||
-        dirName === '.git' ||
-        dirName === 'dist' ||
-        dirName === 'build' ||
-        dirName === '.venv' ||
-        dirName === 'venv' ||
-        dirName === 'vendor' ||
-        dirName === '.next' ||
-        dirName === '.nuxt' ||
-        dirName === '__pycache__' ||
-        dirName === 'coverage' ||
-        dirName === '.idea' ||
-        dirName === '.vscode'
-      ) {
+      const skipDirs = new Set([
+        // Dependencies
+        'node_modules', 'jspm_packages', 'bower_components', 'vendor',
+        '.venv', 'venv', '.yarn', '.pnpm-store', 'Pods', '.bundle', 'deps',
+        // Version control
+        '.git', '.hg', '.svn',
+        // Build artifacts
+        'dist', 'build', 'out', 'target', 'bin', 'obj',
+        '__pycache__', '_build', '.build', '.output',
+        '.next', '.nuxt', '.angular', '.svelte-kit', '.astro',
+        '.turbo', '.parcel-cache', '.cache',
+        '.gradle', '.mvn', '.expo', '.docusaurus', '.storybook-static',
+        // IDE
+        '.idea', '.vscode', '.fleet',
+        // Testing
+        'coverage', '.nyc_output', '.pytest_cache', '.hypothesis', '.tox', 'htmlcov',
+        // Linter caches
+        '.mypy_cache', '.ruff_cache',
+        // Cloud/deploy
+        '.terraform', '.serverless', '.vercel', '.netlify',
+      ]);
+      if (skipDirs.has(dirName)) {
         continue;
       }
 

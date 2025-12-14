@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.12] - 2025-12-14
+
+### Fixed
+- **Framework Cache Crashes** - Fixed indexing failures on projects with large framework caches
+  - Root cause: `.angular/cache` and similar directories contain large binary files causing crashes
+  - Added comprehensive hardcoded deny patterns for 30+ framework/tool caches:
+    - **Package managers**: `.yarn/**`, `.pnpm-store/**`, `Pods/**`, `.bundle/**`, `deps/**`
+    - **Build artifacts**: `bin/**`, `obj/**`, `_build/**`, `.build/**`, `.output/**`, `.svelte-kit/**`, `.astro/**`, `.gradle/**`, `.mvn/**`, `.expo/**`, `.docusaurus/**`, `.storybook-static/**`
+    - **Linter caches**: `.mypy_cache/**`, `.ruff_cache/**`, `.eslintcache`, `.stylelintcache`
+    - **Testing**: `.hypothesis/**`, `.tox/**`, `htmlcov/**`
+    - **Cloud/deploy**: `.terraform/**`, `.serverless/**`, `.vercel/**`, `.netlify/**`
+    - **IDE**: `.fleet/**`, `*.sublime-workspace`
+  - This fixes "MCP connection closed" errors on Angular, .NET, Elixir, Swift, and other projects
+
 ## [1.3.11] - 2025-12-14
 
 ### Fixed

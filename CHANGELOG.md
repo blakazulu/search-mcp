@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.6] - 2025-12-14
+
+### Added
+- **Setup Wizard** - New `--setup` command to easily configure MCP clients
+  - Auto-detects installed MCP clients (Claude Desktop, Claude Code, Cursor, Windsurf)
+  - Interactive menu to select which clients to configure
+  - Creates or updates `.mcp.json` configuration files automatically
+  - Supports Claude Code CLI integration when available
+  - Usage: `npx @liraz-sbz/search-mcp --setup`
+
+- **Post-install Instructions** - Helpful setup message after `npm install`
+  - Shows quick setup options immediately after installation
+  - Guides users to configure their MCP clients
+  - No more confusion about manual `.mcp.json` creation
+
+- **CLI Help & Version** - Standard CLI flags
+  - `--help` / `-h` - Show usage information
+  - `--version` / `-v` - Show installed version
+
+### Changed
+- Entry point now handles CLI arguments before starting the MCP server
+- Improved first-time user experience with clear setup paths
+
 ## [1.3.5] - 2025-12-13
 
 ### Changed

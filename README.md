@@ -3,8 +3,7 @@
 **Make your AI 40x smarter about your code.**
 
 ```bash
-npm i @liraz-sbz/search-mcp
-npx @liraz-sbz/search-mcp
+npx @liraz-sbz/search-mcp --setup
 ```
 
 Your AI assistant searches your entire codebase semantically. No API keys. No cloud. 100% local.
@@ -83,7 +82,23 @@ AI: "Based on src/auth/login.ts, here's how login works..."
 
 **Prerequisites:** [Node.js 18+](https://nodejs.org/)
 
-### 1. Add to your AI assistant config
+### Option 1: Setup Wizard (Recommended)
+
+```bash
+npx @liraz-sbz/search-mcp --setup
+```
+
+This auto-detects your installed AI assistants and configures them for you.
+
+### Option 2: Manual Configuration
+
+<details>
+<summary><b>Claude Code</b></summary>
+
+```bash
+claude mcp add search -- npx @liraz-sbz/search-mcp
+```
+</details>
 
 <details>
 <summary><b>Claude Desktop</b></summary>
@@ -97,18 +112,10 @@ Edit config file:
   "mcpServers": {
     "search": {
       "command": "npx",
-      "args": ["@liraz-sbz/search-mcp"]
+      "args": ["-y", "@liraz-sbz/search-mcp"]
     }
   }
 }
-```
-</details>
-
-<details>
-<summary><b>Claude Code</b></summary>
-
-```bash
-claude mcp add search -- npx @liraz-sbz/search-mcp
 ```
 </details>
 
@@ -118,13 +125,10 @@ claude mcp add search -- npx @liraz-sbz/search-mcp
 See the [Getting Started Guide](docs/getting-started.md) for your client.
 </details>
 
-### 2. Restart your AI assistant
+### After Configuration
 
-### 3. Ask about your code
-
-```
-"How does login work?"
-```
+1. **Restart your AI assistant**
+2. **Ask about your code:** `"How does login work?"`
 
 On first use, confirm indexing when prompted. That's it!
 
@@ -314,8 +318,16 @@ npm uninstall -g @liraz-sbz/search-mcp
 | Issue | Solution |
 |-------|----------|
 | "Index not found" | Say "Index this project" to create the index |
+| MCP connection issues | Run `npx @liraz-sbz/search-mcp --setup` to reconfigure |
 | Search results seem wrong | Run `reindex_project` to rebuild |
 | Changes not detected | Run `reindex_file` for specific file |
+
+**CLI options:**
+```bash
+npx @liraz-sbz/search-mcp --setup    # Configure MCP clients
+npx @liraz-sbz/search-mcp --help     # Show help
+npx @liraz-sbz/search-mcp --version  # Show version
+```
 
 For all error codes and solutions, see the [Troubleshooting Guide](docs/troubleshooting.md).
 

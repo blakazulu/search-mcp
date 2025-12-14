@@ -1,14 +1,14 @@
 {
-  "timestamp": "2025-12-14T07:04:10.100Z",
+  "timestamp": "2025-12-14T08:29:05.107Z",
   "results": [
     {
       "queryId": 1,
       "query": "how does file watching work",
       "type": "Conceptual",
       "mcp": {
-        "searchTimeMs": 776,
+        "searchTimeMs": 933,
         "resultCount": 9,
-        "totalChars": 34641,
+        "totalChars": 34640,
         "estimatedTokens": 8660
       },
       "grep": {
@@ -28,16 +28,16 @@
       "query": "error handling patterns",
       "type": "Pattern",
       "mcp": {
-        "searchTimeMs": 278,
+        "searchTimeMs": 428,
         "resultCount": 7,
         "totalChars": 31778,
         "estimatedTokens": 7945
       },
       "grep": {
-        "filesMatched": 50,
-        "totalMatches": 2375,
-        "totalChars": 812342,
-        "estimatedTokens": 203086
+        "filesMatched": 51,
+        "totalMatches": 2391,
+        "totalChars": 824406,
+        "estimatedTokens": 206102
       },
       "dragDrop": {
         "filesCount": 1,
@@ -50,16 +50,16 @@
       "query": "LanceDB vector search",
       "type": "Technical",
       "mcp": {
-        "searchTimeMs": 257,
+        "searchTimeMs": 384,
         "resultCount": 8,
         "totalChars": 37676,
         "estimatedTokens": 9419
       },
       "grep": {
-        "filesMatched": 52,
-        "totalMatches": 1818,
-        "totalChars": 764302,
-        "estimatedTokens": 191076
+        "filesMatched": 53,
+        "totalMatches": 1840,
+        "totalChars": 776366,
+        "estimatedTokens": 194092
       },
       "dragDrop": {
         "filesCount": 4,
@@ -72,7 +72,7 @@
       "query": "security vulnerabilities",
       "type": "Broad",
       "mcp": {
-        "searchTimeMs": 256,
+        "searchTimeMs": 404,
         "resultCount": 6,
         "totalChars": 25207,
         "estimatedTokens": 6302
@@ -94,16 +94,16 @@
       "query": "configuration options",
       "type": "Documentation",
       "mcp": {
-        "searchTimeMs": 249,
+        "searchTimeMs": 350,
         "resultCount": 8,
         "totalChars": 30788,
         "estimatedTokens": 7697
       },
       "grep": {
-        "filesMatched": 48,
-        "totalMatches": 995,
-        "totalChars": 748057,
-        "estimatedTokens": 187014
+        "filesMatched": 50,
+        "totalMatches": 1097,
+        "totalChars": 760769,
+        "estimatedTokens": 190192
       },
       "dragDrop": {
         "filesCount": 2,
@@ -114,9 +114,9 @@
   ],
   "totals": {
     "mcp": 40023,
-    "grep": 845361,
+    "grep": 854571,
     "dragDrop": 71648,
-    "mcpVsGrep": "21.1",
+    "mcpVsGrep": "21.4",
     "mcpVsDragDrop": "1.8"
   }
 }

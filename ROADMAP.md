@@ -4,7 +4,7 @@ This document outlines the planned features and improvements for Search MCP.
 
 ---
 
-## Current Version: 1.2.0
+## Current Version: 1.3.5
 
 ### What's Working
 - Semantic search for code and documentation
@@ -30,7 +30,44 @@ This document outlines the planned features and improvements for Search MCP.
 
 ---
 
-## Medium Term (v1.3.x)
+## Backlog - Critical/High Priority
+
+Security and stability issues that should be addressed.
+
+| Issue | Location | Description | Severity |
+|-------|----------|-------------|----------|
+| IndexingLock race condition | `asyncMutex.ts:493-520` | Race between `isLocked` check and `acquire()` can cause deadlocks | Critical |
+| TOCTOU symlink vulnerability | `secureFileAccess.ts:70-78` | Symlinks could be swapped between check and read | High |
+| Unbounded reconciliation queue | `fileWatcher.ts:213` | Memory can grow unbounded during large git operations | High |
+
+---
+
+## Backlog - Performance
+
+Performance optimizations that would improve search speed and resource usage.
+
+| Improvement | Description | Impact |
+|-------------|-------------|--------|
+| FTS engine memory caching | Keep deserialized FTS in memory instead of reading from disk every search | ~10x faster searches |
+| Search result caching | LRU cache for repeated queries with smart invalidation | ~10x for repeated queries |
+| Adaptive batch sizing | Tune embedding batch size based on content length and memory | Better memory efficiency |
+
+---
+
+## Backlog - Search Quality
+
+Improvements to search relevance and result quality.
+
+| Improvement | Description |
+|-------------|-------------|
+| Adaptive RRF constant | Tune k parameter based on corpus size (currently hardcoded k=60) |
+| Content-based deduplication | Deduplicate results with identical content across different files |
+| Query expansion | Rewrite queries to match synonyms (e.g., "hash" → "SHA256") |
+| File importance signals | Rank by recency, import frequency, file connectivity |
+
+---
+
+## Medium Term (v1.4.x)
 
 ### New Features
 
@@ -46,10 +83,11 @@ This document outlines the planned features and improvements for Search MCP.
 | Better error messages | More actionable error messages with suggestions |
 | Search result ranking | Improve relevance scoring |
 | Incremental reindexing | Only reindex changed parts of large files |
+| Multi-language code chunking | Extend code-aware chunking to Java, Go, Rust, C#, SQL, YAML |
 
 ---
 
-## Long Term (v1.3.x and beyond)
+## Long Term (v2.x and beyond)
 
 ### Advanced Features
 
@@ -58,6 +96,7 @@ This document outlines the planned features and improvements for Search MCP.
 | Multi-Root Support | Index multiple folders as one project | Medium |
 | Query Expansion | Rewrite queries for better retrieval | Medium |
 | Custom Models | Allow users to specify embedding model | Medium |
+| AST Chunking | Language-aware splitting via tree-sitter | High |
 
 ### Documentation Support
 
@@ -86,6 +125,13 @@ These are ideas we're evaluating but haven't committed to:
 - **Custom deny lists** - User-configurable sensitive file patterns
 - **Embedding caching** - Cache embeddings to speed up reindexing
 - **Incremental backups** - Automatic index backups
+- **Vector quantization** - int8 compression for 4x storage reduction
+- **Inode tracking** - Handle hard links and detect file renames
+- **Query analytics** - Optional logging to understand search patterns
+- **Reconciliation checkpoints** - Resume interrupted index rebuilds
+- **Incremental LanceDB updates** - Avoid full rebuild for single-file edits
+- **Config schema versioning** - Handle config format changes across versions
+- **LanceDB version pinning** - Test and pin compatible LanceDB version
 
 ---
 

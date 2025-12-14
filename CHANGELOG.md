@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.18] - 2025-12-14
+
+### Added
+- **Adaptive Streaming Mode for High Memory** - When memory usage exceeds 80%, indexing automatically switches to streaming mode
+  - Processes only 3 files at a time (instead of 50) to minimize memory accumulation
+  - Writes to database immediately after each small batch
+  - Runs garbage collection between batches
+  - Normal batch processing when memory is below 80% (fast mode)
+  - Applied to both code and docs indexing
+
 ## [1.3.16] - 2025-12-14
 
 ### Fixed

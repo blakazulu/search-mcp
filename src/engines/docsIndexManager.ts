@@ -46,6 +46,7 @@ import {
 } from '../utils/paths.js';
 import { hashFile } from '../utils/hash.js';
 import { getLogger } from '../utils/logger.js';
+import { logMemoryUsage, isMemoryHigh, requestGarbageCollection } from '../utils/memory.js';
 import { MCPError, ErrorCode, isMCPError } from '../errors/index.js';
 
 // ============================================================================
@@ -57,6 +58,12 @@ import { MCPError, ErrorCode, isMCPError } from '../errors/index.js';
  * 50 files per batch balances memory usage and progress granularity
  */
 export const DOC_FILE_BATCH_SIZE = 50;
+
+/**
+ * Streaming batch size for high memory situations
+ * When memory is above 80%, we use this smaller batch size
+ */
+export const DOC_STREAMING_BATCH_SIZE = 3;
 
 // ============================================================================
 // Progress Reporting Types
@@ -480,13 +487,30 @@ export async function createDocsIndex(
     let totalChunks = 0;
     const allHashes = new Map<string, string>();
 
-    for (let i = 0; i < files.length; i += DOC_FILE_BATCH_SIZE) {
-      const batch = files.slice(i, i + DOC_FILE_BATCH_SIZE);
-      const batchNum = Math.floor(i / DOC_FILE_BATCH_SIZE) + 1;
-      const totalBatches = Math.ceil(files.length / DOC_FILE_BATCH_SIZE);
+    // Log memory before starting indexing
+    logMemoryUsage('Starting docs index');
+
+    // Detect if we should use streaming mode (memory > 80%)
+    const useStreamingMode = isMemoryHigh();
+    if (useStreamingMode) {
+      logger.info('DocsIndexManager', 'Using streaming mode due to high memory pressure', {
+        batchSize: DOC_STREAMING_BATCH_SIZE,
+      });
+    }
+
+    const effectiveBatchSize = useStreamingMode ? DOC_STREAMING_BATCH_SIZE : DOC_FILE_BATCH_SIZE;
+
+    for (let i = 0; i < files.length; i += effectiveBatchSize) {
+      const batch = files.slice(i, i + effectiveBatchSize);
+      const batchNum = Math.floor(i / effectiveBatchSize) + 1;
+      const totalBatches = Math.ceil(files.length / effectiveBatchSize);
+
+      // Request GC before each batch to free memory from previous operations
+      requestGarbageCollection();
 
       logger.debug('DocsIndexManager', `Processing batch ${batchNum}/${totalBatches}`, {
         batchSize: batch.length,
+        streamingMode: useStreamingMode,
       });
 
       const {

@@ -60,6 +60,12 @@ export type MemoryWarningCallback = (status: MemoryStatus) => void;
 export const MEMORY_WARNING_THRESHOLD = 0.70; // 70%
 
 /**
+ * High memory threshold - switch to streaming mode when heap usage exceeds this
+ * At 80%, we have enough memory pressure to warrant slower but safer indexing
+ */
+export const MEMORY_HIGH_THRESHOLD = 0.80; // 80%
+
+/**
  * Critical threshold - take action when heap usage exceeds this percentage
  * Note: Set to 90% to allow headroom after embedding model loads (~300MB)
  */
@@ -227,6 +233,35 @@ export function isMemoryCritical(): boolean {
 export function isMemoryWarning(): boolean {
   const status = getMemoryStatus();
   return status.level === 'warning' || status.level === 'critical';
+}
+
+/**
+ * Check if memory usage is high enough to warrant streaming mode.
+ *
+ * When memory is above 80%, we should use streaming mode (process fewer files
+ * at a time and write to DB immediately) to avoid accumulating too much data
+ * in memory before writing.
+ *
+ * This is a softer check than isMemoryCritical() - it doesn't block indexing,
+ * just switches to a more memory-efficient (but slower) mode.
+ *
+ * @returns true if memory usage is high and streaming mode should be used
+ */
+export function isMemoryHigh(): boolean {
+  // Don't use streaming mode in tests - let tests control their own behavior
+  if (process.env.VITEST === 'true' || process.env.NODE_ENV === 'test') {
+    return false;
+  }
+
+  const stats = getMemoryStats();
+
+  // Only apply percentage-based check if heap is reasonably sized
+  // Small heaps can expand easily, no need for streaming mode
+  if (stats.heapTotal < MIN_HEAP_FOR_CRITICAL_CHECK) {
+    return false;
+  }
+
+  return stats.heapUsedPercent >= MEMORY_HIGH_THRESHOLD;
 }
 
 /**

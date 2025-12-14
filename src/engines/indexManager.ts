@@ -40,7 +40,7 @@ import { toRelativePath, toAbsolutePath, normalizePath, getIndexPath, safeJoin, 
 import { hashFile } from '../utils/hash.js';
 import { getLogger } from '../utils/logger.js';
 import { atomicWrite } from '../utils/atomicWrite.js';
-import { logMemoryUsage, getAdaptiveBatchSize, isMemoryCritical, requestGarbageCollection } from '../utils/memory.js';
+import { logMemoryUsage, getAdaptiveBatchSize, isMemoryCritical, isMemoryHigh, requestGarbageCollection } from '../utils/memory.js';
 import { validateDiskSpace, startDiskSpaceMonitor, checkDiskSpaceAndAbort, DiskMonitorHandle, DEFAULT_DISK_CHECK_INTERVAL_MS } from '../utils/diskSpace.js';
 import { MCPError, ErrorCode, fileLimitWarning, isMCPError } from '../errors/index.js';
 import { isSymlink } from '../utils/secureFileAccess.js';
@@ -54,6 +54,14 @@ import { isSymlink } from '../utils/secureFileAccess.js';
  * 50 files per batch balances memory usage and progress granularity
  */
 export const FILE_BATCH_SIZE = 50;
+
+/**
+ * Streaming batch size for high memory situations
+ * When memory is above 80%, we use this smaller batch size to avoid
+ * accumulating too much data in memory before writing to DB.
+ * 3 files at a time provides a good balance between safety and speed.
+ */
+export const STREAMING_BATCH_SIZE = 3;
 
 // ============================================================================
 // Progress Reporting Types
@@ -582,6 +590,15 @@ export async function createFullIndex(
     // Log memory before starting indexing
     logMemoryUsage('Starting full index');
 
+    // Detect if we should use streaming mode (memory > 80%)
+    // Streaming mode uses smaller batches to avoid accumulating too much data
+    const useStreamingMode = isMemoryHigh();
+    if (useStreamingMode) {
+      logger.info('IndexManager', 'Using streaming mode due to high memory pressure', {
+        batchSize: STREAMING_BATCH_SIZE,
+      });
+    }
+
     // SMCP-057: Start continuous disk space monitoring during indexing
     let diskSpaceAbort = false;
     let diskSpaceError: string | undefined;
@@ -620,15 +637,19 @@ export async function createFullIndex(
           });
         }
 
-        // Use adaptive batch sizing based on memory pressure (MCP-22)
-        const currentBatchSize = getAdaptiveBatchSize(FILE_BATCH_SIZE, 10);
+        // Use streaming batch size if memory is high, otherwise adaptive sizing (MCP-22)
+        const currentBatchSize = useStreamingMode
+          ? STREAMING_BATCH_SIZE
+          : getAdaptiveBatchSize(FILE_BATCH_SIZE, 10);
         const batch = files.slice(i, i + currentBatchSize);
-        const batchNum = Math.floor(i / FILE_BATCH_SIZE) + 1;
-        const totalBatches = Math.ceil(files.length / FILE_BATCH_SIZE);
+        const effectiveBatchSize = useStreamingMode ? STREAMING_BATCH_SIZE : FILE_BATCH_SIZE;
+        const batchNum = Math.floor(i / effectiveBatchSize) + 1;
+        const totalBatches = Math.ceil(files.length / effectiveBatchSize);
 
         logger.debug('IndexManager', `Processing batch ${batchNum}/${totalBatches}`, {
           batchSize: batch.length,
           adaptedBatchSize: currentBatchSize,
+          streamingMode: useStreamingMode,
         });
 
         // Request GC before each batch to free memory from previous operations

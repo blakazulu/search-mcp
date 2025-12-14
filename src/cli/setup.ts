@@ -171,6 +171,55 @@ function configureClient(client: MCPClient): { success: boolean; message: string
 }
 
 /**
+ * Fix Windows path normalization in Claude config
+ *
+ * Claude CLI saves project paths with forward slashes (C:/path/to/project)
+ * but Claude Code reads with backslashes (C:\path\to\project).
+ * This function copies mcpServers config to the backslash version.
+ */
+function fixWindowsPathNormalization(): void {
+  if (os.platform() !== 'win32') return;
+
+  const claudeConfigPath = path.join(os.homedir(), '.claude.json');
+  if (!fs.existsSync(claudeConfigPath)) return;
+
+  try {
+    const content = fs.readFileSync(claudeConfigPath, 'utf-8');
+    const config = JSON.parse(content);
+
+    if (!config.projects) return;
+
+    const cwd = process.cwd();
+    // Normalize current directory to forward slash format (how CLI saves it)
+    const cwdForwardSlash = cwd.replace(/\\/g, '/');
+    // Normalize to backslash format (how Claude Code reads it)
+    const cwdBackslash = cwd.replace(/\//g, '\\');
+
+    // Check if we have a forward-slash entry with mcpServers
+    const forwardSlashEntry = config.projects[cwdForwardSlash];
+    const backslashEntry = config.projects[cwdBackslash];
+
+    if (forwardSlashEntry?.mcpServers && Object.keys(forwardSlashEntry.mcpServers).length > 0) {
+      // Ensure backslash entry exists
+      if (!config.projects[cwdBackslash]) {
+        config.projects[cwdBackslash] = {};
+      }
+
+      // Copy mcpServers to backslash entry
+      config.projects[cwdBackslash].mcpServers = {
+        ...config.projects[cwdBackslash].mcpServers,
+        ...forwardSlashEntry.mcpServers,
+      };
+
+      // Write back
+      fs.writeFileSync(claudeConfigPath, JSON.stringify(config, null, 2) + '\n');
+    }
+  } catch {
+    // Ignore errors - this is a best-effort fix
+  }
+}
+
+/**
  * Configure using Claude Code CLI
  */
 function configureWithClaudeCLI(): { success: boolean; message: string } {
@@ -178,6 +227,8 @@ function configureWithClaudeCLI(): { success: boolean; message: string } {
     // On Windows, npx needs to be wrapped with cmd /c
     if (os.platform() === 'win32') {
       execSync(`claude mcp add search -- cmd /c npx -y ${PACKAGE_NAME}`, { stdio: 'inherit' });
+      // Fix Windows path normalization issue
+      fixWindowsPathNormalization();
     } else {
       execSync(`claude mcp add search -- npx -y ${PACKAGE_NAME}`, { stdio: 'inherit' });
     }

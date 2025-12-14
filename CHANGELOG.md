@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.14] - 2025-12-14
+
+### Fixed
+- **Windows Path Normalization** - Fixed MCP connection failures on Windows due to path format mismatch
+  - Root cause: Claude CLI (`claude mcp add`) saves project paths with forward slashes (`C:/path/to/project`)
+  - But Claude Code reads them with backslashes (`C:\path\to\project`)
+  - This caused `.claude.json` to have two separate entries for the same project
+  - Added `fixWindowsPathNormalization()` that copies mcpServers config to both path formats
+  - Fixes "MCP connection closed" errors when configuring via `--setup` wizard on Windows
+
 ## [1.3.13] - 2025-12-14
 
 ### Fixed

@@ -61,8 +61,9 @@ export const MEMORY_WARNING_THRESHOLD = 0.70; // 70%
 
 /**
  * Critical threshold - take action when heap usage exceeds this percentage
+ * Note: Set to 90% to allow headroom after embedding model loads (~300MB)
  */
-export const MEMORY_CRITICAL_THRESHOLD = 0.85; // 85%
+export const MEMORY_CRITICAL_THRESHOLD = 0.90; // 90%
 
 /**
  * Minimum heap size (in bytes) before percentage-based critical checks apply.

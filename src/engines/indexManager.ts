@@ -40,7 +40,7 @@ import { toRelativePath, toAbsolutePath, normalizePath, getIndexPath, safeJoin, 
 import { hashFile } from '../utils/hash.js';
 import { getLogger } from '../utils/logger.js';
 import { atomicWrite } from '../utils/atomicWrite.js';
-import { logMemoryUsage, getAdaptiveBatchSize, isMemoryCritical } from '../utils/memory.js';
+import { logMemoryUsage, getAdaptiveBatchSize, isMemoryCritical, requestGarbageCollection } from '../utils/memory.js';
 import { validateDiskSpace, startDiskSpaceMonitor, checkDiskSpaceAndAbort, DiskMonitorHandle, DEFAULT_DISK_CHECK_INTERVAL_MS } from '../utils/diskSpace.js';
 import { MCPError, ErrorCode, fileLimitWarning, isMCPError } from '../errors/index.js';
 import { isSymlink } from '../utils/secureFileAccess.js';
@@ -334,7 +334,8 @@ async function processFileBatch(
     }
 
     // Check memory before processing each file (MCP-22)
-    if (isMemoryCritical()) {
+    // But always process at least 1 file per batch to ensure progress
+    if (i > 0 && isMemoryCritical()) {
       logger.warn('IndexManager', 'Memory critical, skipping remaining files in batch', {
         processed: i,
         remaining: files.length - i,
@@ -629,6 +630,9 @@ export async function createFullIndex(
           batchSize: batch.length,
           adaptedBatchSize: currentBatchSize,
         });
+
+        // Request GC before each batch to free memory from previous operations
+        requestGarbageCollection();
 
         const { chunks, hashes, errors: batchErrors, failedEmbeddingCount } = await processFileBatch(
           batch,
@@ -1082,6 +1086,9 @@ export async function applyDelta(
       // Process in batches
       for (let i = 0; i < filesToAdd.length; i += FILE_BATCH_SIZE) {
         const batch = filesToAdd.slice(i, i + FILE_BATCH_SIZE);
+
+        // Request GC before each batch to free memory from previous operations
+        requestGarbageCollection();
 
         const { chunks, hashes, errors: batchErrors } = await processFileBatch(
           batch,

@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.16] - 2025-12-14
+
+### Fixed
+- **Memory Management During Indexing** - Fixed indexing failing with 0 files due to overly aggressive memory checks
+  - Raised memory critical threshold from 85% to 90% to allow headroom after embedding model loads
+  - Process at least 1 file per batch before checking memory (ensures progress is made)
+  - Request garbage collection before each batch to free memory from previous operations
+  - Fixes "0 files indexed" issue when memory was high after embedding model initialization
+
 ## [1.3.15] - 2025-12-14
 
 ### Fixed

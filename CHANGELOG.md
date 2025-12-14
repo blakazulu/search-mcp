@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.13] - 2025-12-14
+
+### Fixed
+- **Windows MCP Config** - Setup wizard now generates correct Windows config with `cmd /c` wrapper
+  - Fixes "Windows requires 'cmd /c' wrapper to execute npx" warning in Claude Code
+  - Both CLI and manual config options now use proper Windows command format
+  - Updated help text with platform-specific configuration examples
+
 ## [1.3.12] - 2025-12-14
 
 ### Fixed

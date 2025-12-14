@@ -83,7 +83,7 @@ Improvements to search relevance and result quality.
 | Better error messages | More actionable error messages with suggestions |
 | Search result ranking | Improve relevance scoring |
 | Incremental reindexing | Only reindex changed parts of large files |
-| Multi-language code chunking | Extend code-aware chunking to Java, Go, Rust, C#, SQL, YAML |
+| Multi-language code chunking | Extend code-aware chunking to: Java, Go, Rust, C#, C/C++, Kotlin, Swift, Ruby, PHP, CSS/SCSS/LESS, HTML, Vue/Svelte SFCs, SQL, YAML, JSON, XML, GraphQL, Shell/Bash, Terraform/HCL, Dockerfile |
 
 ---
 

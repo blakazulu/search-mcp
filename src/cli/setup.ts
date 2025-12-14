@@ -376,16 +376,30 @@ export function printVersion(): void {
  */
 export function showLogs(): void {
   const home = os.homedir();
-  const indexesDir = path.join(home, '.mcp', 'search', 'indexes');
+  const searchDir = path.join(home, '.mcp', 'search');
+  const indexesDir = path.join(searchDir, 'indexes');
+  const globalLogPath = path.join(searchDir, 'logs', 'server.log');
 
   console.log('');
   print('Search MCP Log Files', 'cyan');
   print('====================', 'cyan');
   console.log('');
 
+  // Show global server log
+  print('Global Server Log:', 'yellow');
+  if (fs.existsSync(globalLogPath)) {
+    const stats = fs.statSync(globalLogPath);
+    const sizeKB = Math.round(stats.size / 1024);
+    print(`  ${globalLogPath} (${sizeKB} KB)`, 'green');
+    console.log('  Contains: server start/stop, errors, connection issues');
+  } else {
+    print('  (no server log yet - run the MCP server first)', 'dim');
+  }
+  console.log('');
+
   // Check if indexes directory exists
   if (!fs.existsSync(indexesDir)) {
-    print('No indexes found. Create an index first to generate logs.', 'yellow');
+    print('No project indexes found yet.', 'dim');
     console.log('');
     return;
   }
@@ -401,33 +415,81 @@ export function showLogs(): void {
       return;
     }
 
-    print(`Found ${indexDirs.length} index(es):`, 'green');
-    console.log('');
+    // Gather index info with metadata and log status
+    interface IndexInfo {
+      name: string;
+      projectPath: string;
+      logPath: string;
+      hasLog: boolean;
+      logSize: number;
+      mtime: number;
+    }
+
+    const indexInfos: IndexInfo[] = [];
 
     for (const dir of indexDirs) {
       const indexPath = path.join(indexesDir, dir.name);
       const metadataPath = path.join(indexPath, 'metadata.json');
       const logPath = path.join(indexPath, 'logs', 'search-mcp.log');
 
-      // Try to read project path from metadata
       let projectPath = 'Unknown project';
+      let mtime = 0;
       try {
         if (fs.existsSync(metadataPath)) {
           const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf-8'));
           projectPath = metadata.projectPath || projectPath;
+          const stats = fs.statSync(metadataPath);
+          mtime = stats.mtimeMs;
         }
       } catch {
         // Ignore metadata read errors
       }
 
-      const logExists = fs.existsSync(logPath);
+      const hasLog = fs.existsSync(logPath);
+      let logSize = 0;
+      if (hasLog) {
+        try {
+          const stats = fs.statSync(logPath);
+          logSize = stats.size;
+        } catch {
+          // Ignore stat errors
+        }
+      }
 
-      console.log(`  Project: ${projectPath}`);
-      console.log(`  Index:   ${dir.name}`);
-      if (logExists) {
-        const stats = fs.statSync(logPath);
-        const sizeKB = Math.round(stats.size / 1024);
-        print(`  Log:     ${logPath} (${sizeKB} KB)`, 'green');
+      indexInfos.push({
+        name: dir.name,
+        projectPath,
+        logPath,
+        hasLog,
+        logSize,
+        mtime,
+      });
+    }
+
+    // Sort: prioritize indexes with logs, then by modification time (newest first)
+    indexInfos.sort((a, b) => {
+      if (a.hasLog && !b.hasLog) return -1;
+      if (!a.hasLog && b.hasLog) return 1;
+      return b.mtime - a.mtime;
+    });
+
+    // Limit to 10 indexes to keep output manageable
+    const MAX_DISPLAYED = 10;
+    const displayedIndexes = indexInfos.slice(0, MAX_DISPLAYED);
+    const hiddenCount = indexInfos.length - displayedIndexes.length;
+
+    print(`Project Indexes:`, 'yellow');
+    if (indexInfos.length > MAX_DISPLAYED) {
+      console.log(`  Showing ${MAX_DISPLAYED} most recent (${hiddenCount} older indexes hidden)`);
+    }
+    console.log('');
+
+    for (const info of displayedIndexes) {
+      console.log(`  Project: ${info.projectPath}`);
+      console.log(`  Index:   ${info.name}`);
+      if (info.hasLog) {
+        const sizeKB = Math.round(info.logSize / 1024);
+        print(`  Log:     ${info.logPath} (${sizeKB} KB)`, 'green');
       } else {
         print(`  Log:     (no log file yet)`, 'dim');
       }

@@ -344,6 +344,26 @@ export function getDefaultLogDir(indexHash: string): string {
 }
 
 /**
+ * Get the global log directory for server-level logs
+ * Uses ~/.mcp/search/logs/
+ */
+export function getGlobalLogDir(): string {
+  const homeDir = os.homedir();
+  return path.join(homeDir, '.mcp', 'search', 'logs');
+}
+
+/**
+ * Initialize the global logger with file-based logging
+ * Should be called at server startup before any logging occurs
+ */
+export function initGlobalLogger(): Logger {
+  const logDir = getGlobalLogDir();
+  const level = getLogLevelFromEnv();
+  loggerInstance = new FileLogger({ logDir, level, fileName: 'server.log' });
+  return loggerInstance;
+}
+
+/**
  * Parse a log level string to LogLevel enum
  */
 export function parseLogLevel(level: string): LogLevel {

@@ -26,7 +26,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 
-import { getLogger } from './utils/logger.js';
+import { getLogger, initGlobalLogger } from './utils/logger.js';
 import { runCleanup, isShutdownInProgress } from './utils/cleanup.js';
 import { getIndexPath } from './utils/paths.js';
 import { detectProjectRoot } from './engines/projectRoot.js';
@@ -783,7 +783,8 @@ async function shutdown(signal?: string): Promise<void> {
  * Start the MCP server with stdio transport
  */
 export async function startServer(): Promise<void> {
-  const logger = getLogger();
+  // Initialize global file-based logger before any logging
+  const logger = initGlobalLogger();
 
   logger.info('server', 'Starting MCP server...');
 

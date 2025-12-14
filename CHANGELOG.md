@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Debugging Support** - Better logging and error messages for troubleshooting
   - New `--logs` CLI command to show log file locations for each indexed project
+  - Global server log at `~/.mcp/search/logs/server.log` for server start/stop events
   - Error messages now include log file path for easy debugging
   - Full stack traces logged for all errors
   - `get_index_status` tool now returns `logPath` field
@@ -17,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Updated README troubleshooting section with new CLI options and debug mode info
+- Improved `--logs` output to show only 10 most recent indexes (prioritizing those with log files)
 
 ## [1.3.8] - 2025-12-14
 

@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.11] - 2025-12-14
+
+### Fixed
+- **Crash Logging** - Server crashes are now logged even during startup
+  - Added early crash logging before module imports
+  - Added global handlers for uncaughtException and unhandledRejection
+  - Crashes are now written to `~/.mcp/search/logs/server.log`
+
 ## [1.3.10] - 2025-12-14
 
 ### Added

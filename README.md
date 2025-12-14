@@ -3,7 +3,7 @@
 **Make your AI 40x smarter about your code.**
 
 ```bash
-npx @liraz-sbz/search-mcp --setup
+npx --yes @liraz-sbz/search-mcp@latest --setup
 ```
 
 Your AI assistant searches your entire codebase semantically. No API keys. No cloud. 100% local.
@@ -85,7 +85,7 @@ AI: "Based on src/auth/login.ts, here's how login works..."
 ### Option 1: Setup Wizard (Recommended)
 
 ```bash
-npx @liraz-sbz/search-mcp --setup
+npx --yes @liraz-sbz/search-mcp@latest --setup
 ```
 
 This auto-detects your installed AI assistants and configures them for you.
@@ -318,15 +318,15 @@ npm uninstall -g @liraz-sbz/search-mcp
 | Issue | Solution |
 |-------|----------|
 | "Index not found" | Say "Index this project" to create the index |
-| MCP connection issues | Run `npx @liraz-sbz/search-mcp --setup` to reconfigure |
+| MCP connection issues | Run `npx --yes @liraz-sbz/search-mcp@latest --setup` to reconfigure |
 | Search results seem wrong | Run `reindex_project` to rebuild |
 | Changes not detected | Run `reindex_file` for specific file |
 
 **CLI options:**
 ```bash
-npx @liraz-sbz/search-mcp --setup    # Configure MCP clients
-npx @liraz-sbz/search-mcp --help     # Show help
-npx @liraz-sbz/search-mcp --version  # Show version
+npx --yes @liraz-sbz/search-mcp@latest --setup    # Configure MCP clients
+npx --yes @liraz-sbz/search-mcp@latest --help     # Show help
+npx --yes @liraz-sbz/search-mcp@latest --version  # Show version
 ```
 
 For all error codes and solutions, see the [Troubleshooting Guide](docs/troubleshooting.md).

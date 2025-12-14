@@ -40,7 +40,7 @@ if (!isCI) {
   print('Quick Setup:', 'bold');
   console.log('');
   print('  Option 1: Run the setup wizard', 'yellow');
-  console.log(`    npx ${PACKAGE_NAME} --setup`);
+  console.log(`    npx --yes ${PACKAGE_NAME}@latest --setup`);
   console.log('');
   print('  Option 2: Claude Code CLI', 'yellow');
   console.log(`    claude mcp add search -- npx ${PACKAGE_NAME}`);

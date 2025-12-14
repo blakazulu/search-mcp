@@ -377,7 +377,7 @@ export function printHelp(): void {
 Search MCP - Semantic code search for AI assistants
 
 Usage:
-  npx ${PACKAGE_NAME} [options]
+  npx --yes ${PACKAGE_NAME}@latest [options]
 
 Options:
   --setup     Configure MCP clients to use search-mcp
@@ -387,12 +387,12 @@ Options:
 When run without options, starts the MCP server (for use by AI assistants).
 
 Quick Start:
-  1. Run: npx ${PACKAGE_NAME} --setup
+  1. Run: npx --yes ${PACKAGE_NAME}@latest --setup
   2. Restart your AI assistant
   3. Ask: "Create a search index for this project"
 
 Manual Configuration:
-  Claude Code:  claude mcp add search -- npx ${PACKAGE_NAME}
+  Claude Code:  claude mcp add search -- npx -y ${PACKAGE_NAME}
 
   Other clients: Add to your MCP config file:
   {

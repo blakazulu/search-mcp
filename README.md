@@ -252,7 +252,7 @@ File changes are detected automatically. Use `reindex_project` for a full rebuil
         ▼                 ▼                 ▼
 ┌───────────────┐ ┌───────────────┐ ┌───────────────┐
 │   Chunking    │ │   Embedding   │ │   LanceDB     │
-│   Engine      │ │   (MiniLM)    │ │   (Local)     │
+│   Engine      │ │   (BGE)       │ │   (Local)     │
 └───────────────┘ └───────────────┘ └───────────────┘
 ```
 
@@ -274,7 +274,7 @@ File changes are detected automatically. Use `reindex_project` for a full rebuil
 
 | Property | Value |
 |----------|-------|
-| Embedding Model | `Xenova/all-MiniLM-L6-v2` (384 dimensions) |
+| Embedding Models | Code: `Xenova/bge-small-en-v1.5` (384d), Docs: `Xenova/bge-base-en-v1.5` (768d) |
 | Code Chunk Size | ~1000 tokens |
 | Doc Chunk Size | ~2000 tokens |
 | Search Latency | < 200ms |

@@ -92,6 +92,18 @@ export interface IndexProgress {
 export type ProgressCallback = (progress: IndexProgress) => void;
 
 /**
+ * Result of a file scan operation
+ */
+export interface ScanResult {
+  /** Files that passed filtering and will be indexed */
+  files: string[];
+  /** Total files found in project (before filtering) */
+  totalFilesInProject: number;
+  /** Number of files excluded by policy */
+  excludedFiles: number;
+}
+
+/**
  * Result of an indexing operation
  */
 export interface IndexResult {
@@ -105,6 +117,16 @@ export interface IndexResult {
   durationMs: number;
   /** Errors encountered (if any) */
   errors?: string[];
+  /** Total files found in project (before filtering) */
+  totalFilesInProject?: number;
+  /** Number of files excluded by policy */
+  excludedFiles?: number;
+  /** Number of code files indexed (when docs indexing is enabled) */
+  codeFilesIndexed?: number;
+  /** Number of doc files indexed (when docs indexing is enabled) */
+  docsFilesIndexed?: number;
+  /** Number of doc chunks created (when docs indexing is enabled) */
+  docsChunksCreated?: number;
 }
 
 /**
@@ -141,14 +163,14 @@ export interface IndexStats {
  * @param policy - Initialized IndexingPolicy instance
  * @param config - Project configuration
  * @param onProgress - Optional callback for progress updates
- * @returns Array of relative file paths that should be indexed
+ * @returns ScanResult with files to index and stats about total/excluded files
  */
 export async function scanFiles(
   projectPath: string,
   policy: IndexingPolicy,
   config: Config,
   onProgress?: ProgressCallback
-): Promise<string[]> {
+): Promise<ScanResult> {
   const logger = getLogger();
   const normalizedProjectPath = normalizePath(projectPath);
 
@@ -274,7 +296,11 @@ export async function scanFiles(
     filtered: allFiles.length - indexableFiles.length,
   });
 
-  return indexableFiles;
+  return {
+    files: indexableFiles,
+    totalFilesInProject: allFiles.length,
+    excludedFiles: allFiles.length - indexableFiles.length,
+  };
 }
 
 // ============================================================================
@@ -508,7 +534,8 @@ export async function createFullIndex(
     fingerprintsManager.setAll(new Map());
 
     // Scan files
-    const files = await scanFiles(normalizedProjectPath, policy, config, onProgress);
+    const scanResult = await scanFiles(normalizedProjectPath, policy, config, onProgress);
+    const files = scanResult.files;
 
     if (files.length === 0) {
       logger.warn('IndexManager', 'No files to index');
@@ -528,6 +555,9 @@ export async function createFullIndex(
         filesIndexed: 0,
         chunksCreated: 0,
         durationMs: Date.now() - startTime,
+        totalFilesInProject: scanResult.totalFilesInProject,
+        excludedFiles: scanResult.excludedFiles,
+        codeFilesIndexed: 0,
       };
     }
 
@@ -796,6 +826,9 @@ export async function createFullIndex(
       chunksCreated: totalChunks,
       durationMs,
       errors: errors.length > 0 ? errors : undefined,
+      totalFilesInProject: scanResult.totalFilesInProject,
+      excludedFiles: scanResult.excludedFiles,
+      codeFilesIndexed: allHashes.size,
     };
   } catch (error) {
     // Mark indexing as failed before closing store

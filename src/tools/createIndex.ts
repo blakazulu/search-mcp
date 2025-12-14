@@ -16,6 +16,7 @@
 import { z } from 'zod';
 import { detectProjectRoot } from '../engines/projectRoot.js';
 import { IndexManager, IndexProgress, IndexResult } from '../engines/indexManager.js';
+import { DocsIndexManager, DocsIndexResult, DocsIndexProgress } from '../engines/docsIndexManager.js';
 import { getIndexPath } from '../utils/paths.js';
 import { getLogger } from '../utils/logger.js';
 import { IndexingLock } from '../utils/asyncMutex.js';
@@ -23,6 +24,7 @@ import { MCPError, ErrorCode, isMCPError } from '../errors/index.js';
 import type { ToolContext } from './searchCode.js';
 import type { StrategyOrchestrator } from '../engines/strategyOrchestrator.js';
 import type { Config } from '../storage/config.js';
+import { loadConfig } from '../storage/config.js';
 
 // ============================================================================
 // Input/Output Schemas
@@ -61,6 +63,16 @@ export interface CreateIndexOutput {
   chunksCreated?: number;
   /** Duration string like "45s" or "2m 30s" (if successful) */
   duration?: string;
+  /** Total files found in project before filtering */
+  totalFilesInProject?: number;
+  /** Number of files excluded by policy */
+  excludedFiles?: number;
+  /** Number of code files indexed */
+  codeFilesIndexed?: number;
+  /** Number of doc files indexed */
+  docsFilesIndexed?: number;
+  /** Number of doc chunks created */
+  docsChunksCreated?: number;
 }
 
 /**
@@ -303,34 +315,81 @@ export async function createIndex(
       // Continue with reindexing - user already confirmed
     }
 
-    // Step 4: Create the index
+    // Step 4: Create the code index
     const indexManager = new IndexManager(projectPath);
+    const indexPath = indexManager.getIndexPath();
 
-    logger.info('createIndex', 'Creating index', {
+    logger.info('createIndex', 'Creating code index', {
       projectPath,
-      indexPath: indexManager.getIndexPath(),
+      indexPath,
     });
 
-    // Execute indexing with progress callback
-    const result: IndexResult = await indexManager.createIndex(context.onProgress);
+    // Execute code indexing with progress callback
+    const codeResult: IndexResult = await indexManager.createIndex(context.onProgress);
 
-    // Step 5: Format the result
+    // Step 4.5: Index docs if enabled in config
+    let docsResult: DocsIndexResult | null = null;
+    const config = await loadConfig(indexPath);
+
+    if (config.indexDocs) {
+      logger.info('createIndex', 'Creating docs index');
+
+      const docsIndexManager = new DocsIndexManager(projectPath, indexPath);
+      await docsIndexManager.initialize();
+
+      // Create a docs progress callback that reports with phase prefix
+      const docsProgress = context.onProgress
+        ? (progress: DocsIndexProgress) => {
+            // Convert docs progress to standard progress format
+            context.onProgress!({
+              phase: progress.phase,
+              current: progress.current,
+              total: progress.total,
+              currentFile: progress.currentFile,
+            });
+          }
+        : undefined;
+
+      docsResult = await docsIndexManager.createDocsIndex(docsProgress);
+      await docsIndexManager.close();
+
+      logger.info('createIndex', 'Docs index created', {
+        filesIndexed: docsResult.filesIndexed,
+        chunksCreated: docsResult.chunksCreated,
+      });
+    }
+
+    // Step 5: Calculate combined stats and duration
+    const totalDurationMs = codeResult.durationMs + (docsResult?.durationMs || 0);
+    const totalFilesIndexed = codeResult.filesIndexed + (docsResult?.filesIndexed || 0);
+    const totalChunksCreated = codeResult.chunksCreated + (docsResult?.chunksCreated || 0);
+
+    // Step 6: Format the result
     const output: CreateIndexOutput = {
       status: 'success',
       projectPath,
-      filesIndexed: result.filesIndexed,
-      chunksCreated: result.chunksCreated,
-      duration: formatDuration(result.durationMs),
+      filesIndexed: totalFilesIndexed,
+      chunksCreated: totalChunksCreated,
+      duration: formatDuration(totalDurationMs),
+      totalFilesInProject: codeResult.totalFilesInProject,
+      excludedFiles: codeResult.excludedFiles,
+      codeFilesIndexed: codeResult.codeFilesIndexed || codeResult.filesIndexed,
+      docsFilesIndexed: docsResult?.filesIndexed || 0,
+      docsChunksCreated: docsResult?.chunksCreated || 0,
     };
 
     logger.info('createIndex', 'Index created successfully', {
       projectPath,
-      filesIndexed: result.filesIndexed,
-      chunksCreated: result.chunksCreated,
+      totalFilesIndexed,
+      totalChunksCreated,
       duration: output.duration,
+      totalFilesInProject: codeResult.totalFilesInProject,
+      excludedFiles: codeResult.excludedFiles,
+      codeFilesIndexed: output.codeFilesIndexed,
+      docsFilesIndexed: output.docsFilesIndexed,
     });
 
-    // Step 6: Start indexing strategy if orchestrator and config provided
+    // Step 7: Start indexing strategy if orchestrator and config provided
     if (context.orchestrator && context.config) {
       logger.debug('createIndex', 'Starting indexing strategy', {
         strategy: context.config.indexingStrategy,

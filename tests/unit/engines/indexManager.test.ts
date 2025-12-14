@@ -180,14 +180,18 @@ describe('Index Manager', () => {
       const policy = new IndexingPolicy(projectPath, config);
       await policy.initialize();
 
-      const files = await scanFiles(projectPath, policy, config);
+      const result = await scanFiles(projectPath, policy, config);
 
       // Should find the source files and README
-      expect(files.length).toBeGreaterThan(0);
-      expect(files).toContain('src/index.ts');
-      expect(files).toContain('src/utils/helper.ts');
-      expect(files).toContain('src/utils/math.ts');
-      expect(files).toContain('README.md');
+      expect(result.files.length).toBeGreaterThan(0);
+      expect(result.files).toContain('src/index.ts');
+      expect(result.files).toContain('src/utils/helper.ts');
+      expect(result.files).toContain('src/utils/math.ts');
+      expect(result.files).toContain('README.md');
+
+      // Verify ScanResult structure
+      expect(result.totalFilesInProject).toBeGreaterThan(0);
+      expect(result.excludedFiles).toBeGreaterThanOrEqual(0);
     });
 
     it('should exclude files based on config.exclude', async () => {
@@ -195,10 +199,11 @@ describe('Index Manager', () => {
       const policy = new IndexingPolicy(projectPath, config);
       await policy.initialize();
 
-      const files = await scanFiles(projectPath, policy, config);
+      const result = await scanFiles(projectPath, policy, config);
 
-      expect(files).not.toContain('README.md');
-      expect(files).toContain('src/index.ts');
+      expect(result.files).not.toContain('README.md');
+      expect(result.files).toContain('src/index.ts');
+      expect(result.excludedFiles).toBeGreaterThan(0);
     });
 
     it('should respect include patterns', async () => {
@@ -206,12 +211,12 @@ describe('Index Manager', () => {
       const policy = new IndexingPolicy(projectPath, config);
       await policy.initialize();
 
-      const files = await scanFiles(projectPath, policy, config);
+      const result = await scanFiles(projectPath, policy, config);
 
-      expect(files).toContain('src/index.ts');
-      expect(files).toContain('src/utils/helper.ts');
-      expect(files).not.toContain('README.md');
-      expect(files).not.toContain('package.json');
+      expect(result.files).toContain('src/index.ts');
+      expect(result.files).toContain('src/utils/helper.ts');
+      expect(result.files).not.toContain('README.md');
+      expect(result.files).not.toContain('package.json');
     });
 
     it('should call progress callback during scanning', async () => {
@@ -242,9 +247,9 @@ describe('Index Manager', () => {
       const policy = new IndexingPolicy(projectPath, config);
       await policy.initialize();
 
-      const files = await scanFiles(projectPath, policy, config);
+      const result = await scanFiles(projectPath, policy, config);
 
-      expect(files).not.toContain('assets/image.png');
+      expect(result.files).not.toContain('assets/image.png');
     });
 
     it('should exclude hardcoded patterns', async () => {
@@ -257,14 +262,14 @@ describe('Index Manager', () => {
       const policy = new IndexingPolicy(projectPath, config);
       await policy.initialize();
 
-      const files = await scanFiles(projectPath, policy, config);
+      const result = await scanFiles(projectPath, policy, config);
 
-      expect(files).not.toContain('node_modules/lodash/index.js');
-      expect(files).not.toContain('.git/config');
-      expect(files).not.toContain('.env');
+      expect(result.files).not.toContain('node_modules/lodash/index.js');
+      expect(result.files).not.toContain('.git/config');
+      expect(result.files).not.toContain('.env');
     });
 
-    it('should return empty array for empty project', async () => {
+    it('should return empty ScanResult for empty project', async () => {
       const emptyProject = await createTempDir('empty-project-');
 
       try {
@@ -272,9 +277,11 @@ describe('Index Manager', () => {
         const policy = new IndexingPolicy(emptyProject, config);
         await policy.initialize();
 
-        const files = await scanFiles(emptyProject, policy, config);
+        const result = await scanFiles(emptyProject, policy, config);
 
-        expect(files).toEqual([]);
+        expect(result.files).toEqual([]);
+        expect(result.totalFilesInProject).toBe(0);
+        expect(result.excludedFiles).toBe(0);
       } finally {
         await removeTempDir(emptyProject);
       }

@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.19] - 2025-12-14
+
+### Added
+- **Detailed Index Statistics** - After indexing completes, you now see comprehensive stats:
+  - Total files found in project (before filtering)
+  - Files excluded by policy (gitignore, deny patterns, etc.)
+  - Code files indexed
+  - Doc files indexed (if docs indexing is enabled)
+  - Total files indexed
+  - Duration
+
+### Changed
+- `create_index` tool now indexes both code AND docs in a single operation
+  - Previously docs were only indexed lazily when first searched
+  - Now both are indexed upfront for faster first searches
+- `scanFiles` now returns a `ScanResult` object with detailed stats instead of just a file list
+
 ## [1.3.18] - 2025-12-14
 
 ### Added

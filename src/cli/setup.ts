@@ -251,7 +251,8 @@ export async function runSetup(): Promise<void> {
     console.log('');
     print('Next steps:', 'cyan');
     console.log('  1. Restart your AI assistant');
-    console.log('  2. Ask: "Create a search index for this project"');
+    console.log('  2. Type /mcp to verify "search" is connected');
+    console.log('  3. Say: "Use search-mcp to create an index for this project"');
     console.log('');
     return;
   }
@@ -349,7 +350,8 @@ export async function runSetup(): Promise<void> {
     console.log('');
     print('Next steps:', 'cyan');
     console.log('  1. Restart your AI assistant');
-    console.log('  2. Ask: "Create a search index for this project"');
+    console.log('  2. Type /mcp to verify "search" is connected');
+    console.log('  3. Say: "Use search-mcp to create an index for this project"');
   } else {
     print(result.message, 'red');
   }
@@ -389,7 +391,8 @@ When run without options, starts the MCP server (for use by AI assistants).
 Quick Start:
   1. Run: npx --yes ${PACKAGE_NAME}@latest --setup
   2. Restart your AI assistant
-  3. Ask: "Create a search index for this project"
+  3. Type /mcp to verify "search" is connected
+  4. Say: "Use search-mcp to create an index for this project"
 
 Manual Configuration:
   Claude Code:  claude mcp add search -- npx -y ${PACKAGE_NAME}

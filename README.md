@@ -128,9 +128,11 @@ See the [Getting Started Guide](docs/getting-started.md) for your client.
 ### After Configuration
 
 1. **Restart your AI assistant**
-2. **Ask about your code:** `"How does login work?"`
+2. **Verify connection:** Type `/mcp` and check that "search" is listed
+3. **Create index:** Say `"Use search-mcp to create an index for this project"`
+4. **Start searching:** Ask `"How does login work?"`
 
-On first use, confirm indexing when prompted. That's it!
+That's it!
 
 ---
 

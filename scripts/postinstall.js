@@ -58,7 +58,8 @@ if (!isCI) {
   console.log('');
   print('After configuring:', 'dim');
   console.log('  1. Restart your AI assistant');
-  console.log('  2. Ask: "Create a search index for this project"');
+  console.log('  2. Type /mcp to verify "search" is connected');
+  console.log('  3. Say: "Use search-mcp to create an index for this project"');
   console.log('');
   print('Docs: https://github.com/blakazulu/search-mcp', 'dim');
   console.log('');

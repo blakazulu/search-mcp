@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.17] - 2025-12-14
+
+### Added
+- **MCP Progress Notifications** - Added proper MCP progress reporting during indexing
+  - Sends `notifications/progress` messages to MCP clients (e.g., Claude Code)
+  - Clients can now display real-time indexing progress in their UI
+  - Progress includes phase (scanning, chunking, embedding, storing), current/total counts, and messages
+  - Works for both `create_index` and `reindex_project` tools
+
 ## [1.3.16] - 2025-12-14
 
 ### Fixed

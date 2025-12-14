@@ -1,6 +1,6 @@
 {
   "name": "@liraz-sbz/search-mcp",
-  "version": "1.3.16",
+  "version": "1.3.17",
   "description": "A local-first Model Context Protocol (MCP) server that provides semantic search capabilities for codebases",
   "type": "module",
   "main": "dist/index.js",

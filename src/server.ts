@@ -27,6 +27,25 @@ import {
 import { z } from 'zod';
 
 import { getLogger, initGlobalLogger } from './utils/logger.js';
+
+// ============================================================================
+// MCP Progress Notification Types
+// ============================================================================
+
+/**
+ * Progress token type (string or number per MCP spec)
+ */
+type ProgressToken = string | number;
+
+/**
+ * Options for tool execution including MCP progress support
+ */
+interface ExecuteToolOptions {
+  /** Server instance for sending notifications */
+  server: Server;
+  /** Progress token from request _meta (if client requested progress) */
+  progressToken?: ProgressToken;
+}
 import { runCleanup, isShutdownInProgress } from './utils/cleanup.js';
 import { getIndexPath } from './utils/paths.js';
 import { detectProjectRoot } from './engines/projectRoot.js';
@@ -128,6 +147,48 @@ type ToolName =
   | 'reindex_project'
   | 'reindex_file'
   | 'delete_index';
+
+// ============================================================================
+// MCP Progress Notification Helper
+// ============================================================================
+
+/**
+ * Send an MCP progress notification to the client
+ *
+ * This sends a `notifications/progress` message to the MCP client,
+ * which clients like Claude Code can display to show indexing progress.
+ *
+ * @param server - MCP server instance
+ * @param progressToken - Token from the original request
+ * @param progress - Current progress value
+ * @param total - Total items (optional)
+ * @param message - Progress message (optional)
+ */
+async function sendProgressNotification(
+  server: Server,
+  progressToken: ProgressToken,
+  progress: number,
+  total?: number,
+  message?: string
+): Promise<void> {
+  try {
+    await server.notification({
+      method: 'notifications/progress',
+      params: {
+        progressToken,
+        progress,
+        ...(total !== undefined && { total }),
+        ...(message && { message }),
+      },
+    });
+  } catch (error) {
+    // Silently ignore progress notification errors - they shouldn't break indexing
+    const logger = getLogger();
+    logger.debug('server', 'Failed to send progress notification', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
 
 // ============================================================================
 // Server Context
@@ -460,7 +521,8 @@ async function getProjectPath(context: ServerContext): Promise<string> {
 async function executeTool(
   toolName: string,
   args: Record<string, unknown>,
-  serverContext: ServerContext
+  serverContext: ServerContext,
+  options: ExecuteToolOptions
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   const logger = getLogger();
 
@@ -507,7 +569,7 @@ async function executeTool(
           );
         }
 
-        // Create progress callback for logging and stderr output
+        // Create progress callback for logging, stderr output, and MCP notifications
         let lastProgressMessage = '';
         const onProgress = (progress: IndexProgress) => {
           const message = formatProgressMessage(progress);
@@ -523,6 +585,18 @@ async function executeTool(
             });
             // Write to stderr for CLI visibility (MCP uses stdout for JSON-RPC)
             process.stderr.write(`\r${message}`.padEnd(80) + '\r');
+
+            // Send MCP progress notification if client requested it
+            if (options.progressToken !== undefined) {
+              // Fire and forget - don't await to avoid blocking indexing
+              sendProgressNotification(
+                options.server,
+                options.progressToken,
+                progress.current,
+                progress.total,
+                message
+              );
+            }
           }
         };
 
@@ -607,7 +681,7 @@ async function executeTool(
         // MCP handles confirmation via requiresConfirmation flag on the tool definition
         // When we reach this point, the user has already confirmed (if required)
 
-        // Create progress callback for logging and stderr output
+        // Create progress callback for logging, stderr output, and MCP notifications
         let lastReindexProgressMessage = '';
         const onReindexProgress = (progress: IndexProgress) => {
           const message = formatProgressMessage(progress);
@@ -620,6 +694,17 @@ async function executeTool(
               file: progress.currentFile,
             });
             process.stderr.write(`\r${message}`.padEnd(80) + '\r');
+
+            // Send MCP progress notification if client requested it
+            if (options.progressToken !== undefined) {
+              sendProgressNotification(
+                options.server,
+                options.progressToken,
+                progress.current,
+                progress.total,
+                message
+              );
+            }
           }
         };
 
@@ -759,9 +844,11 @@ export function createServer(): { server: Server; context: ServerContext } {
 
   // Register call_tool handler
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name, arguments: args } = request.params;
-    logger.debug('server', 'call_tool called', { name, args });
-    return await executeTool(name, args ?? {}, context);
+    const { name, arguments: args, _meta } = request.params;
+    // Extract progressToken from _meta if client requested progress updates
+    const progressToken = _meta?.progressToken;
+    logger.debug('server', 'call_tool called', { name, args, hasProgressToken: progressToken !== undefined });
+    return await executeTool(name, args ?? {}, context, { server, progressToken });
   });
 
   logger.info('server', 'MCP server created', {

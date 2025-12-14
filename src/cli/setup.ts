@@ -142,18 +142,10 @@ function configureClient(client: MCPClient): { success: boolean; message: string
     }
 
     // Add search-mcp configuration
-    // On Windows, npx needs to be wrapped with cmd /c
-    if (os.platform() === 'win32') {
-      config.mcpServers.search = {
-        command: 'cmd',
-        args: ['/c', 'npx', '-y', PACKAGE_NAME],
-      };
-    } else {
-      config.mcpServers.search = {
-        command: 'npx',
-        args: ['-y', PACKAGE_NAME],
-      };
-    }
+    config.mcpServers.search = {
+      command: 'npx',
+      args: ['-y', PACKAGE_NAME],
+    };
 
     // Write config with pretty formatting
     fs.writeFileSync(client.configPath, JSON.stringify(config, null, 2) + '\n');
@@ -224,13 +216,10 @@ function fixWindowsPathNormalization(): void {
  */
 function configureWithClaudeCLI(): { success: boolean; message: string } {
   try {
-    // On Windows, npx needs to be wrapped with cmd /c
+    execSync(`claude mcp add search -- npx -y ${PACKAGE_NAME}`, { stdio: 'inherit' });
+    // Fix Windows path normalization issue (forward slash vs backslash in .claude.json)
     if (os.platform() === 'win32') {
-      execSync(`claude mcp add search -- cmd /c npx -y ${PACKAGE_NAME}`, { stdio: 'inherit' });
-      // Fix Windows path normalization issue
       fixWindowsPathNormalization();
-    } else {
-      execSync(`claude mcp add search -- npx -y ${PACKAGE_NAME}`, { stdio: 'inherit' });
     }
     return {
       success: true,
@@ -333,25 +322,14 @@ export async function runSetup(): Promise<void> {
     print('Manual setup:', 'cyan');
     console.log(`  Create .mcp.json in your project or home directory with:`);
     console.log('');
-    if (os.platform() === 'win32') {
-      console.log('  {');
-      console.log('    "mcpServers": {');
-      console.log('      "search": {');
-      console.log('        "command": "cmd",');
-      console.log(`        "args": ["/c", "npx", "-y", "${PACKAGE_NAME}"]`);
-      console.log('      }');
-      console.log('    }');
-      console.log('  }');
-    } else {
-      console.log('  {');
-      console.log('    "mcpServers": {');
-      console.log('      "search": {');
-      console.log('        "command": "npx",');
-      console.log(`        "args": ["-y", "${PACKAGE_NAME}"]`);
-      console.log('      }');
-      console.log('    }');
-      console.log('  }');
-    }
+    console.log('  {');
+    console.log('    "mcpServers": {');
+    console.log('      "search": {');
+    console.log('        "command": "npx",');
+    console.log(`        "args": ["-y", "${PACKAGE_NAME}"]`);
+    console.log('      }');
+    console.log('    }');
+    console.log('  }');
     console.log('');
     return;
   }
@@ -605,28 +583,15 @@ Quick Start:
   4. Say: "Use search-mcp to create an index for this project"
 
 Manual Configuration:
-  Claude Code (macOS/Linux):
+  Claude Code:
     claude mcp add search -- npx -y ${PACKAGE_NAME}
 
-  Claude Code (Windows):
-    claude mcp add search -- cmd /c npx -y ${PACKAGE_NAME}
-
-  Other clients (macOS/Linux): Add to your MCP config file:
+  Other clients: Add to your MCP config file:
   {
     "mcpServers": {
       "search": {
         "command": "npx",
         "args": ["-y", "${PACKAGE_NAME}"]
-      }
-    }
-  }
-
-  Other clients (Windows): Add to your MCP config file:
-  {
-    "mcpServers": {
-      "search": {
-        "command": "cmd",
-        "args": ["/c", "npx", "-y", "${PACKAGE_NAME}"]
       }
     }
   }

@@ -8,20 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.3.14] - 2025-12-14
 
 ### Fixed
-- **Windows Path Normalization** - Fixed MCP connection failures on Windows due to path format mismatch
-  - Root cause: Claude CLI (`claude mcp add`) saves project paths with forward slashes (`C:/path/to/project`)
-  - But Claude Code reads them with backslashes (`C:\path\to\project`)
-  - This caused `.claude.json` to have two separate entries for the same project
-  - Added `fixWindowsPathNormalization()` that copies mcpServers config to both path formats
-  - Fixes "MCP connection closed" errors when configuring via `--setup` wizard on Windows
+- **Windows MCP Connection Failures** - Reverted `cmd /c` wrapper which was breaking MCP connections
+  - The `/doctor` warning about needing `cmd /c` wrapper was misleading
+  - Working MCP configs use `npx` directly without `cmd /c` wrapper
+  - Removed `cmd /c` wrapper from setup wizard and help text
+  - Kept path normalization fix for `.claude.json` forward/backslash entries
 
 ## [1.3.13] - 2025-12-14
 
 ### Fixed
-- **Windows MCP Config** - Setup wizard now generates correct Windows config with `cmd /c` wrapper
-  - Fixes "Windows requires 'cmd /c' wrapper to execute npx" warning in Claude Code
-  - Both CLI and manual config options now use proper Windows command format
-  - Updated help text with platform-specific configuration examples
+- **Windows MCP Config** - Setup wizard added `cmd /c` wrapper for npx commands
+  - ⚠️ **Reverted in v1.3.14** - This change actually broke MCP connections
+  - The `/doctor` warning was misleading; `npx` works directly without wrapper
 
 ## [1.3.12] - 2025-12-14
 

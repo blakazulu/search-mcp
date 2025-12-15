@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.20] - 2025-12-16
+
+### Added
+- **Human-Readable Index Summary** - `create_index` now returns a formatted `summary` field with:
+  ```
+  Index created successfully for /path/to/project
+
+  Statistics:
+    Total files in project: 20,085
+    Files excluded: 19,830
+    Code files indexed: 255
+    Doc files indexed: 103
+    Total chunks created: 1,196
+    Duration: 3m 19s
+  ```
+  - Numbers are formatted with thousands separators for readability
+  - Warning is appended if docs indexing had issues
+
+### Fixed
+- **Docs Indexing Diagnostics** - Added better diagnostics when documentation files aren't indexed
+  - `scanDocFiles()` now returns both the file list and the raw glob count for debugging
+  - When 0 docs are indexed but glob found files, a warning is now returned explaining that files were filtered out
+  - Warning suggests checking gitignore, exclude patterns, or file size limits
+  - `create_index` output now includes `docsWarning` field when docs indexing has issues
+  - Added info-level logging for raw glob results before and after filtering
+
+### Changed
+- `scanDocFiles()` now returns a `ScanDocFilesResult` object with `files` and `globFilesFound` properties
+- `DocsIndexResult` interface now includes optional `warning` and `globFilesFound` fields
+
 ## [1.3.19] - 2025-12-14
 
 ### Added

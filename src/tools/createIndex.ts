@@ -55,6 +55,8 @@ export type CreateIndexStatus = 'success' | 'cancelled';
 export interface CreateIndexOutput {
   /** Result status */
   status: CreateIndexStatus;
+  /** Human-readable summary of the indexing result */
+  summary?: string;
   /** Absolute path to the project root (if successful) */
   projectPath?: string;
   /** Number of files indexed (if successful) */
@@ -73,6 +75,8 @@ export interface CreateIndexOutput {
   docsFilesIndexed?: number;
   /** Number of doc chunks created */
   docsChunksCreated?: number;
+  /** Warning about docs indexing (e.g., when 0 docs indexed despite files existing) */
+  docsWarning?: string;
 }
 
 /**
@@ -172,6 +176,57 @@ export function formatProgressMessage(progress: IndexProgress): string {
     default:
       return `Processing... [${current}/${total}]`;
   }
+}
+
+/**
+ * Format a number with thousands separators
+ *
+ * @param num - Number to format
+ * @returns Formatted number string like "20,085"
+ */
+function formatNumber(num: number): string {
+  return num.toLocaleString('en-US');
+}
+
+/**
+ * Format the index creation summary for display
+ *
+ * @param output - The index creation output data
+ * @returns Human-readable summary string
+ *
+ * @example
+ * ```typescript
+ * formatIndexSummary({
+ *   projectPath: '/path/to/project',
+ *   totalFilesInProject: 20085,
+ *   excludedFiles: 19830,
+ *   codeFilesIndexed: 255,
+ *   docsFilesIndexed: 103,
+ *   chunksCreated: 1196,
+ *   duration: '3m 19s'
+ * })
+ * // => "Index created successfully...\n\nStatistics:\n..."
+ * ```
+ */
+export function formatIndexSummary(output: Omit<CreateIndexOutput, 'status' | 'summary'>): string {
+  const lines: string[] = [];
+
+  lines.push(`Index created successfully for ${output.projectPath}`);
+  lines.push('');
+  lines.push('Statistics:');
+  lines.push(`  Total files in project: ${formatNumber(output.totalFilesInProject || 0)}`);
+  lines.push(`  Files excluded: ${formatNumber(output.excludedFiles || 0)}`);
+  lines.push(`  Code files indexed: ${formatNumber(output.codeFilesIndexed || 0)}`);
+  lines.push(`  Doc files indexed: ${formatNumber(output.docsFilesIndexed || 0)}`);
+  lines.push(`  Total chunks created: ${formatNumber(output.chunksCreated || 0)}`);
+  lines.push(`  Duration: ${output.duration || 'unknown'}`);
+
+  if (output.docsWarning) {
+    lines.push('');
+    lines.push(`Warning: ${output.docsWarning}`);
+  }
+
+  return lines.join('\n');
 }
 
 // ============================================================================
@@ -365,8 +420,7 @@ export async function createIndex(
     const totalChunksCreated = codeResult.chunksCreated + (docsResult?.chunksCreated || 0);
 
     // Step 6: Format the result
-    const output: CreateIndexOutput = {
-      status: 'success',
+    const outputData = {
       projectPath,
       filesIndexed: totalFilesIndexed,
       chunksCreated: totalChunksCreated,
@@ -376,6 +430,13 @@ export async function createIndex(
       codeFilesIndexed: codeResult.codeFilesIndexed || codeResult.filesIndexed,
       docsFilesIndexed: docsResult?.filesIndexed || 0,
       docsChunksCreated: docsResult?.chunksCreated || 0,
+      docsWarning: docsResult?.warning,
+    };
+
+    const output: CreateIndexOutput = {
+      status: 'success',
+      summary: formatIndexSummary(outputData),
+      ...outputData,
     };
 
     logger.info('createIndex', 'Index created successfully', {
@@ -387,6 +448,7 @@ export async function createIndex(
       excludedFiles: codeResult.excludedFiles,
       codeFilesIndexed: output.codeFilesIndexed,
       docsFilesIndexed: output.docsFilesIndexed,
+      docsWarning: output.docsWarning,
     });
 
     // Step 7: Start indexing strategy if orchestrator and config provided

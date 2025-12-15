@@ -107,6 +107,10 @@ export interface DocsIndexResult {
   durationMs: number;
   /** Errors encountered (if any) */
   errors?: string[];
+  /** Warning message (e.g., when 0 docs indexed despite files existing) */
+  warning?: string;
+  /** Number of doc files found by glob before filtering (for diagnostics) */
+  globFilesFound?: number;
 }
 
 /**
@@ -137,14 +141,21 @@ export interface DocsStats {
  * @param policy - Initialized IndexingPolicy instance
  * @param config - Project configuration
  * @param onProgress - Optional callback for progress updates
- * @returns Array of relative file paths that should be indexed
+ * @returns Scan result with files array and diagnostic info
  */
+export interface ScanDocFilesResult {
+  /** Files that passed filtering and will be indexed */
+  files: string[];
+  /** Total files found by glob before filtering */
+  globFilesFound: number;
+}
+
 export async function scanDocFiles(
   projectPath: string,
   policy: IndexingPolicy,
   config: Config,
   onProgress?: DocsProgressCallback
-): Promise<string[]> {
+): Promise<ScanDocFilesResult> {
   const logger = getLogger();
   const normalizedProjectPath = normalizePath(projectPath);
 
@@ -196,10 +207,13 @@ export async function scanDocFiles(
     });
   }
 
-  logger.debug(
-    'DocsIndexManager',
-    `Found ${allDocFiles.length} total doc files before filtering`
-  );
+  // Log raw glob results for debugging (helpful when 0 docs are indexed)
+  logger.info('DocsIndexManager', 'Glob found doc files before filtering', {
+    count: allDocFiles.length,
+    patterns: DOC_FILE_PATTERNS,
+    cwd: normalizedProjectPath,
+    sampleFiles: allDocFiles.slice(0, 5),
+  });
 
   // Filter doc files through indexing policy
   const indexableDocFiles: string[] = [];
@@ -256,7 +270,18 @@ export async function scanDocFiles(
     filtered: allDocFiles.length - indexableDocFiles.length,
   });
 
-  return indexableDocFiles;
+  // Log warning when no docs found for easier debugging
+  if (indexableDocFiles.length === 0 && allDocFiles.length > 0) {
+    logger.warn('DocsIndexManager', 'All doc files were filtered out by policy', {
+      totalFound: allDocFiles.length,
+      sampleFilteredFiles: allDocFiles.slice(0, 5),
+    });
+  }
+
+  return {
+    files: indexableDocFiles,
+    globFilesFound: allDocFiles.length,
+  };
 }
 
 // ============================================================================
@@ -463,23 +488,34 @@ export async function createDocsIndex(
     fingerprintsManager.setAll(new Map());
 
     // Scan doc files
-    const files = await scanDocFiles(
+    const scanResult = await scanDocFiles(
       normalizedProjectPath,
       policy,
       config,
       onProgress
     );
+    const { files, globFilesFound } = scanResult;
 
     if (files.length === 0) {
-      logger.warn('DocsIndexManager', 'No doc files to index');
+      logger.warn('DocsIndexManager', 'No doc files to index', {
+        globFilesFound,
+        projectPath: normalizedProjectPath,
+      });
 
       await fingerprintsManager.save();
+
+      // Include warning when glob found files but all were filtered
+      const warning = globFilesFound > 0
+        ? `Found ${globFilesFound} doc files (*.md, *.txt) but all were filtered out by indexing policy. Check gitignore, exclude patterns, or file size limits.`
+        : undefined;
 
       return {
         success: true,
         filesIndexed: 0,
         chunksCreated: 0,
         durationMs: Date.now() - startTime,
+        warning,
+        globFilesFound,
       };
     }
 
@@ -1239,12 +1275,12 @@ export class DocsIndexManager {
    *
    * @param config - Optional config override
    * @param onProgress - Optional progress callback
-   * @returns Array of relative file paths for doc files
+   * @returns Scan result with files array and diagnostic info
    */
   async scanDocFiles(
     config?: Config,
     onProgress?: DocsProgressCallback
-  ): Promise<string[]> {
+  ): Promise<ScanDocFilesResult> {
     const configToUse =
       config || (await loadConfig(this.indexPath));
     const policy = new IndexingPolicy(this.projectPath, configToUse);

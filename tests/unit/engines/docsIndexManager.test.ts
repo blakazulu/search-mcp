@@ -215,14 +215,16 @@ describe('Docs Index Manager', () => {
       const policy = new IndexingPolicy(projectPath, config);
       await policy.initialize();
 
-      const files = await scanDocFiles(projectPath, policy, config);
+      const result = await scanDocFiles(projectPath, policy, config);
 
       // Should find the doc files
-      expect(files.length).toBeGreaterThan(0);
-      expect(files).toContain('README.md');
-      expect(files).toContain('docs/guide.md');
-      expect(files).toContain('docs/api.md');
-      expect(files).toContain('NOTES.txt');
+      expect(result.files.length).toBeGreaterThan(0);
+      expect(result.files).toContain('README.md');
+      expect(result.files).toContain('docs/guide.md');
+      expect(result.files).toContain('docs/api.md');
+      expect(result.files).toContain('NOTES.txt');
+      // globFilesFound should match files length (no filtering in this case)
+      expect(result.globFilesFound).toBeGreaterThanOrEqual(result.files.length);
     });
 
     it('should NOT include non-doc files', async () => {
@@ -230,11 +232,11 @@ describe('Docs Index Manager', () => {
       const policy = new IndexingPolicy(projectPath, config);
       await policy.initialize();
 
-      const files = await scanDocFiles(projectPath, policy, config);
+      const result = await scanDocFiles(projectPath, policy, config);
 
       // Should NOT include TypeScript or JSON files
-      expect(files).not.toContain('src/index.ts');
-      expect(files).not.toContain('package.json');
+      expect(result.files).not.toContain('src/index.ts');
+      expect(result.files).not.toContain('package.json');
     });
 
     it('should exclude files based on config.exclude', async () => {
@@ -242,11 +244,11 @@ describe('Docs Index Manager', () => {
       const policy = new IndexingPolicy(projectPath, config);
       await policy.initialize();
 
-      const files = await scanDocFiles(projectPath, policy, config);
+      const result = await scanDocFiles(projectPath, policy, config);
 
-      expect(files).not.toContain('docs/guide.md');
-      expect(files).not.toContain('docs/api.md');
-      expect(files).toContain('README.md');
+      expect(result.files).not.toContain('docs/guide.md');
+      expect(result.files).not.toContain('docs/api.md');
+      expect(result.files).toContain('README.md');
     });
 
     it('should call progress callback during scanning', async () => {
@@ -270,7 +272,7 @@ describe('Docs Index Manager', () => {
       expect(lastCall.current).toBe(lastCall.total);
     });
 
-    it('should return empty array for project with no doc files', async () => {
+    it('should return empty files array for project with no doc files', async () => {
       const emptyProject = await createTempDir('empty-doc-project-');
 
       try {
@@ -281,9 +283,10 @@ describe('Docs Index Manager', () => {
         const policy = new IndexingPolicy(emptyProject, config);
         await policy.initialize();
 
-        const files = await scanDocFiles(emptyProject, policy, config);
+        const result = await scanDocFiles(emptyProject, policy, config);
 
-        expect(files).toEqual([]);
+        expect(result.files).toEqual([]);
+        expect(result.globFilesFound).toBe(0);
       } finally {
         await removeTempDir(emptyProject);
       }
@@ -298,10 +301,10 @@ describe('Docs Index Manager', () => {
       const policy = new IndexingPolicy(projectPath, config);
       await policy.initialize();
 
-      const files = await scanDocFiles(projectPath, policy, config);
+      const result = await scanDocFiles(projectPath, policy, config);
 
-      expect(files).not.toContain('node_modules/pkg/README.md');
-      expect(files).not.toContain('.git/README.md');
+      expect(result.files).not.toContain('node_modules/pkg/README.md');
+      expect(result.files).not.toContain('.git/README.md');
     });
   });
 
@@ -868,11 +871,12 @@ describe('Docs Index Manager', () => {
 
     describe('scanDocFiles', () => {
       it('should scan doc files through the manager', async () => {
-        const files = await manager.scanDocFiles();
+        const result = await manager.scanDocFiles();
 
-        expect(files.length).toBeGreaterThan(0);
-        expect(files).toContain('README.md');
-        expect(files).toContain('docs/guide.md');
+        expect(result.files.length).toBeGreaterThan(0);
+        expect(result.files).toContain('README.md');
+        expect(result.files).toContain('docs/guide.md');
+        expect(result.globFilesFound).toBeGreaterThanOrEqual(result.files.length);
       });
 
       it('should report progress during scan', async () => {

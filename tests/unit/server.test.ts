@@ -21,7 +21,7 @@ import * as os from 'node:os';
 // ============================================================================
 
 /**
- * Create a mock tensor output that mimics @xenova/transformers output
+ * Create a mock tensor output that mimics @huggingface/transformers output
  */
 function createMockTensorOutput(dimension: number = 384): { data: Float32Array } {
   const data = new Float32Array(dimension);
@@ -42,8 +42,8 @@ function createMockTensorOutput(dimension: number = 384): { data: Float32Array }
 const mockPipelineInstance = vi.fn();
 const mockPipeline = vi.fn();
 
-// Mock the @xenova/transformers module
-vi.mock('@xenova/transformers', () => ({
+// Mock the @huggingface/transformers module
+vi.mock('@huggingface/transformers', () => ({
   pipeline: (...args: unknown[]) => mockPipeline(...args),
 }));
 

@@ -90,8 +90,8 @@ export class EmbeddingEngine {
     logger.info('Loading embedding model', { model: this.config.modelName });
 
     try {
-      // Simulate model loading (in real implementation, use @xenova/transformers)
-      // const { pipeline } = await import('@xenova/transformers');
+      // Simulate model loading (in real implementation, use @huggingface/transformers)
+      // const { pipeline } = await import('@huggingface/transformers');
       // this.model = await pipeline('feature-extraction', this.config.modelName);
 
       this.model = {

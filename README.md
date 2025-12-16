@@ -280,6 +280,23 @@ File changes are detected automatically. Use `reindex_project` for a full rebuil
 | Search Latency | < 200ms |
 | Storage | `~/.mcp/search/indexes/` (macOS/Linux) or `%USERPROFILE%\.mcp\search\indexes\` (Windows) |
 
+### GPU Acceleration
+
+Search MCP automatically uses GPU acceleration when available for faster indexing:
+
+| Platform | GPU Support | Notes |
+|----------|-------------|-------|
+| **Windows** | DirectML | Automatic GPU acceleration on all modern GPUs (NVIDIA, AMD, Intel) |
+| **macOS** | CPU only | CoreML not available in Node.js bindings |
+| **Linux** | CPU only | CUDA requires separate package (not included) |
+
+**GPU Compatibility (Windows):**
+- NVIDIA: GeForce GTX 1000+, RTX series, Quadro
+- AMD: RX 400+, Radeon Pro
+- Intel: Arc, UHD/Iris integrated graphics
+
+GPU acceleration is automatic - no configuration needed. The system detects available hardware and selects the best option. Check `get_index_status` to see which compute device is being used.
+
 For full technical documentation, see [ENGINEERING.RFC.md](docs/design/ENGINEERING.RFC.md).
 
 ---

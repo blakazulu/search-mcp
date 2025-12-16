@@ -1,14 +1,20 @@
 /**
  * Embedding Engine
  *
- * Implements local vector generation using Xenova/transformers.
+ * Implements local vector generation using @huggingface/transformers v3.
  * Supports dual models: BGE-small for code (384 dims) and BGE-base for docs (768 dims).
  * Handles model download on first use and batch processing for efficiency.
  */
 
-import { pipeline, type Pipeline, type FeatureExtractionPipeline } from '@xenova/transformers';
+import { pipeline, type FeatureExtractionPipeline } from '@huggingface/transformers';
 import { getLogger } from '../utils/logger.js';
 import { modelDownloadFailed } from '../errors/index.js';
+import {
+  type ComputeDevice,
+  type DeviceInfo,
+  detectBestDevice,
+  formatDeviceInfo,
+} from './deviceDetection.js';
 
 // ============================================================================
 // Constants
@@ -53,10 +59,16 @@ export const MODEL_NAME = CODE_MODEL_NAME;
 export const EMBEDDING_DIMENSION = CODE_EMBEDDING_DIMENSION;
 
 /**
- * Batch size for processing multiple texts
+ * Batch size for processing multiple texts on CPU
  * 32 is a good balance between speed and memory usage
  */
 export const BATCH_SIZE = 32;
+
+/**
+ * Batch size for processing multiple texts on GPU
+ * GPU can handle larger batches efficiently due to parallelism
+ */
+export const GPU_BATCH_SIZE = 64;
 
 // ============================================================================
 // Types
@@ -113,6 +125,14 @@ export interface EmbeddingEngineConfig {
   dimension: number;
   /** Human-readable display name for logging */
   displayName: string;
+  /**
+   * Compute device to use for embedding generation.
+   * - 'webgpu': Use GPU acceleration (browser only, requires WebGPU support)
+   * - 'dml': Use DirectML GPU acceleration (Windows Node.js only)
+   * - 'cpu': Use CPU with WASM backend
+   * - undefined: Auto-detect best available device
+   */
+  device?: ComputeDevice;
 }
 
 /**
@@ -161,6 +181,12 @@ export class EmbeddingEngine {
   private pipeline: FeatureExtractionPipeline | null = null;
   private initializationPromise: Promise<void> | null = null;
   private config: EmbeddingEngineConfig;
+  /** The compute device being used (set after initialization) */
+  private deviceInfo: DeviceInfo | null = null;
+  /** Whether a fallback from GPU to CPU occurred */
+  private didFallback = false;
+  /** Reason for fallback if one occurred */
+  private fallbackReason: string | null = null;
 
   /**
    * Create a new EmbeddingEngine with the specified configuration.
@@ -168,6 +194,58 @@ export class EmbeddingEngine {
    */
   constructor(config: EmbeddingEngineConfig = CODE_ENGINE_CONFIG) {
     this.config = config;
+  }
+
+  /**
+   * Get the compute device being used by this engine.
+   * Returns null if the engine has not been initialized yet.
+   * @returns Device info or null if not initialized
+   */
+  getDeviceInfo(): DeviceInfo | null {
+    return this.deviceInfo;
+  }
+
+  /**
+   * Get the compute device type being used.
+   * @returns 'webgpu', 'cpu', or undefined if not initialized
+   */
+  getDevice(): ComputeDevice | undefined {
+    return this.deviceInfo?.device;
+  }
+
+  /**
+   * Check if a fallback from GPU to CPU occurred during initialization.
+   * @returns True if fallback occurred
+   */
+  didFallbackToCPU(): boolean {
+    return this.didFallback;
+  }
+
+  /**
+   * Get the reason for fallback if one occurred.
+   * @returns Fallback reason string or null
+   */
+  getFallbackReason(): string | null {
+    return this.fallbackReason;
+  }
+
+  /**
+   * Get the effective batch size based on the compute device.
+   * GPU (WebGPU or DirectML) can handle larger batches efficiently.
+   * @returns Batch size to use
+   */
+  getEffectiveBatchSize(): number {
+    const device = this.deviceInfo?.device;
+    return device === 'webgpu' || device === 'dml' ? GPU_BATCH_SIZE : BATCH_SIZE;
+  }
+
+  /**
+   * Check if GPU acceleration is being used.
+   * @returns True if using WebGPU or DirectML
+   */
+  isUsingGPU(): boolean {
+    const device = this.deviceInfo?.device;
+    return device === 'webgpu' || device === 'dml';
   }
 
   /**
@@ -217,7 +295,16 @@ export class EmbeddingEngine {
   }
 
   /**
-   * Load the embedding model
+   * Load the embedding model with GPU support and automatic fallback to CPU.
+   *
+   * Device selection priority:
+   * 1. If config.device is specified, use that device
+   * 2. Otherwise, auto-detect the best available device:
+   *    - Browser: WebGPU > CPU
+   *    - Windows Node.js: DirectML > CPU
+   *    - macOS/Linux Node.js: CPU only
+   *
+   * If GPU initialization fails, automatically falls back to CPU.
    */
   private async loadModel(onProgress?: DownloadProgressCallback): Promise<void> {
     const logger = getLogger();
@@ -225,48 +312,157 @@ export class EmbeddingEngine {
       model: this.config.modelName,
     });
 
+    // Step 1: Determine which device to use
+    let targetDevice: ComputeDevice;
+    if (this.config.device) {
+      // User explicitly specified a device
+      targetDevice = this.config.device;
+      this.deviceInfo = {
+        device: targetDevice,
+        gpuName:
+          targetDevice === 'webgpu'
+            ? 'User-specified GPU'
+            : targetDevice === 'dml'
+              ? 'DirectML GPU'
+              : undefined,
+      };
+      logger.info('EmbeddingEngine', `Using user-specified device: ${targetDevice}`);
+    } else {
+      // Auto-detect the best available device
+      logger.info('EmbeddingEngine', 'Auto-detecting compute device...');
+      this.deviceInfo = await detectBestDevice();
+      targetDevice = this.deviceInfo.device;
+      logger.info('EmbeddingEngine', `Detected device: ${formatDeviceInfo(this.deviceInfo)}`);
+    }
+
+    // Step 2: Try to initialize with the target device
     try {
-      // Check if model needs to be downloaded
-      logger.info(
-        'EmbeddingEngine',
-        `Loading ${this.config.displayName} model (may download on first use)...`
-      );
-
-      // Create the feature extraction pipeline
-      this.pipeline = await pipeline('feature-extraction', this.config.modelName, {
-        progress_callback: (progress: {
-          status: string;
-          name?: string;
-          file?: string;
-          progress?: number;
-          loaded?: number;
-          total?: number;
-        }) => {
-          // Log download progress
-          if (progress.status === 'download' && progress.progress !== undefined) {
-            logger.debug('EmbeddingEngine', `Downloading: ${progress.file} - ${Math.round(progress.progress)}%`);
-          } else if (progress.status === 'done') {
-            logger.debug('EmbeddingEngine', `Downloaded: ${progress.file}`);
-          }
-
-          // Call user callback if provided
-          if (onProgress) {
-            onProgress(progress);
-          }
-        },
-      }) as FeatureExtractionPipeline;
+      await this.initializePipelineWithDevice(targetDevice, onProgress);
 
       logger.info('EmbeddingEngine', `${this.config.displayName} embedding model initialized successfully`, {
         model: this.config.modelName,
         dimension: this.config.dimension,
+        device: targetDevice,
+        gpuName: this.deviceInfo?.gpuName,
       });
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
+
+      // If we tried a GPU device and failed, fall back to CPU
+      const isGPUDevice = targetDevice === 'webgpu' || targetDevice === 'dml';
+      if (isGPUDevice) {
+        const gpuType = targetDevice === 'webgpu' ? 'WebGPU' : 'DirectML';
+        logger.warn('EmbeddingEngine', `${gpuType} initialization failed, falling back to CPU`, {
+          error: err.message,
+        });
+
+        this.didFallback = true;
+        this.fallbackReason = err.message;
+
+        try {
+          await this.initializePipelineWithDevice('cpu', onProgress);
+          this.deviceInfo = {
+            device: 'cpu',
+            fallbackReason: `${gpuType} failed: ${err.message}`,
+          };
+
+          logger.info('EmbeddingEngine', `${this.config.displayName} model initialized on CPU (fallback)`, {
+            model: this.config.modelName,
+            dimension: this.config.dimension,
+            fallbackReason: err.message,
+          });
+          return;
+        } catch (cpuError) {
+          const cpuErr = cpuError instanceof Error ? cpuError : new Error(String(cpuError));
+          logger.error('EmbeddingEngine', `CPU fallback also failed`, {
+            error: cpuErr.message,
+          });
+          throw modelDownloadFailed(cpuErr);
+        }
+      }
+
+      // CPU initialization failed (no fallback available)
       logger.error('EmbeddingEngine', `Failed to initialize ${this.config.displayName} embedding model`, {
         error: err.message,
         model: this.config.modelName,
       });
       throw modelDownloadFailed(err);
+    }
+  }
+
+  /**
+   * Initialize the pipeline with a specific device.
+   * Handles shader compilation detection for WebGPU and DirectML initialization.
+   */
+  private async initializePipelineWithDevice(
+    device: ComputeDevice,
+    onProgress?: DownloadProgressCallback
+  ): Promise<void> {
+    const logger = getLogger();
+    const startTime = Date.now();
+    let shaderCompilationLogged = false;
+
+    // Format device name for logging
+    const deviceDisplayName =
+      device === 'webgpu' ? 'WebGPU' : device === 'dml' ? 'DirectML' : 'CPU';
+
+    logger.info(
+      'EmbeddingEngine',
+      `Loading ${this.config.displayName} model on ${deviceDisplayName} (may download on first use)...`
+    );
+
+    // Create the feature extraction pipeline
+    // Note: Using @ts-expect-error due to complex union types in @huggingface/transformers v3
+    // The pipeline function has 60+ overloads which exceed TypeScript's union type complexity limit
+    // @ts-expect-error - TypeScript cannot handle the complex union type of pipeline()
+    this.pipeline = await pipeline('feature-extraction', this.config.modelName, {
+      device: device,
+      dtype: 'fp32', // Use fp32 for consistent embeddings across devices
+      progress_callback: (progress: {
+        status: string;
+        name?: string;
+        file?: string;
+        progress?: number;
+        loaded?: number;
+        total?: number;
+      }) => {
+        // Log download progress
+        if (progress.status === 'download' && progress.progress !== undefined) {
+          logger.debug('EmbeddingEngine', `Downloading: ${progress.file} - ${Math.round(progress.progress)}%`);
+        } else if (progress.status === 'done') {
+          logger.debug('EmbeddingEngine', `Downloaded: ${progress.file}`);
+        }
+
+        // Detect shader compilation for GPU devices (first run only)
+        // Shader compilation typically happens after model download and takes 10-30 seconds
+        const isGPU = device === 'webgpu' || device === 'dml';
+        if (isGPU && progress.status === 'ready' && !shaderCompilationLogged) {
+          const elapsed = Date.now() - startTime;
+          // If initialization took longer than 5 seconds, shaders were likely being compiled
+          if (elapsed > 5000) {
+            logger.info('EmbeddingEngine', `${deviceDisplayName} shaders compiled (first run only)`, {
+              compilationTimeMs: elapsed,
+            });
+            shaderCompilationLogged = true;
+          }
+        }
+
+        // Call user callback if provided
+        if (onProgress) {
+          onProgress(progress);
+        }
+      },
+    });
+
+    // Log a hint about shader compilation on first GPU run
+    const isGPU = device === 'webgpu' || device === 'dml';
+    if (isGPU) {
+      const elapsed = Date.now() - startTime;
+      if (elapsed > 5000 && !shaderCompilationLogged) {
+        logger.info('EmbeddingEngine', `${deviceDisplayName} initialized (subsequent runs will be faster)`, {
+          initTimeMs: elapsed,
+        });
+      }
     }
   }
 
@@ -362,8 +558,9 @@ export class EmbeddingEngine {
   /**
    * Embed multiple texts in batches for efficiency.
    *
-   * Processes texts in batches of BATCH_SIZE (32) to balance
-   * speed and memory usage. Reports progress via optional callback.
+   * Batch size is optimized based on compute device:
+   * - GPU: 64 texts per batch (higher parallelism)
+   * - CPU: 32 texts per batch (balance speed and memory)
    *
    * SECURITY (SMCP-054): This method returns ONLY successful embeddings.
    * Use embedBatchWithStats to get detailed information about which texts
@@ -386,6 +583,11 @@ export class EmbeddingEngine {
    * Unlike embedBatch, this method returns detailed statistics about failures
    * and only includes successfully embedded vectors.
    *
+   * Performance logging includes:
+   * - Compute device being used (WebGPU/CPU)
+   * - Chunks per second throughput
+   * - Total processing time
+   *
    * @param texts - Array of texts to embed
    * @param onProgress - Optional callback for progress updates
    * @returns BatchEmbeddingResult with vectors, success indices, and failure count
@@ -406,23 +608,31 @@ export class EmbeddingEngine {
     }
 
     const logger = getLogger();
+    const effectiveBatchSize = this.getEffectiveBatchSize();
+    const deviceType = this.deviceInfo?.device || 'cpu';
+    const startTime = Date.now();
+
     logger.info('EmbeddingEngine', 'Starting batch embedding', {
       totalTexts: texts.length,
-      batchSize: BATCH_SIZE,
+      batchSize: effectiveBatchSize,
+      device: deviceType,
+      gpuName: this.deviceInfo?.gpuName,
     });
 
     const vectors: number[][] = [];
     const successIndices: number[] = [];
     let failedCount = 0;
-    const totalBatches = Math.ceil(texts.length / BATCH_SIZE);
+    const totalBatches = Math.ceil(texts.length / effectiveBatchSize);
     let processedCount = 0;
 
-    for (let i = 0; i < texts.length; i += BATCH_SIZE) {
-      const batch = texts.slice(i, i + BATCH_SIZE);
-      const batchIndex = Math.floor(i / BATCH_SIZE) + 1;
+    for (let i = 0; i < texts.length; i += effectiveBatchSize) {
+      const batch = texts.slice(i, i + effectiveBatchSize);
+      const batchIndex = Math.floor(i / effectiveBatchSize) + 1;
+      const batchStartTime = Date.now();
 
       logger.debug('EmbeddingEngine', `Processing batch ${batchIndex}/${totalBatches}`, {
         batchSize: batch.length,
+        device: deviceType,
       });
 
       // Process each text in the batch
@@ -445,6 +655,7 @@ export class EmbeddingEngine {
             error: err.message,
             textLength: text.length,
             textIndex: originalIndex,
+            device: deviceType,
           });
           // Track failure but don't add zero vector (MCP-13)
           failedCount++;
@@ -465,11 +676,29 @@ export class EmbeddingEngine {
           onProgress(processedCount, texts.length);
         }
       }
+
+      // Log batch performance
+      const batchElapsed = Date.now() - batchStartTime;
+      const batchChunksPerSec = batch.length / (batchElapsed / 1000);
+      logger.debug('EmbeddingEngine', `Batch ${batchIndex} complete`, {
+        batchElapsedMs: batchElapsed,
+        chunksPerSec: Math.round(batchChunksPerSec),
+        device: deviceType,
+      });
     }
+
+    // Calculate and log overall performance metrics
+    const totalElapsed = Date.now() - startTime;
+    const totalSeconds = totalElapsed / 1000;
+    const overallChunksPerSec = vectors.length / totalSeconds;
 
     logger.info('EmbeddingEngine', 'Batch embedding complete', {
       totalVectors: vectors.length,
       failedCount,
+      totalTimeMs: totalElapsed,
+      chunksPerSec: Math.round(overallChunksPerSec),
+      device: deviceType,
+      gpuName: this.deviceInfo?.gpuName,
     });
 
     return { vectors, successIndices, failedCount };

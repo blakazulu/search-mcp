@@ -63,6 +63,7 @@ export {
   type GetIndexStatusInput,
   type GetIndexStatusOutput,
   type IndexStatus,
+  type ComputeStatus,
 } from './getIndexStatus.js';
 
 // reindex_project tool - rebuild entire index

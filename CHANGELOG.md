@@ -5,6 +5,58 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2025-12-16
+
+### Added
+
+#### GPU Acceleration (Windows)
+- **Automatic GPU acceleration via DirectML** - Zero-configuration GPU support on Windows
+  - Works with NVIDIA, AMD, and Intel GPUs (including integrated graphics)
+  - DirectML is built into `onnxruntime-node` - no additional dependencies needed
+  - Graceful fallback to CPU if GPU initialization fails
+
+#### Device Detection (`src/engines/deviceDetection.ts`)
+- New module for detecting and managing compute devices
+- Functions: `detectBestDevice()`, `isDirectMLAvailable()`, `supportsGPU()`, `formatDeviceInfo()`
+- Platform detection: `isWindows()`, `isMacOS()`, `isLinux()`, `isNodeEnvironment()`
+- Caching with `getCachedDeviceInfo()` and `clearDeviceCache()`
+- 5-second timeout prevents hangs on unresponsive GPU drivers
+
+#### Embedding Engine GPU Support
+- New `device` option in `EmbeddingEngineConfig`: `'webgpu' | 'dml' | 'cpu'` or auto-detect
+- GPU batch size: 64 (vs 32 for CPU) for better throughput
+- New methods: `getDeviceInfo()`, `getDevice()`, `isUsingGPU()`, `didFallbackToCPU()`
+- Performance logging: chunks/sec, device info, total time
+
+#### Status Reporting
+- `get_index_status` now includes `compute` field with device info
+- `create_index` summary shows compute device and throughput (chunks/sec)
+- New `ComputeStatus` interface exported from tools
+
+### Changed
+- **Transformers.js v3 Migration** - Upgraded from `@xenova/transformers` v2 to `@huggingface/transformers` v3
+  - Actively maintained by Hugging Face (v2 was 2+ years old)
+  - Foundation for GPU acceleration support
+  - Existing models and indexes remain fully compatible
+- Device detection priority:
+  - Windows Node.js: DirectML > CPU
+  - macOS/Linux Node.js: CPU only (CoreML/CUDA require separate packages)
+  - Browser: WebGPU > CPU
+
+### Platform Support
+
+| Platform | GPU Support | Notes |
+|----------|-------------|-------|
+| Windows | DirectML | Automatic - NVIDIA, AMD, Intel GPUs |
+| macOS | CPU only | CoreML not available in Node.js |
+| Linux | CPU only | CUDA requires separate package |
+
+### Testing
+- 2831 tests passing (123+ unit tests for GPU features)
+- 40 new integration tests for WebGPU/DirectML pipeline
+- Platform compatibility matrix tests
+- Search quality validation: MCP 2.5x better than grep
+
 ## [1.3.20] - 2025-12-16
 
 ### Added

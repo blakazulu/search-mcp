@@ -25,6 +25,12 @@ import type { ToolContext } from './searchCode.js';
 import type { StrategyOrchestrator } from '../engines/strategyOrchestrator.js';
 import type { Config } from '../storage/config.js';
 import { loadConfig } from '../storage/config.js';
+import {
+  type DeviceInfo,
+  detectBestDevice,
+  formatDeviceInfo,
+} from '../engines/deviceDetection.js';
+import { getCodeEmbeddingEngine } from '../engines/embedding.js';
 
 // ============================================================================
 // Input/Output Schemas
@@ -77,6 +83,10 @@ export interface CreateIndexOutput {
   docsChunksCreated?: number;
   /** Warning about docs indexing (e.g., when 0 docs indexed despite files existing) */
   docsWarning?: string;
+  /** Compute device used for embedding generation (SMCP-083) */
+  computeDevice?: string;
+  /** Chunks per second performance metric (SMCP-083) */
+  chunksPerSecond?: number;
 }
 
 /**
@@ -220,6 +230,14 @@ export function formatIndexSummary(output: Omit<CreateIndexOutput, 'status' | 's
   lines.push(`  Doc files indexed: ${formatNumber(output.docsFilesIndexed || 0)}`);
   lines.push(`  Total chunks created: ${formatNumber(output.chunksCreated || 0)}`);
   lines.push(`  Duration: ${output.duration || 'unknown'}`);
+
+  // SMCP-083: Add compute device information
+  if (output.computeDevice) {
+    lines.push(`  Compute device: ${output.computeDevice}`);
+  }
+  if (output.chunksPerSecond !== undefined && output.chunksPerSecond > 0) {
+    lines.push(`  Performance: ~${formatNumber(Math.round(output.chunksPerSecond))} chunks/second`);
+  }
 
   if (output.docsWarning) {
     lines.push('');
@@ -419,6 +437,13 @@ export async function createIndex(
     const totalFilesIndexed = codeResult.filesIndexed + (docsResult?.filesIndexed || 0);
     const totalChunksCreated = codeResult.chunksCreated + (docsResult?.chunksCreated || 0);
 
+    // Step 5.5: Get compute device info (SMCP-083)
+    const codeEngine = getCodeEmbeddingEngine();
+    const deviceInfo = codeEngine.getDeviceInfo();
+    const computeDevice = deviceInfo ? formatDeviceInfo(deviceInfo) : undefined;
+    const totalSeconds = totalDurationMs / 1000;
+    const chunksPerSecond = totalSeconds > 0 ? totalChunksCreated / totalSeconds : 0;
+
     // Step 6: Format the result
     const outputData = {
       projectPath,
@@ -431,6 +456,8 @@ export async function createIndex(
       docsFilesIndexed: docsResult?.filesIndexed || 0,
       docsChunksCreated: docsResult?.chunksCreated || 0,
       docsWarning: docsResult?.warning,
+      computeDevice,
+      chunksPerSecond,
     };
 
     const output: CreateIndexOutput = {
@@ -449,6 +476,8 @@ export async function createIndex(
       codeFilesIndexed: output.codeFilesIndexed,
       docsFilesIndexed: output.docsFilesIndexed,
       docsWarning: output.docsWarning,
+      computeDevice: output.computeDevice,
+      chunksPerSecond: Math.round(output.chunksPerSecond || 0),
     });
 
     // Step 7: Start indexing strategy if orchestrator and config provided

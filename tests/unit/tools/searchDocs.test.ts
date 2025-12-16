@@ -33,7 +33,7 @@ const CODE_DIMENSION = 384;
 const DOCS_DIMENSION = 768;
 
 /**
- * Create a mock tensor output that mimics @xenova/transformers output
+ * Create a mock tensor output that mimics @huggingface/transformers output
  */
 function createMockTensorOutput(dimension: number = CODE_DIMENSION): { data: Float32Array } {
   const data = new Float32Array(dimension);
@@ -54,8 +54,8 @@ function createMockTensorOutput(dimension: number = CODE_DIMENSION): { data: Flo
 const mockPipelineInstance = vi.fn();
 const mockPipeline = vi.fn();
 
-// Mock the @xenova/transformers module
-vi.mock('@xenova/transformers', () => ({
+// Mock the @huggingface/transformers module
+vi.mock('@huggingface/transformers', () => ({
   pipeline: (...args: unknown[]) => mockPipeline(...args),
 }));
 

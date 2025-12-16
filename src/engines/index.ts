@@ -85,6 +85,7 @@ export {
   EMBEDDING_DIMENSION,
   // Common constants
   BATCH_SIZE,
+  GPU_BATCH_SIZE,
   // Types
   type EmbeddingResult,
   type EmbeddingProgressCallback,
@@ -240,3 +241,17 @@ export {
   formatEngineSelectionReason,
   wouldSelectNative,
 } from './ftsEngineFactory.js';
+
+// Device Detection Engine (WebGPU / CPU)
+export {
+  type ComputeDevice,
+  type DeviceInfo,
+  FALLBACK_REASONS,
+  DETECTION_TIMEOUT_MS,
+  isWebGPUAPIAvailable,
+  detectBestDevice,
+  getCachedDeviceInfo,
+  clearDeviceCache,
+  formatDeviceInfo,
+  supportsWebGPU,
+} from './deviceDetection.js';

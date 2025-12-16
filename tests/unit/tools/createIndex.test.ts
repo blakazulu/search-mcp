@@ -818,4 +818,159 @@ describe('create_index Tool', () => {
       expect(fs.existsSync(lancedbPath)).toBe(true);
     });
   });
+
+  // --------------------------------------------------------------------------
+  // Compute Device Reporting Tests (SMCP-083)
+  // --------------------------------------------------------------------------
+
+  describe('compute device reporting (SMCP-083)', () => {
+    let tempDir: string;
+    let projectDir: string;
+    let indexPath: string;
+
+    beforeEach(async () => {
+      tempDir = createTempDir();
+      projectDir = createProjectDir(tempDir, ['package.json']);
+      createSampleFiles(projectDir, 2);
+
+      const { getIndexPath } = await import('../../../src/utils/paths.js');
+      indexPath = getIndexPath(projectDir);
+    });
+
+    afterEach(() => {
+      cleanupTempDir(tempDir);
+      if (fs.existsSync(indexPath)) {
+        fs.rmSync(indexPath, { recursive: true, force: true });
+      }
+    });
+
+    it('should include computeDevice in output', async () => {
+      const { createIndex } = await import('../../../src/tools/createIndex.js');
+
+      const result = await createIndex({}, { projectPath: projectDir, confirmed: true });
+
+      expect(result.status).toBe('success');
+      // computeDevice may be undefined if model wasn't initialized, but should exist on success
+      // The format is like "DirectML (DirectML GPU)" or "CPU: reason"
+      if (result.computeDevice) {
+        expect(typeof result.computeDevice).toBe('string');
+        expect(result.computeDevice.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('should include chunksPerSecond in output', async () => {
+      const { createIndex } = await import('../../../src/tools/createIndex.js');
+
+      const result = await createIndex({}, { projectPath: projectDir, confirmed: true });
+
+      expect(result.status).toBe('success');
+      expect(typeof result.chunksPerSecond).toBe('number');
+      expect(result.chunksPerSecond).toBeGreaterThanOrEqual(0);
+    });
+
+    it('should include compute device in summary', async () => {
+      const { createIndex } = await import('../../../src/tools/createIndex.js');
+
+      const result = await createIndex({}, { projectPath: projectDir, confirmed: true });
+
+      expect(result.status).toBe('success');
+      expect(result.summary).toBeDefined();
+      // Summary should contain compute device if it was set
+      if (result.computeDevice) {
+        expect(result.summary).toContain('Compute device:');
+        expect(result.summary).toContain(result.computeDevice);
+      }
+    });
+
+    it('should include performance in summary when chunks > 0', async () => {
+      const { createIndex } = await import('../../../src/tools/createIndex.js');
+
+      const result = await createIndex({}, { projectPath: projectDir, confirmed: true });
+
+      expect(result.status).toBe('success');
+      expect(result.summary).toBeDefined();
+      // If chunks were created, performance should be included
+      if (result.chunksCreated && result.chunksCreated > 0 && result.chunksPerSecond && result.chunksPerSecond > 0) {
+        expect(result.summary).toContain('Performance:');
+        expect(result.summary).toContain('chunks/second');
+      }
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // formatIndexSummary Compute Device Tests (SMCP-083)
+  // --------------------------------------------------------------------------
+
+  describe('formatIndexSummary compute device (SMCP-083)', () => {
+    it('should include compute device in summary', async () => {
+      const { formatIndexSummary } = await import('../../../src/tools/createIndex.js');
+
+      const summary = formatIndexSummary({
+        projectPath: '/path/to/project',
+        totalFilesInProject: 100,
+        excludedFiles: 90,
+        codeFilesIndexed: 10,
+        docsFilesIndexed: 0,
+        chunksCreated: 50,
+        duration: '5s',
+        computeDevice: 'DirectML (DirectML GPU)',
+        chunksPerSecond: 10,
+      });
+
+      expect(summary).toContain('Compute device: DirectML (DirectML GPU)');
+    });
+
+    it('should include performance in summary', async () => {
+      const { formatIndexSummary } = await import('../../../src/tools/createIndex.js');
+
+      const summary = formatIndexSummary({
+        projectPath: '/path/to/project',
+        totalFilesInProject: 100,
+        excludedFiles: 90,
+        codeFilesIndexed: 10,
+        docsFilesIndexed: 0,
+        chunksCreated: 50,
+        duration: '5s',
+        computeDevice: 'CPU: CUDA not available',
+        chunksPerSecond: 25,
+      });
+
+      expect(summary).toContain('Performance: ~25 chunks/second');
+    });
+
+    it('should not include performance when chunksPerSecond is 0', async () => {
+      const { formatIndexSummary } = await import('../../../src/tools/createIndex.js');
+
+      const summary = formatIndexSummary({
+        projectPath: '/path/to/project',
+        totalFilesInProject: 0,
+        excludedFiles: 0,
+        codeFilesIndexed: 0,
+        docsFilesIndexed: 0,
+        chunksCreated: 0,
+        duration: '0s',
+        computeDevice: 'CPU',
+        chunksPerSecond: 0,
+      });
+
+      expect(summary).not.toContain('Performance:');
+    });
+
+    it('should not include compute device when undefined', async () => {
+      const { formatIndexSummary } = await import('../../../src/tools/createIndex.js');
+
+      const summary = formatIndexSummary({
+        projectPath: '/path/to/project',
+        totalFilesInProject: 100,
+        excludedFiles: 90,
+        codeFilesIndexed: 10,
+        docsFilesIndexed: 0,
+        chunksCreated: 50,
+        duration: '5s',
+        // computeDevice is undefined
+      });
+
+      expect(summary).not.toContain('Compute device:');
+    });
+  });
 });

@@ -27,6 +27,11 @@ import {
   getCurrentModelConfig,
   buildStatusWarning,
 } from '../utils/modelCompatibility.js';
+import {
+  type DeviceInfo,
+  detectBestDevice,
+  formatDeviceInfo,
+} from '../engines/deviceDetection.js';
 
 // ============================================================================
 // Input/Output Schemas
@@ -99,6 +104,18 @@ export interface EmbeddingModelsStatus {
 }
 
 /**
+ * Compute device information for status output (SMCP-083)
+ */
+export interface ComputeStatus {
+  /** The compute device being used: 'webgpu', 'dml', or 'cpu' */
+  device: 'webgpu' | 'dml' | 'cpu';
+  /** GPU name/model if GPU is being used */
+  gpuName?: string;
+  /** Reason for falling back to CPU (if device is 'cpu') */
+  fallbackReason?: string;
+}
+
+/**
  * Output structure for get_index_status tool
  */
 export interface GetIndexStatusOutput {
@@ -142,6 +159,8 @@ export interface GetIndexStatusOutput {
   embeddingModels?: EmbeddingModelsStatus;
   /** Model mismatch warning (non-blocking for status, unlike search) */
   modelMismatchWarning?: string;
+  /** Compute device information (SMCP-083) */
+  compute?: ComputeStatus;
 }
 
 // ============================================================================
@@ -398,6 +417,14 @@ export async function collectStatus(
   // SMCP-074: Check for model mismatch (non-blocking warning)
   const modelMismatchWarning = buildStatusWarning(metadata.embeddingModels);
 
+  // SMCP-083: Get compute device information
+  const deviceInfo = await detectBestDevice();
+  const compute: ComputeStatus = {
+    device: deviceInfo.device,
+    gpuName: deviceInfo.gpuName,
+    fallbackReason: deviceInfo.fallbackReason,
+  };
+
   // Build the output
   const output: GetIndexStatusOutput = {
     status,
@@ -418,6 +445,7 @@ export async function collectStatus(
     hybridSearch,
     embeddingModels,
     modelMismatchWarning,
+    compute,
   };
 
   logger.debug('getIndexStatus', 'Status collected', {
@@ -433,6 +461,8 @@ export async function collectStatus(
     codeModel: output.embeddingModels?.code?.modelName,
     docsModel: output.embeddingModels?.docs?.modelName,
     modelMismatchWarning: output.modelMismatchWarning,
+    computeDevice: output.compute?.device,
+    gpuName: output.compute?.gpuName,
   });
 
   return output;

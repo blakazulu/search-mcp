@@ -9,7 +9,7 @@
  * - Singleton pattern
  * - Error handling
  *
- * Note: Tests mock the @xenova/transformers module to avoid
+ * Note: Tests mock the @huggingface/transformers module to avoid
  * downloading the model during CI runs.
  */
 
@@ -21,7 +21,7 @@ import type { EmbeddingProgressCallback } from '../../../src/engines/embedding.j
 // ============================================================================
 
 /**
- * Create a mock tensor output that mimics @xenova/transformers output
+ * Create a mock tensor output that mimics @huggingface/transformers output
  */
 function createMockTensorOutput(dimension: number = 384): { data: Float32Array } {
   // Create a mock 384-dimensional vector with normalized values
@@ -43,8 +43,8 @@ function createMockTensorOutput(dimension: number = 384): { data: Float32Array }
 const mockPipelineInstance = vi.fn();
 const mockPipeline = vi.fn();
 
-// Mock the @xenova/transformers module
-vi.mock('@xenova/transformers', () => ({
+// Mock the @huggingface/transformers module
+vi.mock('@huggingface/transformers', () => ({
   pipeline: (...args: unknown[]) => mockPipeline(...args),
 }));
 
@@ -194,8 +194,9 @@ describe('Embedding Engine', () => {
       });
 
       it('should allow retry after initialization failure', async () => {
-        const { EmbeddingEngine } = await import('../../../src/engines/embedding.js');
-        const engine = new EmbeddingEngine();
+        const { EmbeddingEngine, CODE_ENGINE_CONFIG } = await import('../../../src/engines/embedding.js');
+        // Use explicit CPU device to avoid DirectML fallback behavior
+        const engine = new EmbeddingEngine({ ...CODE_ENGINE_CONFIG, device: 'cpu' });
 
         // First call fails
         mockPipeline.mockRejectedValueOnce(new Error('Network error'));
@@ -739,6 +740,257 @@ describe('Embedding Engine', () => {
       };
 
       await embedBatch(['test'], callback);
+    });
+  });
+
+  describe('WebGPU Integration (SMCP-081)', () => {
+    describe('GPU_BATCH_SIZE constant', () => {
+      it('should export GPU_BATCH_SIZE', async () => {
+        const { GPU_BATCH_SIZE } = await import('../../../src/engines/embedding.js');
+        expect(GPU_BATCH_SIZE).toBe(64);
+      });
+
+      it('GPU_BATCH_SIZE should be larger than CPU BATCH_SIZE', async () => {
+        const { BATCH_SIZE, GPU_BATCH_SIZE } = await import('../../../src/engines/embedding.js');
+        expect(GPU_BATCH_SIZE).toBeGreaterThan(BATCH_SIZE);
+      });
+    });
+
+    describe('EmbeddingEngineConfig.device option', () => {
+      it('should accept device option in config', async () => {
+        const { EmbeddingEngine, CODE_ENGINE_CONFIG } = await import('../../../src/engines/embedding.js');
+
+        // Should not throw when creating engine with device option
+        const engineCPU = new EmbeddingEngine({ ...CODE_ENGINE_CONFIG, device: 'cpu' });
+        expect(engineCPU).toBeDefined();
+
+        const engineGPU = new EmbeddingEngine({ ...CODE_ENGINE_CONFIG, device: 'webgpu' });
+        expect(engineGPU).toBeDefined();
+      });
+    });
+
+    describe('Device info methods', () => {
+      it('getDeviceInfo should return null before initialization', async () => {
+        const { EmbeddingEngine } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine();
+
+        expect(engine.getDeviceInfo()).toBeNull();
+      });
+
+      it('getDevice should return undefined before initialization', async () => {
+        const { EmbeddingEngine } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine();
+
+        expect(engine.getDevice()).toBeUndefined();
+      });
+
+      it('getDeviceInfo should return device info after initialization', async () => {
+        const { EmbeddingEngine } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine();
+
+        await engine.initialize();
+
+        const deviceInfo = engine.getDeviceInfo();
+        expect(deviceInfo).not.toBeNull();
+        // Accept any valid device type - 'dml' on Windows, 'cpu' elsewhere
+        expect(['cpu', 'webgpu', 'dml']).toContain(deviceInfo!.device);
+      });
+
+      it('getDevice should return device type after initialization', async () => {
+        const { EmbeddingEngine } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine();
+
+        await engine.initialize();
+
+        const device = engine.getDevice();
+        // Accept any valid device type - 'dml' on Windows, 'webgpu' in browser, 'cpu' as fallback
+        expect(['cpu', 'webgpu', 'dml']).toContain(device);
+      });
+
+      it('didFallbackToCPU should return false initially', async () => {
+        const { EmbeddingEngine } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine();
+
+        expect(engine.didFallbackToCPU()).toBe(false);
+      });
+
+      it('getFallbackReason should return null initially', async () => {
+        const { EmbeddingEngine } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine();
+
+        expect(engine.getFallbackReason()).toBeNull();
+      });
+    });
+
+    describe('getEffectiveBatchSize', () => {
+      it('should return CPU batch size before initialization', async () => {
+        const { EmbeddingEngine, BATCH_SIZE } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine();
+
+        // Before initialization, deviceInfo is null, so defaults to CPU batch size
+        expect(engine.getEffectiveBatchSize()).toBe(BATCH_SIZE);
+      });
+
+      it('should return CPU batch size after CPU initialization', async () => {
+        const { EmbeddingEngine, BATCH_SIZE } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine();
+
+        await engine.initialize();
+
+        // In test environment (no WebGPU), should use CPU
+        if (engine.getDevice() === 'cpu') {
+          expect(engine.getEffectiveBatchSize()).toBe(BATCH_SIZE);
+        }
+      });
+    });
+
+    describe('Device-specific initialization with explicit device', () => {
+      it('should use explicit CPU device when specified', async () => {
+        const { EmbeddingEngine, CODE_ENGINE_CONFIG } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine({ ...CODE_ENGINE_CONFIG, device: 'cpu' });
+
+        await engine.initialize();
+
+        expect(engine.getDevice()).toBe('cpu');
+        expect(engine.didFallbackToCPU()).toBe(false); // No fallback, just explicit choice
+      });
+
+      it('should attempt WebGPU when specified and fallback to CPU in test env', async () => {
+        // In test environment, WebGPU is not available, so it should fallback to CPU
+        const { EmbeddingEngine, CODE_ENGINE_CONFIG } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine({ ...CODE_ENGINE_CONFIG, device: 'webgpu' });
+
+        await engine.initialize();
+
+        // Should either succeed with webgpu or fallback to cpu
+        const device = engine.getDevice();
+        expect(['cpu', 'webgpu']).toContain(device);
+
+        // If it fell back to CPU, fallback flag should be set
+        if (device === 'cpu') {
+          expect(engine.didFallbackToCPU()).toBe(true);
+          expect(engine.getFallbackReason()).not.toBeNull();
+        }
+      });
+    });
+
+    describe('Pipeline initialization with device parameter', () => {
+      it('should pass device parameter to pipeline', async () => {
+        const { EmbeddingEngine, CODE_ENGINE_CONFIG, CODE_MODEL_NAME } = await import('../../../src/engines/embedding.js');
+
+        // Create engine with explicit CPU device
+        const engine = new EmbeddingEngine({ ...CODE_ENGINE_CONFIG, device: 'cpu' });
+
+        await engine.initialize();
+
+        // Verify pipeline was called with device parameter
+        expect(mockPipeline).toHaveBeenCalledWith(
+          'feature-extraction',
+          CODE_MODEL_NAME,
+          expect.objectContaining({
+            device: 'cpu',
+            dtype: 'fp32',
+            progress_callback: expect.any(Function),
+          })
+        );
+      });
+    });
+
+    describe('Batch embedding with device info logging', () => {
+      it('should embed batch and log device info', async () => {
+        const { EmbeddingEngine } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine();
+
+        const texts = ['Hello', 'World', 'Test'];
+        const result = await engine.embedBatch(texts);
+
+        expect(result.vectors.length).toBe(3);
+        // Device should be set after initialization triggered by embedBatch
+        expect(engine.getDevice()).toBeDefined();
+      });
+
+      it('should use effective batch size during batch embedding', async () => {
+        const { EmbeddingEngine, BATCH_SIZE, GPU_BATCH_SIZE } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine();
+
+        await engine.initialize();
+
+        const effectiveSize = engine.getEffectiveBatchSize();
+        const device = engine.getDevice();
+
+        // GPU devices (webgpu and dml) use larger batch size
+        if (device === 'webgpu' || device === 'dml') {
+          expect(effectiveSize).toBe(GPU_BATCH_SIZE);
+        } else {
+          expect(effectiveSize).toBe(BATCH_SIZE);
+        }
+      });
+    });
+
+    describe('Fallback behavior', () => {
+      it('should fallback gracefully when WebGPU pipeline fails', async () => {
+        // Make the first pipeline call (WebGPU) fail, second (CPU) succeed
+        let callCount = 0;
+        mockPipeline.mockImplementation(async (_task: string, _model: string, options: { device?: string }) => {
+          callCount++;
+          if (options.device === 'webgpu') {
+            throw new Error('WebGPU not available');
+          }
+          return mockPipelineInstance;
+        });
+
+        const { EmbeddingEngine, CODE_ENGINE_CONFIG } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine({ ...CODE_ENGINE_CONFIG, device: 'webgpu' });
+
+        // Should not throw - should fallback to CPU
+        await engine.initialize();
+
+        expect(engine.isInitialized()).toBe(true);
+        expect(engine.getDevice()).toBe('cpu');
+        expect(engine.didFallbackToCPU()).toBe(true);
+        expect(engine.getFallbackReason()).toContain('WebGPU not available');
+      });
+
+      it('should throw when both WebGPU and CPU fail', async () => {
+        mockPipeline.mockRejectedValue(new Error('Pipeline failed'));
+
+        const { EmbeddingEngine, CODE_ENGINE_CONFIG } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine({ ...CODE_ENGINE_CONFIG, device: 'webgpu' });
+
+        await expect(engine.initialize()).rejects.toMatchObject({
+          code: 'MODEL_DOWNLOAD_FAILED',
+        });
+
+        expect(engine.isInitialized()).toBe(false);
+      });
+
+      it('should throw when CPU-only initialization fails', async () => {
+        mockPipeline.mockRejectedValue(new Error('CPU pipeline failed'));
+
+        const { EmbeddingEngine, CODE_ENGINE_CONFIG } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine({ ...CODE_ENGINE_CONFIG, device: 'cpu' });
+
+        await expect(engine.initialize()).rejects.toMatchObject({
+          code: 'MODEL_DOWNLOAD_FAILED',
+        });
+
+        expect(engine.isInitialized()).toBe(false);
+      });
+    });
+
+    describe('Auto-detection behavior', () => {
+      it('should auto-detect device when not specified', async () => {
+        const { EmbeddingEngine } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine(); // No device specified
+
+        await engine.initialize();
+
+        // Should have detected some device
+        const device = engine.getDevice();
+        // Accept any valid device type - 'dml' on Windows, 'webgpu' in browser, 'cpu' as fallback
+        expect(['cpu', 'webgpu', 'dml']).toContain(device);
+        expect(engine.getDeviceInfo()).not.toBeNull();
+      });
     });
   });
 });

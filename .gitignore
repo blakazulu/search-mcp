@@ -35,3 +35,6 @@ CLAUDE.md
 
 # Test reports (generated)
 tests/reports/
+
+# Examples
+examples/

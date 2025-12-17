@@ -64,6 +64,27 @@ export {
   getLanguageName,
 } from './codeAwareChunking.js';
 
+// Tree-sitter Parser (SMCP-086)
+export {
+  type ASTLanguage,
+  TreeSitterParser,
+  getTreeSitterParser,
+  supportsASTChunking,
+  getASTLanguage,
+} from './treeSitterParser.js';
+
+// AST-Based Chunking (SMCP-086)
+export {
+  type ChunkType,
+  type ChunkMetadata,
+  type ASTChunk,
+  type ASTChunkOptions,
+  DEFAULT_AST_OPTIONS,
+  extractASTChunks,
+  astChunksToChunksWithLines,
+  getSupportedASTLanguages,
+} from './astChunking.js';
+
 // Docs Chunking Engine
 export {
   DOC_FILE_EXTENSIONS,
@@ -255,3 +276,116 @@ export {
   formatDeviceInfo,
   supportsWebGPU,
 } from './deviceDetection.js';
+
+// Query Intent Detection Engine (SMCP-085)
+export {
+  // Types and Enums
+  IntentCategory,
+  type IntentMatch,
+  type QueryIntent,
+  type IntentPattern,
+  type IntentDetectionConfig,
+  type ChunkTypeBoosts,
+  // Constants
+  DEFAULT_INTENT_PATTERNS,
+  // Core Functions
+  detectQueryIntent,
+  normalizeToTokens,
+  isEntityLikeQuery,
+  // Boost Functions
+  getChunkTypeBoosts,
+  getIntentTagBoost,
+  // Helpers
+  createIntentDetector,
+  getIntentNames,
+  hasIntent,
+} from './queryIntent.js';
+
+// Advanced Multi-Factor Ranking Engine (SMCP-087)
+export {
+  // Types
+  type RankableResult,
+  type RankedResult,
+  type RankingFactors,
+  type AdvancedRankingConfig,
+  type RankingWeights,
+  // Constants
+  DEFAULT_RANKING_CONFIG,
+  // Core Functions
+  applyAdvancedRanking,
+  calculateChunkTypeBoost,
+  calculateNameBoost,
+  calculatePathBoost,
+  calculateDocstringBonus,
+  calculateComplexityPenalty,
+  // Helpers
+  createRanker,
+  extractScores,
+  getTopResults,
+  getRankingStats,
+} from './advancedRanking.js';
+
+// Merkle DAG Change Detection Engine (SMCP-089)
+export {
+  // Types
+  type MerkleNodeType,
+  type MerkleNode,
+  type ChunkNode,
+  type FileNode,
+  type DirectoryNode,
+  type ProjectNode,
+  type MerkleDiff,
+  type ChunkDiff,
+  // Constants
+  MERKLE_TREE_VERSION,
+  MERKLE_TREE_FILE,
+  // Hash Functions
+  computeHash,
+  computeChunkHash,
+  computeChunkContentHash,
+  computeFileHash,
+  computeDirectoryHash,
+  computeProjectHash,
+  // Diff Functions
+  diffFileMaps,
+  // Class
+  MerkleTreeManager,
+  // Factory Functions
+  createMerkleTreeManager,
+  buildMerkleTree,
+} from './merkleTree.js';
+
+// Symbol Extraction & Complexity Metrics Engine (SMCP-090)
+export {
+  // Types
+  type SymbolInfo,
+  type ImportInfo,
+  type ExportInfo,
+  type ComplexityMetrics,
+  type FileSummary,
+  type SymbolExtractionOptions,
+  // Constants
+  DEFAULT_EXTRACTION_OPTIONS,
+  // Core Functions
+  extractFileSummary,
+  supportsSymbolExtraction,
+  getSupportedLanguages,
+} from './symbolExtractor.js';
+
+// Search-Triggered Auto-Reindexing Engine (SMCP-094)
+export {
+  // Types
+  type AutoReindexConfig,
+  type StalenessCheckResult,
+  type AutoReindexResult,
+  type AutoReindexStats,
+  // Constants
+  DEFAULT_AUTO_REINDEX_CONFIG,
+  // Class
+  SearchTriggeredIndexer,
+  // Factory Functions
+  createAutoReindexer,
+  getAutoReindexer,
+  clearAutoReindexers,
+  removeAutoReindexer,
+} from './autoReindexer.js';

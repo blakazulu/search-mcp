@@ -36,6 +36,10 @@ export enum ErrorCode {
   PROJECT_NOT_DETECTED = 'PROJECT_NOT_DETECTED',
   /** Symbolic link not allowed for security reasons */
   SYMLINK_NOT_ALLOWED = 'SYMLINK_NOT_ALLOWED',
+  /** Invalid file or directory path */
+  INVALID_PATH = 'INVALID_PATH',
+  /** Failed to extract data from file */
+  EXTRACTION_FAILED = 'EXTRACTION_FAILED',
 }
 
 /**

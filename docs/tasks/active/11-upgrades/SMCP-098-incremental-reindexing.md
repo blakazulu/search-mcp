@@ -91,10 +91,34 @@ async reindexFileIncremental(filePath: string) {
 
 ## Dependencies
 
+**Required:**
+
+- SMCP-089: Merkle DAG Change Detection ✅ **COMPLETED** - Provides chunk-level tracking infrastructure
+
 **Related:**
 
-- SMCP-089: Merkle DAG Change Detection (complementary approach)
 - SMCP-094: Search-Triggered Auto-Reindexing (uses this for efficiency)
+
+### SMCP-089 Integration Notes
+
+SMCP-089 implemented `MerkleTreeManager` which already provides:
+
+- `ChunkNode` with `contentHash` for position-independent matching
+- `diffChunks()` algorithm detecting added/modified/removed/moved chunks
+- `MerkleDiff.chunkChanges` array with per-file chunk-level changes
+- Persistence via `merkle-tree.json`
+
+**This task can now leverage that infrastructure instead of implementing separate chunk hashing.**
+
+```typescript
+// Available from SMCP-089:
+import {
+  MerkleTreeManager,
+  buildMerkleTree,
+  computeChunkContentHash,  // Position-independent chunk hash
+  ChunkDiff                 // { addedChunks, modifiedChunks, removedChunks, movedChunks }
+} from './engines/merkleTree.js';
+```
 
 ## Implementation Details
 
@@ -268,6 +292,12 @@ interface ChunkFingerprint {
 
 ## Progress Log
 
+### 2025-12-17 - 0 hours
+
+- SMCP-089 (Merkle DAG) completed - provides chunk-level hashing and diff infrastructure
+- This task can now focus on integration rather than building diffing from scratch
+- Key reusable components: `MerkleTreeManager`, `computeChunkContentHash()`, `ChunkDiff`
+
 ### 2025-12-16 - 0 hours
 
 - Task created based on ROADMAP.md item
@@ -275,7 +305,11 @@ interface ChunkFingerprint {
 
 ## Notes
 
-- This complements SMCP-089 (Merkle DAG) which handles file-level detection
-- This task handles within-file optimization
+- SMCP-089 (Merkle DAG) is now complete and provides chunk-level infrastructure
+- This task integrates that infrastructure into `IndexManager.updateFile()`
 - Consider LRU cache for recently computed chunk hashes
 - May need to handle chunking strategy changes (force full reindex)
+- Key integration points:
+  - Build Merkle tree during initial indexing
+  - Load tree on file change, compute diff
+  - Use `chunkChanges` to do surgical updates in LanceDB

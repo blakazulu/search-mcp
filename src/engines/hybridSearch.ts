@@ -1,8 +1,10 @@
 /**
- * Hybrid Search Module (SMCP-061)
+ * Hybrid Search Module (SMCP-061, SMCP-085)
  *
  * Combines vector search (semantic) with FTS (keyword) search using Reciprocal Rank Fusion (RRF).
  * This provides better search results by leveraging both semantic understanding and exact keyword matches.
+ *
+ * SMCP-085: Added query intent detection for dynamic result boosting.
  *
  * Supports three search modes:
  * - 'vector': Vector-only semantic search (traditional)
@@ -15,6 +17,13 @@
 import { getLogger } from '../utils/logger.js';
 import type { SearchResult } from '../storage/lancedb.js';
 import type { FTSEngine, FTSSearchResult } from './ftsEngine.js';
+import {
+  detectQueryIntent,
+  getChunkTypeBoosts,
+  getIntentTagBoost,
+  type QueryIntent,
+  type IntentDetectionConfig,
+} from './queryIntent.js';
 
 // ============================================================================
 // Types
@@ -35,6 +44,8 @@ export interface HybridSearchConfig {
   alpha: number;
   /** Number of results to return */
   topK: number;
+  /** SMCP-085: Intent detection configuration */
+  intentConfig?: Partial<IntentDetectionConfig>;
 }
 
 /**
@@ -215,6 +226,8 @@ export interface HybridSearchContext {
   ftsAvailable: boolean;
   /** Default alpha from config */
   defaultAlpha: number;
+  /** SMCP-085: Enable intent-based result boosting */
+  enableIntentBoosting?: boolean;
 }
 
 /**
@@ -396,3 +409,321 @@ export function validateAlpha(alpha: number | undefined, defaultAlpha: number): 
   }
   return Math.max(0, Math.min(1, alpha));
 }
+
+// ============================================================================
+// SMCP-085: Intent-Based Result Boosting
+// ============================================================================
+
+/**
+ * Search result with optional metadata for intent boosting
+ */
+export interface SearchResultWithMeta extends SearchResult {
+  /** Chunk type (function, class, method, module, etc.) */
+  chunkType?: string;
+  /** Tags associated with the chunk */
+  tags?: string[];
+  /** Name of the code element (function/class name) */
+  name?: string;
+}
+
+/**
+ * Result of applying intent-based boosts
+ */
+export interface IntentBoostedResult {
+  /** The original search result */
+  result: SearchResultWithMeta;
+  /** Original score before boosting */
+  originalScore: number;
+  /** Final score after intent boosting */
+  boostedScore: number;
+  /** Detected query intent */
+  intent?: QueryIntent;
+}
+
+/**
+ * Apply intent-based boosts to search results (SMCP-085)
+ *
+ * This function analyzes the query, detects intent, and applies
+ * appropriate boost factors to results based on chunk type and tags.
+ *
+ * @param query - The search query
+ * @param results - Search results to boost
+ * @param config - Optional intent detection configuration
+ * @returns Results sorted by boosted score
+ */
+export function applyIntentBoosts(
+  query: string,
+  results: SearchResultWithMeta[],
+  config?: Partial<IntentDetectionConfig>
+): IntentBoostedResult[] {
+  const logger = getLogger();
+
+  // Detect query intent
+  const intent = detectQueryIntent(query, config);
+
+  logger.debug('hybridSearch', 'Applying intent boosts', {
+    query: query.substring(0, 50),
+    intentCount: intent.intents.length,
+    primaryIntent: intent.primaryIntent,
+    detectionTimeMs: intent.detectionTimeMs,
+  });
+
+  // If no intents detected, return results unchanged
+  if (intent.intents.length === 0) {
+    return results.map((result) => ({
+      result,
+      originalScore: result.score,
+      boostedScore: result.score,
+    }));
+  }
+
+  // Get chunk type boosts based on intent
+  const chunkBoosts = getChunkTypeBoosts(intent);
+
+  // Apply boosts to each result
+  const boostedResults = results.map((result) => {
+    let boostedScore = result.score;
+    const originalScore = result.score;
+
+    // Apply chunk type boost
+    const chunkType = result.chunkType?.toLowerCase() || 'other';
+    const typeBoost = (chunkBoosts as unknown as Record<string, number>)[chunkType] ?? chunkBoosts.other;
+    boostedScore *= typeBoost;
+
+    // Apply tag-based intent boost
+    if (result.tags && result.tags.length > 0) {
+      const tagBoost = getIntentTagBoost(intent, result.tags);
+      boostedScore *= tagBoost;
+    }
+
+    // Apply name matching boost (if the query contains the name)
+    if (result.name) {
+      const nameBoost = calculateNameBoost(intent.queryTokens, result.name);
+      boostedScore *= nameBoost;
+    }
+
+    return {
+      result,
+      originalScore,
+      boostedScore,
+      intent,
+    };
+  });
+
+  // Sort by boosted score (highest first)
+  boostedResults.sort((a, b) => b.boostedScore - a.boostedScore);
+
+  logger.debug('hybridSearch', 'Intent boosts applied', {
+    resultCount: boostedResults.length,
+    topOriginalScore: results[0]?.score,
+    topBoostedScore: boostedResults[0]?.boostedScore,
+  });
+
+  return boostedResults;
+}
+
+/**
+ * Calculate name matching boost based on token overlap.
+ *
+ * @param queryTokens - Normalized tokens from the query
+ * @param name - Name of the code element
+ * @returns Boost multiplier (1.0 = no boost, up to 1.4 for exact match)
+ */
+function calculateNameBoost(queryTokens: string[], name: string): number {
+  if (!name || queryTokens.length === 0) {
+    return 1.0;
+  }
+
+  // Import normalizeToTokens here to avoid circular dependency issues
+  // Note: The function is already imported at the top
+  const nameTokens = normalizeNameToTokens(name);
+
+  if (nameTokens.length === 0) {
+    return 1.0;
+  }
+
+  const querySet = new Set(queryTokens);
+  const nameSet = new Set(nameTokens);
+
+  // Calculate overlap
+  let overlap = 0;
+  for (const token of querySet) {
+    if (nameSet.has(token)) {
+      overlap++;
+    }
+  }
+
+  if (overlap === 0) {
+    return 1.0;
+  }
+
+  // Calculate overlap ratio
+  const overlapRatio = overlap / querySet.size;
+
+  if (overlapRatio >= 0.8) {
+    return 1.4; // Strong match
+  } else if (overlapRatio >= 0.5) {
+    return 1.2; // Good match
+  } else if (overlapRatio >= 0.3) {
+    return 1.1; // Partial match
+  } else {
+    return 1.05; // Weak match
+  }
+}
+
+/**
+ * Normalize a name to tokens for matching.
+ * Handles CamelCase and snake_case.
+ */
+function normalizeNameToTokens(name: string): string[] {
+  // Split CamelCase
+  let normalized = name.replace(/([a-z])([A-Z])/g, '$1 $2');
+  // Split snake_case and kebab-case
+  normalized = normalized.replace(/_/g, ' ').replace(/-/g, ' ');
+  // Extract tokens
+  return normalized.toLowerCase().match(/[a-z0-9]+/g) || [];
+}
+
+/**
+ * Get query intent for a search query.
+ *
+ * Convenience function for use in search tools.
+ *
+ * @param query - The search query
+ * @param config - Optional intent detection configuration
+ * @returns Detected query intent
+ */
+export function getQueryIntent(
+  query: string,
+  config?: Partial<IntentDetectionConfig>
+): QueryIntent {
+  return detectQueryIntent(query, config);
+}
+
+// Re-export QueryIntent type for convenience
+export type { QueryIntent, IntentDetectionConfig };
+
+// ============================================================================
+// SMCP-087: Advanced Multi-Factor Ranking Integration
+// ============================================================================
+
+import {
+  applyAdvancedRanking,
+  type RankableResult,
+  type RankedResult,
+  type AdvancedRankingConfig,
+} from './advancedRanking.js';
+
+/**
+ * Apply advanced multi-factor ranking to search results (SMCP-087).
+ *
+ * This function applies sophisticated ranking using 7+ signals:
+ * 1. Base similarity score
+ * 2. Query intent detection
+ * 3. Chunk type boosting (dynamic based on intent)
+ * 4. Name matching with CamelCase/snake_case awareness
+ * 5. Path/filename relevance
+ * 6. Docstring presence bonus
+ * 7. Complexity penalty for oversized chunks
+ *
+ * @param query - The search query
+ * @param results - Search results to rank (HybridSearchResult with AST metadata)
+ * @param config - Optional ranking configuration
+ * @returns Results sorted by advanced ranking score
+ *
+ * @example
+ * ```typescript
+ * const hybridResults = await performHybridSearch(query, ...);
+ * const rankedResults = applyAdvancedSearchRanking(query, hybridResults);
+ * // rankedResults[0] is now the most relevant result
+ * ```
+ */
+export function applyAdvancedSearchRanking(
+  query: string,
+  results: HybridSearchResult[],
+  config?: Partial<AdvancedRankingConfig>
+): RankedResult[] {
+  const logger = getLogger();
+
+  // Convert HybridSearchResult to RankableResult
+  // HybridSearchResult extends SearchResult which has 'path' field
+  const rankableResults: RankableResult[] = results.map((r) => ({
+    id: r.id,
+    score: r.score,
+    text: r.text,
+    path: r.path,
+    // AST metadata fields from SearchResult (SMCP-086)
+    chunkType: r.chunkType,
+    chunkName: r.chunkName,
+    chunkParent: r.chunkParent,
+    chunkTags: r.chunkTags,
+    chunkDocstring: r.chunkDocstring,
+    startLine: r.startLine,
+    endLine: r.endLine,
+    chunkLanguage: r.chunkLanguage,
+  }));
+
+  logger.debug('hybridSearch', 'Applying advanced ranking', {
+    resultCount: results.length,
+    queryLength: query.length,
+  });
+
+  // Apply advanced ranking
+  const rankedResults = applyAdvancedRanking(query, rankableResults, config);
+
+  logger.debug('hybridSearch', 'Advanced ranking complete', {
+    resultCount: rankedResults.length,
+    topOriginalScore: rankedResults[0]?.originalScore,
+    topFinalScore: rankedResults[0]?.finalScore,
+  });
+
+  return rankedResults;
+}
+
+/**
+ * Convert RankedResult back to HybridSearchResult with updated scores.
+ *
+ * @param rankedResults - Results from applyAdvancedSearchRanking
+ * @param originalResults - Original hybrid search results (for preserving extra fields)
+ * @returns Hybrid search results with updated scores
+ */
+export function convertRankedToHybridResults(
+  rankedResults: RankedResult[],
+  originalResults: HybridSearchResult[]
+): HybridSearchResult[] {
+  // Create a map for quick lookup of original results by ID
+  const originalMap = new Map<string, HybridSearchResult>();
+  for (const r of originalResults) {
+    originalMap.set(r.id, r);
+  }
+
+  // Convert back, preserving original data but updating score
+  return rankedResults.map((ranked) => {
+    const original = originalMap.get(ranked.result.id);
+    if (original) {
+      return {
+        ...original,
+        score: ranked.finalScore,
+      };
+    }
+    // Fallback if original not found (shouldn't happen)
+    return {
+      id: ranked.result.id,
+      text: ranked.result.text,
+      path: ranked.result.path,
+      score: ranked.finalScore,
+      startLine: ranked.result.startLine ?? 0,
+      endLine: ranked.result.endLine ?? 0,
+      searchMode: 'hybrid' as SearchMode,
+      chunkType: ranked.result.chunkType,
+      chunkName: ranked.result.chunkName,
+      chunkParent: ranked.result.chunkParent,
+      chunkTags: ranked.result.chunkTags,
+      chunkDocstring: ranked.result.chunkDocstring,
+      chunkLanguage: ranked.result.chunkLanguage,
+    };
+  });
+}
+
+// Re-export advanced ranking types for convenience
+export type { RankableResult, RankedResult, AdvancedRankingConfig };

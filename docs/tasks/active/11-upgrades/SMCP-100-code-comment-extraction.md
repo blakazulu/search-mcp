@@ -11,7 +11,6 @@ actual_hours: 0
 assigned_to: "Team"
 tags: ["indexing", "comments", "docs", "search-quality"]
 ---
-
 # Task: Code Comment Extraction
 
 ## Overview
@@ -346,7 +345,7 @@ function formatCommentForIndex(comment: ExtractedComment): string {
 - Task created based on ROADMAP.md item
 - Focus on making code documentation searchable
 
-## Notes
+## Notes - after finishing update these in future roadmap tasks
 
 - Consider whether to index ALL comments or just doc comments
 - May want to filter short/trivial comments

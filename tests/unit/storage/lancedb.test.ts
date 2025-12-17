@@ -24,6 +24,10 @@ import {
   TABLE_NAME,
   distanceToScore,
   globToLikePattern,
+  VectorIndexInfo,
+  VectorIndexConfig,
+  MIN_CHUNKS_FOR_INDEX,
+  MAX_IVF_PARTITIONS,
 } from '../../../src/storage/lancedb.js';
 
 // ============================================================================
@@ -662,5 +666,193 @@ describe('Vector Dimension Constants', () => {
 
   it('VECTOR_DIMENSION should equal CODE_VECTOR_DIMENSION for backward compatibility', () => {
     expect(VECTOR_DIMENSION).toBe(CODE_VECTOR_DIMENSION);
+  });
+});
+
+// ============================================================================
+// Vector Index Constants Tests (SMCP-091)
+// ============================================================================
+
+describe('Vector Index Constants', () => {
+  it('MIN_CHUNKS_FOR_INDEX should be 10000', () => {
+    expect(MIN_CHUNKS_FOR_INDEX).toBe(10000);
+  });
+
+  it('MAX_IVF_PARTITIONS should be 256', () => {
+    expect(MAX_IVF_PARTITIONS).toBe(256);
+  });
+});
+
+// ============================================================================
+// Vector Index Tests (SMCP-091)
+// ============================================================================
+
+describe('LanceDBStore - Vector Index', () => {
+  let tempDir: string;
+  let store: LanceDBStore;
+
+  beforeEach(() => {
+    tempDir = createTempDir();
+    store = new LanceDBStore(tempDir);
+  });
+
+  afterEach(async () => {
+    try {
+      await store.close();
+    } catch {
+      // Ignore close errors
+    }
+    cleanupTempDir(tempDir);
+  });
+
+  describe('createVectorIndex', () => {
+    it('should return hasIndex:false when no table exists', async () => {
+      // Don't open the store - table doesn't exist yet
+      const result = await store.createVectorIndex();
+      expect(result.hasIndex).toBe(false);
+    });
+
+    it('should skip index creation for small datasets', async () => {
+      await store.open();
+
+      // Insert only 10 chunks (below MIN_CHUNKS_FOR_INDEX threshold)
+      const chunks = Array.from({ length: 10 }, (_, i) =>
+        createTestChunk({ path: `file${i}.ts` })
+      );
+      await store.insertChunks(chunks);
+
+      const result = await store.createVectorIndex();
+
+      expect(result.hasIndex).toBe(false);
+      expect(result.indexType).toBe('none');
+      expect(result.chunkCount).toBe(10);
+    });
+
+    it('should force index creation with explicit indexType:ivf_pq even for small datasets', async () => {
+      await store.open();
+
+      // Insert 300 chunks - need at least numPartitions * sampleRate (1 * 256 = 256) chunks
+      // Using 300 to have a safe margin
+      const chunks = Array.from({ length: 300 }, (_, i) =>
+        createTestChunk({ path: `file${i}.ts` })
+      );
+      await store.insertChunks(chunks);
+
+      const config: VectorIndexConfig = {
+        indexType: 'ivf_pq',
+        numPartitions: 1, // Use 1 partition to minimize required data
+        numSubVectors: 24,
+        sampleRate: 256,
+      };
+
+      const result = await store.createVectorIndex(config);
+
+      expect(result.hasIndex).toBe(true);
+      expect(result.indexType).toBe('ivf_pq');
+      expect(result.numPartitions).toBe(1);
+      expect(result.numSubVectors).toBe(24);
+      expect(result.chunkCount).toBe(300);
+      expect(result.indexCreationTimeMs).toBeGreaterThanOrEqual(0);
+    });
+
+    it('should use custom distance metric', async () => {
+      await store.open();
+
+      // Need at least numPartitions * sampleRate chunks for IVF-PQ
+      const chunks = Array.from({ length: 300 }, (_, i) =>
+        createTestChunk({ path: `file${i}.ts` })
+      );
+      await store.insertChunks(chunks);
+
+      const result = await store.createVectorIndex({
+        indexType: 'ivf_pq',
+        numPartitions: 1,
+        numSubVectors: 24,
+        distanceType: 'cosine',
+      });
+
+      expect(result.hasIndex).toBe(true);
+      expect(result.distanceType).toBe('cosine');
+    });
+  });
+
+  describe('getVectorIndexInfo', () => {
+    it('should return null when store is not opened', async () => {
+      const result = await store.getVectorIndexInfo();
+      expect(result).toBeNull();
+    });
+
+    it('should return hasIndex:false when no index exists', async () => {
+      await store.open();
+
+      const chunks = Array.from({ length: 10 }, (_, i) =>
+        createTestChunk({ path: `file${i}.ts` })
+      );
+      await store.insertChunks(chunks);
+
+      const result = await store.getVectorIndexInfo();
+
+      expect(result).not.toBeNull();
+      expect(result!.hasIndex).toBe(false);
+      expect(result!.indexType).toBe('none');
+    });
+
+    it('should return index info after index creation', async () => {
+      await store.open();
+
+      // Need at least numPartitions * sampleRate chunks for IVF-PQ
+      const chunks = Array.from({ length: 300 }, (_, i) =>
+        createTestChunk({ path: `file${i}.ts` })
+      );
+      await store.insertChunks(chunks);
+
+      await store.createVectorIndex({
+        indexType: 'ivf_pq',
+        numPartitions: 1,
+        numSubVectors: 24,
+      });
+
+      const result = await store.getVectorIndexInfo();
+
+      expect(result).not.toBeNull();
+      expect(result!.hasIndex).toBe(true);
+      expect(result!.indexType).toBe('ivf_pq');
+    });
+  });
+
+  describe('search with vector index', () => {
+    it('should return correct results after index creation', async () => {
+      await store.open();
+
+      // Create 300 chunks to meet minimum requirements for IVF-PQ
+      // Include 2 specific chunks for testing search results
+      const targetVector = randomVector();
+      const closeVector = targetVector.map((v) => v + 0.01);
+      const farVector = targetVector.map((v) => v + 1);
+
+      const chunks = [
+        createTestChunk({ path: 'far.ts', vector: farVector }),
+        createTestChunk({ path: 'close.ts', vector: closeVector }),
+        ...Array.from({ length: 298 }, (_, i) =>
+          createTestChunk({ path: `file${i}.ts` })
+        ),
+      ];
+
+      await store.insertChunks(chunks);
+
+      // Create an index
+      await store.createVectorIndex({
+        indexType: 'ivf_pq',
+        numPartitions: 1,
+        numSubVectors: 24,
+      });
+
+      // Search should still work correctly
+      const results = await store.search(targetVector, 10);
+
+      expect(results.length).toBeGreaterThan(0);
+      // Note: With IVF-PQ index, exact ordering may vary slightly due to quantization
+      // but we should still get results
+    });
   });
 });

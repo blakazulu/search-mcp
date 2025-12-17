@@ -13,6 +13,7 @@
  */
 
 import * as lancedb from '@lancedb/lancedb';
+import { Index as LanceIndex, IvfPqOptions } from '@lancedb/lancedb';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { glob } from 'glob';
@@ -36,6 +37,14 @@ import {
  *
  * This matches the RFC specification for the database schema.
  * The index signature is required for LanceDB compatibility.
+ *
+ * SMCP-086: Added optional metadata fields for AST-based chunking:
+ * - chunk_type: Type of code construct (function, class, method, etc.)
+ * - chunk_name: Name of the function/class/method
+ * - chunk_signature: Full signature (for functions/methods)
+ * - chunk_docstring: Extracted docstring/comment
+ * - chunk_parent: Parent name (e.g., class name for methods)
+ * - chunk_tags: Comma-separated semantic tags
  */
 export interface ChunkRecord {
   /** UUIDv4 unique identifier for the chunk */
@@ -52,8 +61,25 @@ export interface ChunkRecord {
   end_line: number;
   /** SHA256 hash of the source file content */
   content_hash: string;
+
+  // AST metadata fields (SMCP-086) - all optional
+  /** Chunk type (function, class, method, etc.) */
+  chunk_type?: string;
+  /** Name of the function/class/method */
+  chunk_name?: string;
+  /** Full function/method signature */
+  chunk_signature?: string;
+  /** Extracted docstring or comment */
+  chunk_docstring?: string;
+  /** Parent name (e.g., class name for methods) */
+  chunk_parent?: string;
+  /** Comma-separated semantic tags */
+  chunk_tags?: string;
+  /** Programming language */
+  chunk_language?: string;
+
   /** Index signature for LanceDB compatibility */
-  [key: string]: string | number | number[];
+  [key: string]: string | number | number[] | undefined;
 }
 
 /**
@@ -70,6 +96,22 @@ export interface SearchResult {
   startLine: number;
   /** End line in source file */
   endLine: number;
+
+  // AST metadata fields (SMCP-086) - all optional
+  /** Chunk type (function, class, method, etc.) */
+  chunkType?: string;
+  /** Name of the function/class/method */
+  chunkName?: string;
+  /** Full function/method signature */
+  chunkSignature?: string;
+  /** Extracted docstring or comment */
+  chunkDocstring?: string;
+  /** Parent name (e.g., class name for methods) */
+  chunkParent?: string;
+  /** Semantic tags */
+  chunkTags?: string[];
+  /** Programming language */
+  chunkLanguage?: string;
 }
 
 /**
@@ -84,7 +126,129 @@ interface RawSearchResult {
   end_line: number;
   content_hash: string;
   _distance: number;
+  // AST metadata fields (SMCP-086) - all optional
+  chunk_type?: string;
+  chunk_name?: string;
+  chunk_signature?: string;
+  chunk_docstring?: string;
+  chunk_parent?: string;
+  chunk_tags?: string;
+  chunk_language?: string;
 }
+
+// ============================================================================
+// Vector Index Types (SMCP-091)
+// ============================================================================
+
+/**
+ * Vector index type for LanceDB
+ *
+ * - 'ivf_pq': IVF with Product Quantization - good balance of speed and accuracy
+ * - 'none': No vector index (brute force search) - best for small datasets
+ */
+export type VectorIndexType = 'ivf_pq' | 'none';
+
+/**
+ * Distance metric for vector similarity search
+ */
+export type DistanceMetric = 'l2' | 'cosine' | 'dot';
+
+/**
+ * Configuration options for vector index creation
+ *
+ * SMCP-091: Enable proper IVF-PQ vector index creation for faster search.
+ * Note: GPU acceleration (CUDA/MPS) is NOT available in the Node.js SDK
+ * as of LanceDB v0.23.0. Index building runs on CPU only.
+ */
+export interface VectorIndexConfig {
+  /**
+   * The type of vector index to create.
+   * Default is 'ivf_pq' for datasets >= 10K chunks, 'none' otherwise.
+   */
+  indexType?: VectorIndexType;
+
+  /**
+   * The number of IVF partitions to create.
+   * This value should scale with the number of rows in the dataset.
+   * Default: sqrt(numRows), min 1, max 256
+   */
+  numPartitions?: number;
+
+  /**
+   * Number of sub-vectors for PQ compression.
+   * Controls how much the vector is compressed.
+   * Default: dimension / 16 (or dimension / 8 if not divisible by 16)
+   */
+  numSubVectors?: number;
+
+  /**
+   * Distance metric to use for the index.
+   * Must match the metric used during search.
+   * Default: 'l2' (Euclidean distance)
+   */
+  distanceType?: DistanceMetric;
+
+  /**
+   * Max iterations for IVF kmeans training.
+   * Default: 50
+   */
+  maxIterations?: number;
+
+  /**
+   * Sample rate for kmeans training.
+   * Total training vectors = sampleRate * numPartitions
+   * Default: 256
+   */
+  sampleRate?: number;
+}
+
+/**
+ * Information about a created vector index
+ */
+export interface VectorIndexInfo {
+  /** Whether a vector index exists */
+  hasIndex: boolean;
+
+  /** The type of index if one exists */
+  indexType?: VectorIndexType;
+
+  /** Number of partitions (for IVF index) */
+  numPartitions?: number;
+
+  /** Number of sub-vectors (for PQ index) */
+  numSubVectors?: number;
+
+  /** Distance metric used */
+  distanceType?: DistanceMetric;
+
+  /** Time taken to create the index in milliseconds */
+  indexCreationTimeMs?: number;
+
+  /** Total chunks at time of index creation */
+  chunkCount?: number;
+}
+
+/**
+ * Minimum chunk count to create a vector index.
+ * Below this threshold, brute-force search is fast enough.
+ */
+export const MIN_CHUNKS_FOR_INDEX = 10000;
+
+/**
+ * Maximum number of partitions for IVF index.
+ * More partitions slow down the partition selection phase.
+ */
+export const MAX_IVF_PARTITIONS = 256;
+
+/**
+ * Default sample rate for kmeans training.
+ */
+export const DEFAULT_SAMPLE_RATE = 256;
+
+/**
+ * Default max iterations for kmeans training.
+ */
+export const DEFAULT_MAX_ITERATIONS = 50;
 
 // ============================================================================
 // Constants
@@ -704,13 +868,26 @@ export class LanceDBStore {
         .toArray()) as unknown as RawSearchResult[];
 
       // Convert to SearchResult format
-      const results: SearchResult[] = rawResults.map((row) => ({
-        path: row.path,
-        text: row.text,
-        score: distanceToScore(row._distance),
-        startLine: row.start_line,
-        endLine: row.end_line,
-      }));
+      const results: SearchResult[] = rawResults.map((row) => {
+        const result: SearchResult = {
+          path: row.path,
+          text: row.text,
+          score: distanceToScore(row._distance),
+          startLine: row.start_line,
+          endLine: row.end_line,
+        };
+
+        // Add AST metadata fields if present (SMCP-086)
+        if (row.chunk_type) result.chunkType = row.chunk_type;
+        if (row.chunk_name) result.chunkName = row.chunk_name;
+        if (row.chunk_signature) result.chunkSignature = row.chunk_signature;
+        if (row.chunk_docstring) result.chunkDocstring = row.chunk_docstring;
+        if (row.chunk_parent) result.chunkParent = row.chunk_parent;
+        if (row.chunk_tags) result.chunkTags = row.chunk_tags.split(',').filter(Boolean);
+        if (row.chunk_language) result.chunkLanguage = row.chunk_language;
+
+        return result;
+      });
 
       logger.debug('lancedb', `Search returned ${results.length} results`);
       return results;
@@ -915,6 +1092,241 @@ export class LanceDBStore {
         const err = error as Error;
         logger.error('lancedb', `getAllChunksForFTS failed: ${err.message}`);
         return [];
+      }
+    });
+  }
+
+  // --------------------------------------------------------------------------
+  // Vector Index Operations (SMCP-091)
+  // --------------------------------------------------------------------------
+
+  /**
+   * Calculate optimal index parameters based on dataset size
+   *
+   * Uses adaptive parameters to balance index build time and search quality:
+   * - numPartitions: sqrt(numRows), clamped to [1, MAX_IVF_PARTITIONS]
+   * - numSubVectors: dimension / 16 (or / 8 if not divisible)
+   *
+   * @param numRows - Number of rows in the dataset
+   * @returns Optimized IVF-PQ parameters
+   */
+  private calculateIndexParams(numRows: number): {
+    numPartitions: number;
+    numSubVectors: number;
+  } {
+    // Calculate number of partitions as sqrt(numRows), clamped to valid range
+    const sqrtRows = Math.sqrt(numRows);
+    const numPartitions = Math.max(1, Math.min(MAX_IVF_PARTITIONS, Math.round(sqrtRows)));
+
+    // Calculate numSubVectors based on vector dimension
+    // Prefer dimension/16, fallback to dimension/8 if not divisible
+    let numSubVectors: number;
+    if (this.vectorDimension % 16 === 0) {
+      numSubVectors = this.vectorDimension / 16;
+    } else if (this.vectorDimension % 8 === 0) {
+      numSubVectors = this.vectorDimension / 8;
+    } else {
+      // Fallback to 1 subvector (not ideal for performance)
+      numSubVectors = 1;
+    }
+
+    return { numPartitions, numSubVectors };
+  }
+
+  /**
+   * Create a vector index on the table for faster similarity search
+   *
+   * SMCP-091: Creates an IVF-PQ index for efficient approximate nearest neighbor search.
+   * This significantly improves search performance for large datasets (>10K chunks).
+   *
+   * Note: GPU acceleration (CUDA/MPS) is NOT available in the LanceDB Node.js SDK
+   * as of v0.23.0. Index building runs on CPU only. When LanceDB adds GPU support
+   * to the Node.js SDK, we can enable it here.
+   *
+   * @param config - Optional configuration for the index
+   * @returns Information about the created index
+   *
+   * @example
+   * ```typescript
+   * const store = new LanceDBStore('/path/to/index');
+   * await store.open();
+   * await store.insertChunks(chunks);
+   *
+   * // Create index with default adaptive parameters
+   * const indexInfo = await store.createVectorIndex();
+   *
+   * // Or with custom parameters
+   * const indexInfo = await store.createVectorIndex({
+   *   numPartitions: 128,
+   *   numSubVectors: 24,
+   *   distanceType: 'l2'
+   * });
+   * ```
+   */
+  async createVectorIndex(config?: VectorIndexConfig): Promise<VectorIndexInfo> {
+    const logger = getLogger();
+
+    if (!this.table) {
+      logger.warn('lancedb', 'Cannot create vector index: no table exists');
+      return { hasIndex: false };
+    }
+
+    return this.mutex.withLock(async () => {
+      const table = await this.getTable();
+      const startTime = Date.now();
+
+      // Get chunk count to determine if we should create an index
+      const chunkCount = await table.countRows();
+
+      logger.info('lancedb', `Considering vector index creation for ${chunkCount} chunks`, {
+        minChunksForIndex: MIN_CHUNKS_FOR_INDEX,
+        configIndexType: config?.indexType,
+      });
+
+      // Determine if we should create an index
+      const indexType = config?.indexType ?? (chunkCount >= MIN_CHUNKS_FOR_INDEX ? 'ivf_pq' : 'none');
+
+      if (indexType === 'none') {
+        logger.info('lancedb', 'Skipping vector index creation (brute-force search is adequate)', {
+          chunkCount,
+          threshold: MIN_CHUNKS_FOR_INDEX,
+        });
+        return {
+          hasIndex: false,
+          indexType: 'none',
+          chunkCount,
+        };
+      }
+
+      // Calculate adaptive parameters
+      const { numPartitions: adaptivePartitions, numSubVectors: adaptiveSubVectors } =
+        this.calculateIndexParams(chunkCount);
+
+      const numPartitions = config?.numPartitions ?? adaptivePartitions;
+      const numSubVectors = config?.numSubVectors ?? adaptiveSubVectors;
+      const distanceType = config?.distanceType ?? 'l2';
+      const maxIterations = config?.maxIterations ?? DEFAULT_MAX_ITERATIONS;
+      const sampleRate = config?.sampleRate ?? DEFAULT_SAMPLE_RATE;
+
+      logger.info('lancedb', 'Creating IVF-PQ vector index', {
+        chunkCount,
+        numPartitions,
+        numSubVectors,
+        distanceType,
+        maxIterations,
+        sampleRate,
+        vectorDimension: this.vectorDimension,
+      });
+
+      try {
+        // Build the IVF-PQ index options
+        const ivfPqOptions: IvfPqOptions = {
+          numPartitions,
+          numSubVectors,
+          distanceType,
+          maxIterations,
+          sampleRate,
+        };
+
+        // Create the index on the 'vector' column
+        await table.createIndex('vector', {
+          config: LanceIndex.ivfPq(ivfPqOptions),
+          replace: true, // Replace existing index if any
+        });
+
+        const indexCreationTimeMs = Date.now() - startTime;
+
+        logger.info('lancedb', 'Vector index created successfully', {
+          indexType: 'ivf_pq',
+          numPartitions,
+          numSubVectors,
+          distanceType,
+          indexCreationTimeMs,
+          chunksPerSecond: Math.round(chunkCount / (indexCreationTimeMs / 1000)),
+        });
+
+        return {
+          hasIndex: true,
+          indexType: 'ivf_pq',
+          numPartitions,
+          numSubVectors,
+          distanceType,
+          indexCreationTimeMs,
+          chunkCount,
+        };
+      } catch (error) {
+        const err = error as Error;
+        logger.error('lancedb', `Failed to create vector index: ${err.message}`, {
+          error: err.message,
+          stack: err.stack,
+        });
+
+        // Return info indicating no index was created
+        return {
+          hasIndex: false,
+          indexType: 'none',
+          chunkCount,
+        };
+      }
+    });
+  }
+
+  /**
+   * Get information about the existing vector index
+   *
+   * @returns Index information or null if no index exists
+   */
+  async getVectorIndexInfo(): Promise<VectorIndexInfo | null> {
+    const logger = getLogger();
+
+    if (!this.table) {
+      return null;
+    }
+
+    return this.mutex.withLock(async () => {
+      const table = await this.getTable();
+
+      try {
+        // List all indices on the table
+        const indices = await table.listIndices();
+
+        // Find the vector index (named 'vector_idx' by convention)
+        const vectorIndex = indices.find(
+          (idx) => idx.columns.includes('vector') && idx.indexType.toLowerCase().includes('ivf')
+        );
+
+        if (!vectorIndex) {
+          const chunkCount = await table.countRows();
+          return {
+            hasIndex: false,
+            indexType: 'none',
+            chunkCount,
+          };
+        }
+
+        const chunkCount = await table.countRows();
+
+        // Get detailed stats for the index
+        const stats = await table.indexStats(vectorIndex.name);
+
+        logger.debug('lancedb', 'Vector index info retrieved', {
+          indexName: vectorIndex.name,
+          indexType: vectorIndex.indexType,
+          numIndexedRows: stats?.numIndexedRows,
+          numUnindexedRows: stats?.numUnindexedRows,
+        });
+
+        return {
+          hasIndex: true,
+          indexType: 'ivf_pq',
+          distanceType: (stats?.distanceType as DistanceMetric) ?? 'l2',
+          chunkCount,
+          numPartitions: stats?.numIndices,
+        };
+      } catch (error) {
+        const err = error as Error;
+        logger.warn('lancedb', `Failed to get vector index info: ${err.message}`);
+        return null;
       }
     });
   }

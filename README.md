@@ -33,6 +33,7 @@ Your AI assistant searches your entire codebase semantically. No API keys. No cl
 - [What Does This Do?](#what-does-this-do)
 - [Features](#features)
 - [Quick Start](#quick-start)
+- [Standalone CLI](#standalone-cli)
 - [What Can You Ask?](#what-can-you-ask)
 - [Performance](#performance)
 - [Configuration](#configuration)
@@ -122,7 +123,7 @@ Edit config file:
 <details>
 <summary><b>Cursor / Windsurf / Other</b></summary>
 
-See the [Getting Started Guide](docs/getting-started.md) for your client.
+See the [Getting Started Guide](docs/readme-files/getting-started.md) for your client.
 </details>
 
 ### After Configuration
@@ -133,6 +134,32 @@ See the [Getting Started Guide](docs/getting-started.md) for your client.
 4. **Start searching:** Ask `"How does login work?"`
 
 That's it!
+
+---
+
+## Standalone CLI
+
+Search MCP also works as a standalone CLI tool - no MCP client required:
+
+```bash
+# Index your project
+npx @liraz-sbz/search-mcp index
+
+# Search directly from terminal
+npx @liraz-sbz/search-mcp search "authentication logic"
+
+# Check index status
+npx @liraz-sbz/search-mcp status
+```
+
+**Features:**
+- Progress bars and colored output
+- `--json` flag for scripting
+- Works independently of AI assistants
+
+Perfect for quick searches, debugging, or CI/CD integration.
+
+[Full CLI Reference →](docs/readme-files/cli.md)
 
 ---
 
@@ -147,7 +174,7 @@ Once set up, just talk naturally:
 - "What files import the Logger class?"
 - "Search the docs for API rate limits"
 
-See more [examples and use cases](docs/examples.md).
+See more [examples and use cases](docs/readme-files/examples.md).
 
 ---
 
@@ -161,7 +188,7 @@ See more [examples and use cases](docs/examples.md).
 
 Semantic search returns focused code chunks instead of entire files. Your AI stays under context limits even on large codebases.
 
-[Full benchmark details →](docs/search-comparison-test.md) | [Full codebase analysis →](tests/reports/full-codebase-analysis-2025-12-13.md)
+[Full benchmark details →](docs/readme-files/search-comparison-test.md) | [Full codebase analysis →](tests/reports/full-codebase-analysis-2025-12-13.md)
 
 ---
 
@@ -190,7 +217,7 @@ Config is auto-generated when you first index a project:
 | `lazy` | Large projects, index only when searching |
 | `git` | Only search committed code |
 
-For full configuration options, see the [Configuration Reference](docs/configuration.md).
+For full configuration options, see the [Configuration Reference](docs/readme-files/configuration.md).
 
 ---
 
@@ -214,11 +241,12 @@ File changes are detected automatically. Use `reindex_project` for a full rebuil
 
 | Guide | Description |
 |-------|-------------|
-| [Getting Started](docs/getting-started.md) | Detailed installation for all clients |
-| [Configuration](docs/configuration.md) | Full config reference + indexing strategies |
-| [API Reference](docs/api-reference.md) | Complete tool documentation |
-| [Examples](docs/examples.md) | Use cases & best practices |
-| [Troubleshooting](docs/troubleshooting.md) | Common issues & solutions |
+| [Getting Started](docs/readme-files/getting-started.md) | Detailed installation for all clients |
+| [CLI Reference](docs/readme-files/cli.md) | Standalone command-line interface |
+| [Configuration](docs/readme-files/configuration.md) | Full config reference + indexing strategies |
+| [API Reference](docs/readme-files/api-reference.md) | Complete tool documentation |
+| [Examples](docs/readme-files/examples.md) | Use cases & best practices |
+| [Troubleshooting](docs/readme-files/troubleshooting.md) | Common issues & solutions |
 | [Roadmap](ROADMAP.md) | Planned features |
 | [Changelog](CHANGELOG.md) | Version history |
 | [Contributing](CONTRIBUTING.md) | How to contribute |
@@ -266,6 +294,7 @@ File changes are detected automatically. Use `reindex_project` for a full rebuil
 | `search_by_path` | Find files by name/glob pattern | No |
 | `get_index_status` | Show index statistics and paths | No |
 | `get_config` | Get config file path and contents | No |
+| `get_file_summary` | Extract symbols and complexity metrics from a file | No |
 | `reindex_project` | Rebuild the entire index | Yes |
 | `reindex_file` | Re-index a single file | No |
 | `delete_index` | Remove the project index | Yes |
@@ -341,17 +370,19 @@ npm uninstall -g @liraz-sbz/search-mcp
 | Search results seem wrong | Run `reindex_project` to rebuild |
 | Changes not detected | Run `reindex_file` for specific file |
 
-**CLI options:**
+**CLI commands:**
 ```bash
-npx --yes @liraz-sbz/search-mcp@latest --setup    # Configure MCP clients
-npx --yes @liraz-sbz/search-mcp@latest --logs     # Show log file locations
-npx --yes @liraz-sbz/search-mcp@latest --help     # Show help
-npx --yes @liraz-sbz/search-mcp@latest --version  # Show version
+npx @liraz-sbz/search-mcp index                # Create/update index
+npx @liraz-sbz/search-mcp search "query"       # Search code
+npx @liraz-sbz/search-mcp status               # Show index info
+npx @liraz-sbz/search-mcp --setup              # Configure MCP clients
 ```
+
+See the [CLI Reference](docs/readme-files/cli.md) for all commands and options.
 
 **Debug mode:** Set `DEBUG=1` or `SEARCH_MCP_DEBUG=1` environment variable for verbose logging.
 
-For all error codes and solutions, see the [Troubleshooting Guide](docs/troubleshooting.md).
+For all error codes and solutions, see the [Troubleshooting Guide](docs/readme-files/troubleshooting.md).
 
 ---
 

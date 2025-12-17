@@ -18,7 +18,7 @@ import { glob } from 'glob';
 import { v4 as uuidv4 } from 'uuid';
 
 // Storage imports
-import { LanceDBStore, ChunkRecord } from '../storage/lancedb.js';
+import { LanceDBStore, ChunkRecord, VectorIndexInfo, MIN_CHUNKS_FOR_INDEX } from '../storage/lancedb.js';
 import { FingerprintsManager, DeltaResult, Fingerprints } from '../storage/fingerprints.js';
 import { MetadataManager } from '../storage/metadata.js';
 import { ConfigManager, Config, loadConfig, generateDefaultConfig } from '../storage/config.js';
@@ -779,6 +779,43 @@ export async function createFullIndex(
       }
     }
 
+    // SMCP-091: Create vector index for faster search on large datasets
+    let vectorIndexInfo: VectorIndexInfo | undefined;
+    if (totalChunks >= MIN_CHUNKS_FOR_INDEX) {
+      try {
+        logger.info('IndexManager', 'Creating vector index for faster search', {
+          totalChunks,
+          minChunksForIndex: MIN_CHUNKS_FOR_INDEX,
+        });
+
+        vectorIndexInfo = await store.createVectorIndex();
+
+        if (vectorIndexInfo.hasIndex) {
+          logger.info('IndexManager', 'Vector index created successfully', {
+            indexType: vectorIndexInfo.indexType,
+            numPartitions: vectorIndexInfo.numPartitions,
+            numSubVectors: vectorIndexInfo.numSubVectors,
+            indexCreationTimeMs: vectorIndexInfo.indexCreationTimeMs,
+          });
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error('IndexManager', 'Vector index creation failed', { error: message });
+        errors.push(`Vector index creation failed: ${message}`);
+        // Vector index failure is non-critical - search will use brute force
+      }
+    } else {
+      logger.info('IndexManager', 'Skipping vector index (dataset too small)', {
+        totalChunks,
+        minChunksForIndex: MIN_CHUNKS_FOR_INDEX,
+      });
+      vectorIndexInfo = {
+        hasIndex: false,
+        indexType: 'none',
+        chunkCount: totalChunks,
+      };
+    }
+
     // Update fingerprints
     fingerprintsManager.setAll(allHashes);
     await fingerprintsManager.save();
@@ -805,6 +842,19 @@ export async function createFullIndex(
 
     // SMCP-074: Save code embedding model info for migration detection
     metadataManager.updateCodeModelInfo(CODE_MODEL_NAME, CODE_EMBEDDING_DIMENSION);
+
+    // SMCP-091: Save vector index info
+    if (vectorIndexInfo) {
+      metadataManager.updateVectorIndexInfo({
+        hasIndex: vectorIndexInfo.hasIndex,
+        indexType: vectorIndexInfo.indexType,
+        numPartitions: vectorIndexInfo.numPartitions,
+        numSubVectors: vectorIndexInfo.numSubVectors,
+        distanceType: vectorIndexInfo.distanceType,
+        indexCreationTimeMs: vectorIndexInfo.indexCreationTimeMs,
+        chunkCount: vectorIndexInfo.chunkCount,
+      });
+    }
 
     metadataManager.markFullIndex();
     metadataManager.setIndexingComplete();

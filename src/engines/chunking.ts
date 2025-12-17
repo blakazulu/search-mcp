@@ -25,6 +25,13 @@ import {
   splitCodeWithLineNumbers,
   supportsCodeAwareChunking,
 } from './codeAwareChunking.js';
+import {
+  extractASTChunks,
+  astChunksToChunksWithLines,
+  type ASTChunk,
+  type ChunkMetadata,
+} from './astChunking.js';
+import { supportsASTChunking } from './treeSitterParser.js';
 
 // ============================================================================
 // Types and Interfaces
@@ -46,6 +53,8 @@ export interface Chunk {
   endLine: number;
   /** SHA256 hash of the source file content */
   contentHash: string;
+  /** Rich metadata from AST parsing (optional) */
+  metadata?: ChunkMetadata;
 }
 
 /**
@@ -999,8 +1008,12 @@ export function chunkFileSync(
 
 /**
  * Chunking strategy type
+ *
+ * - 'character': Traditional fixed-size chunking with overlap
+ * - 'code-aware': Heuristic-based code-aware chunking (regex patterns)
+ * - 'ast': AST-based chunking using Tree-sitter (richest metadata)
  */
-export type ChunkingStrategy = 'character' | 'code-aware';
+export type ChunkingStrategy = 'character' | 'code-aware' | 'ast';
 
 /**
  * Options for smart chunking
@@ -1044,12 +1057,162 @@ export async function chunkFileWithStrategy(
   const logger = getLogger();
   const strategy = options?.strategy ?? 'character';
 
-  // If using character-based or file doesn't support code-aware, use standard chunking
-  if (strategy === 'character' || !supportsCodeAwareChunking(relativePath)) {
+  // Character-based is the default fallback
+  if (strategy === 'character') {
     return chunkFile(absolutePath, relativePath, options);
   }
 
-  // Try code-aware chunking
+  // AST-based chunking (richest metadata)
+  if (strategy === 'ast') {
+    return chunkFileWithAST(absolutePath, relativePath, options);
+  }
+
+  // Code-aware chunking (heuristic-based)
+  if (strategy === 'code-aware') {
+    return chunkFileWithCodeAware(absolutePath, relativePath, options);
+  }
+
+  // Unknown strategy, fall back to character-based
+  logger.warn('Chunking', 'Unknown chunking strategy, using character-based', {
+    strategy,
+    path: relativePath,
+  });
+  return chunkFile(absolutePath, relativePath, options);
+}
+
+/**
+ * Chunk a file using AST-based chunking with Tree-sitter
+ *
+ * Provides the richest metadata extraction including:
+ * - Function/class/method names and signatures
+ * - Docstrings and comments
+ * - Decorators and annotations
+ * - Parent-child relationships
+ * - Semantic tags
+ *
+ * @param absolutePath - Absolute path to the file on disk
+ * @param relativePath - Relative path from project root (stored in chunk)
+ * @param options - Chunking options
+ * @returns Promise resolving to array of chunks with IDs and rich metadata
+ */
+async function chunkFileWithAST(
+  absolutePath: string,
+  relativePath: string,
+  options?: SmartChunkOptions
+): Promise<Chunk[]> {
+  const logger = getLogger();
+
+  // Check if AST chunking is supported for this file type
+  if (!supportsASTChunking(relativePath)) {
+    logger.debug('Chunking', 'File type not supported for AST chunking, falling back to code-aware', {
+      path: relativePath,
+    });
+    return chunkFileWithCodeAware(absolutePath, relativePath, options);
+  }
+
+  try {
+    // Read file content
+    const stats = await fs.promises.lstat(absolutePath);
+
+    // Skip symlinks
+    if (stats.isSymbolicLink()) {
+      logger.warn('Chunking', 'Skipping symlink during AST chunking', {
+        path: absolutePath,
+      });
+      return [];
+    }
+
+    // For very large files, fall back to character-based (streaming)
+    if (stats.size > MAX_IN_MEMORY_SIZE) {
+      logger.debug('Chunking', 'Large file, falling back to character-based chunking', {
+        path: relativePath,
+        size: stats.size,
+      });
+      return chunkFile(absolutePath, relativePath, options);
+    }
+
+    // Read file content
+    const content = await fs.promises.readFile(absolutePath, 'utf8');
+
+    if (!content || content.length === 0) {
+      return [];
+    }
+
+    // Compute content hash
+    const contentHash = hashString(content);
+
+    // Try AST-based chunking
+    const astChunks = await extractASTChunks(content, relativePath, {
+      chunkSize: options?.chunkSize ?? DEFAULT_SPLIT_OPTIONS.chunkSize,
+      chunkOverlap: options?.chunkOverlap ?? 200,
+      maxChunkSize: 8000,
+      includeImports: false,
+    });
+
+    // If AST chunking failed or returned null, fall back to code-aware
+    if (!astChunks || astChunks.length === 0) {
+      logger.debug('Chunking', 'AST chunking returned no chunks, falling back to code-aware', {
+        path: relativePath,
+      });
+      return chunkFileWithCodeAware(absolutePath, relativePath, options);
+    }
+
+    // Create full chunk objects with metadata
+    const chunks: Chunk[] = astChunks.map((chunk) => ({
+      id: uuidv4(),
+      text: chunk.text,
+      path: relativePath,
+      startLine: chunk.startLine,
+      endLine: chunk.endLine,
+      contentHash,
+      metadata: chunk.metadata,
+    }));
+
+    logger.debug('Chunking', 'AST chunking successful', {
+      path: relativePath,
+      chunkCount: chunks.length,
+      strategy: 'ast',
+      chunkTypes: [...new Set(astChunks.map((c) => c.metadata.type))],
+    });
+
+    return chunks;
+  } catch (error) {
+    // On any error, fall back to code-aware chunking
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('Chunking', 'AST chunking failed, falling back to code-aware', {
+      path: relativePath,
+      error: message,
+    });
+    return chunkFileWithCodeAware(absolutePath, relativePath, options);
+  }
+}
+
+/**
+ * Chunk a file using heuristic-based code-aware chunking
+ *
+ * Uses regex patterns to detect semantic boundaries (functions, classes, etc.)
+ * Less metadata than AST-based but faster and works without Tree-sitter.
+ *
+ * @param absolutePath - Absolute path to the file on disk
+ * @param relativePath - Relative path from project root (stored in chunk)
+ * @param options - Chunking options
+ * @returns Promise resolving to array of chunks with IDs
+ */
+async function chunkFileWithCodeAware(
+  absolutePath: string,
+  relativePath: string,
+  options?: SmartChunkOptions
+): Promise<Chunk[]> {
+  const logger = getLogger();
+
+  // Check if code-aware chunking is supported
+  if (!supportsCodeAwareChunking(relativePath)) {
+    logger.debug('Chunking', 'File type not supported for code-aware chunking, using character-based', {
+      path: relativePath,
+    });
+    return chunkFile(absolutePath, relativePath, options);
+  }
+
   try {
     // Read file content
     const stats = await fs.promises.lstat(absolutePath);
@@ -1084,7 +1247,7 @@ export async function chunkFileWithStrategy(
     // Try code-aware chunking
     const chunksWithLines = splitCodeWithLineNumbers(content, relativePath, {
       chunkSize: options?.chunkSize ?? DEFAULT_SPLIT_OPTIONS.chunkSize,
-      chunkOverlap: options?.chunkOverlap ?? 200, // Reduced overlap for code-aware
+      chunkOverlap: options?.chunkOverlap ?? 200,
       maxChunkSize: 8000,
     });
 

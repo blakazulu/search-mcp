@@ -43,6 +43,7 @@ import {
 } from '../engines/hybridSearch.js';
 import { loadFTSEngine } from '../engines/ftsEngineFactory.js';
 import type { FTSEngine } from '../engines/ftsEngine.js';
+import { getAutoReindexer } from '../engines/autoReindexer.js';
 
 // ============================================================================
 // Input/Output Schemas
@@ -191,6 +192,29 @@ export async function searchDocs(
 
   // Get the index path for this project
   const indexPath = getIndexPath(context.projectPath);
+
+  // SMCP-094: Search-triggered auto-reindexing
+  // Check for stale files and silently reindex small changes before search
+  try {
+    const autoReindexer = getAutoReindexer(context.projectPath);
+    const reindexResult = await autoReindexer.preSearchHook();
+    if (reindexResult.reindexed) {
+      logger.info('searchDocs', 'Auto-reindexed stale files before search', {
+        filesReindexed: reindexResult.filesReindexed,
+        reindexTimeMs: reindexResult.reindexTimeMs,
+      });
+    } else if (reindexResult.skipReason && reindexResult.skipReason.startsWith('too_many_stale_files')) {
+      logger.info('searchDocs', 'Skipped auto-reindex: too many stale files', {
+        reason: reindexResult.skipReason,
+      });
+    }
+  } catch (error) {
+    // Auto-reindex is non-critical - log and continue with search
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('searchDocs', 'Auto-reindex check failed, continuing with search', {
+      error: message,
+    });
+  }
 
   // Check if index exists by looking for metadata
   const metadata = await loadMetadata(indexPath);

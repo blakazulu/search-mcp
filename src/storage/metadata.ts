@@ -151,6 +151,41 @@ export type HybridSearchInfo = z.infer<typeof HybridSearchInfoSchema>;
 export type EmbeddingModelInfo = z.infer<typeof EmbeddingModelInfoSchema>;
 
 /**
+ * Schema for vector index information (SMCP-091)
+ * Tracks the vector index configuration for search optimization.
+ */
+export const VectorIndexInfoSchema = z.object({
+  /** Whether a vector index exists */
+  hasIndex: z.boolean(),
+
+  /** The type of index: 'ivf_pq' or 'none' */
+  indexType: z.enum(['ivf_pq', 'none']).optional(),
+
+  /** Number of IVF partitions (for ivf_pq index) */
+  numPartitions: z.number().int().positive().optional(),
+
+  /** Number of sub-vectors for PQ compression */
+  numSubVectors: z.number().int().positive().optional(),
+
+  /** Distance metric used: 'l2', 'cosine', or 'dot' */
+  distanceType: z.enum(['l2', 'cosine', 'dot']).optional(),
+
+  /** Time taken to create the index in milliseconds */
+  indexCreationTimeMs: z.number().int().nonnegative().optional(),
+
+  /** Total chunks at time of index creation */
+  chunkCount: z.number().int().nonnegative().optional(),
+
+  /** ISO 8601 timestamp when index was created */
+  createdAt: z.string().datetime().optional(),
+});
+
+/**
+ * Inferred VectorIndexInfo type from the schema
+ */
+export type VectorIndexInfoMeta = z.infer<typeof VectorIndexInfoSchema>;
+
+/**
  * Zod schema for metadata validation
  *
  * Validates metadata with required fields for version, project path, and timestamps.
@@ -188,6 +223,9 @@ export const MetadataSchema = z.object({
 
   /** Embedding model information for migration detection */
   embeddingModels: EmbeddingModelInfoSchema.optional(),
+
+  /** Vector index information (SMCP-091) */
+  vectorIndex: VectorIndexInfoSchema.optional(),
 });
 
 /**
@@ -957,5 +995,45 @@ export class MetadataManager {
    */
   getDocsModelDimension(): number | null {
     return this.cachedMetadata?.embeddingModels?.docsModelDimension ?? null;
+  }
+
+  // ==========================================================================
+  // Vector Index Management (SMCP-091)
+  // ==========================================================================
+
+  /**
+   * Update the vector index information
+   *
+   * @param info - Vector index info to set
+   */
+  updateVectorIndexInfo(info: VectorIndexInfoMeta): void {
+    if (this.cachedMetadata === null) {
+      throw new Error(
+        'Metadata not loaded. Call load() or initialize() first.'
+      );
+    }
+
+    this.cachedMetadata.vectorIndex = {
+      ...info,
+      createdAt: info.createdAt ?? new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Get the vector index information
+   *
+   * @returns VectorIndexInfo object or null if metadata not loaded or no info
+   */
+  getVectorIndexInfo(): VectorIndexInfoMeta | null {
+    return this.cachedMetadata?.vectorIndex ?? null;
+  }
+
+  /**
+   * Check if a vector index exists
+   *
+   * @returns true if a vector index has been created
+   */
+  hasVectorIndex(): boolean {
+    return this.cachedMetadata?.vectorIndex?.hasIndex === true;
   }
 }

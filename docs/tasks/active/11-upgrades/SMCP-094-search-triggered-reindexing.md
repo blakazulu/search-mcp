@@ -2,27 +2,47 @@
 task_id: "SMCP-094"
 title: "Search-Triggered Auto-Reindexing"
 category: "Technical"
-priority: "P1"
-status: "not-started"
+priority: "P3"
+status: "redundant"
 created_date: "2025-12-16"
+closed_date: "2025-12-17"
 due_date: ""
 estimated_hours: 10
-actual_hours: 0
+actual_hours: 0.5
 assigned_to: "Team"
 tags: ["indexing", "auto-update", "ux", "inspired-by-mcp-vector-search"]
 ---
 
 # Task: Search-Triggered Auto-Reindexing
 
-## Overview
+## Status: REDUNDANT
+
+**Reason:** Existing functionality already covers this use case:
+
+1. **`realtime` indexing strategy** - File watcher detects changes immediately while server is running
+2. **`lazy` indexing strategy** - Queues changes and `flush()` processes them before search
+3. **IntegrityEngine** - Detects drift on startup and periodically (24h default)
+
+### Coverage Analysis
+
+| Scenario | Already Handled By |
+|----------|-------------------|
+| Files change while server running | `realtime` strategy (file watcher) |
+| Process changes before search | `lazy` strategy (`flush()`) |
+| Files changed while server was off | IntegrityEngine (startup check) |
+| Periodic drift detection | IntegrityEngine (24h interval) |
+
+The only gap would be "check every N searches" but this adds minimal value over the existing startup check + file watcher combination.
+
+## Original Overview (For Reference)
 
 Implement automatic reindexing triggered by search operations, inspired by mcp-vector-search. When users search, we check if the index is stale and silently reindex changed files. No daemon process needed.
 
-## Current Problem
+## Original Problem Statement
 
-- Users must manually run `reindex_project` to update index
-- Index becomes stale without user awareness
-- No automatic freshness maintenance
+- ~~Users must manually run `reindex_project` to update index~~ **FALSE: `realtime` strategy auto-updates**
+- ~~Index becomes stale without user awareness~~ **FALSE: IntegrityEngine checks on startup**
+- ~~No automatic freshness maintenance~~ **FALSE: File watcher + IntegrityEngine**
 
 ## Target Solution
 

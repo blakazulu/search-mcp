@@ -116,6 +116,28 @@ export interface ComputeStatus {
 }
 
 /**
+ * Vector index information for status output (SMCP-091)
+ */
+export interface VectorIndexStatus {
+  /** Whether a vector index exists */
+  hasIndex: boolean;
+  /** The type of index: 'ivf_pq' or 'none' */
+  indexType?: string;
+  /** Number of IVF partitions (for ivf_pq index) */
+  numPartitions?: number;
+  /** Number of sub-vectors for PQ compression */
+  numSubVectors?: number;
+  /** Distance metric used */
+  distanceType?: string;
+  /** Time taken to create the index in milliseconds */
+  indexCreationTimeMs?: number;
+  /** Total chunks at time of index creation */
+  chunkCount?: number;
+  /** ISO 8601 timestamp when index was created */
+  createdAt?: string;
+}
+
+/**
  * Output structure for get_index_status tool
  */
 export interface GetIndexStatusOutput {
@@ -161,6 +183,8 @@ export interface GetIndexStatusOutput {
   modelMismatchWarning?: string;
   /** Compute device information (SMCP-083) */
   compute?: ComputeStatus;
+  /** Vector index information (SMCP-091) */
+  vectorIndex?: VectorIndexStatus;
 }
 
 // ============================================================================
@@ -425,6 +449,21 @@ export async function collectStatus(
     fallbackReason: deviceInfo.fallbackReason,
   };
 
+  // SMCP-091: Build vector index status
+  let vectorIndex: VectorIndexStatus | undefined;
+  if (metadata.vectorIndex) {
+    vectorIndex = {
+      hasIndex: metadata.vectorIndex.hasIndex,
+      indexType: metadata.vectorIndex.indexType,
+      numPartitions: metadata.vectorIndex.numPartitions,
+      numSubVectors: metadata.vectorIndex.numSubVectors,
+      distanceType: metadata.vectorIndex.distanceType,
+      indexCreationTimeMs: metadata.vectorIndex.indexCreationTimeMs,
+      chunkCount: metadata.vectorIndex.chunkCount,
+      createdAt: metadata.vectorIndex.createdAt,
+    };
+  }
+
   // Build the output
   const output: GetIndexStatusOutput = {
     status,
@@ -446,6 +485,7 @@ export async function collectStatus(
     embeddingModels,
     modelMismatchWarning,
     compute,
+    vectorIndex,
   };
 
   logger.debug('getIndexStatus', 'Status collected', {
@@ -463,6 +503,8 @@ export async function collectStatus(
     modelMismatchWarning: output.modelMismatchWarning,
     computeDevice: output.compute?.device,
     gpuName: output.compute?.gpuName,
+    vectorIndexType: output.vectorIndex?.indexType,
+    vectorIndexHasIndex: output.vectorIndex?.hasIndex,
   });
 
   return output;

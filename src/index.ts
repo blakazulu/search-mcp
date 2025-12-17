@@ -7,14 +7,19 @@
  *
  * This is the main entry point that either:
  * - Starts the MCP server (default, for use by AI assistants)
- * - Runs setup wizard (--setup)
+ * - Runs CLI commands (index, search, status, reindex)
+ * - Runs setup wizard (setup)
  * - Shows help/version (--help, --version)
  *
  * Usage:
- *   npx @liraz-sbz/search-mcp           # Start MCP server
- *   npx @liraz-sbz/search-mcp --setup   # Configure MCP clients
- *   npx @liraz-sbz/search-mcp --help    # Show help
- *   npx @liraz-sbz/search-mcp --version # Show version
+ *   npx @liraz-sbz/search-mcp                    # Start MCP server
+ *   npx @liraz-sbz/search-mcp index              # Create search index
+ *   npx @liraz-sbz/search-mcp search "query"     # Search code
+ *   npx @liraz-sbz/search-mcp status             # Show index status
+ *   npx @liraz-sbz/search-mcp reindex            # Rebuild index
+ *   npx @liraz-sbz/search-mcp setup              # Configure MCP clients
+ *   npx @liraz-sbz/search-mcp --help             # Show help
+ *   npx @liraz-sbz/search-mcp --version          # Show version
  */
 
 import * as fs from 'node:fs';
@@ -44,6 +49,18 @@ function logCrash(error: unknown): void {
 // Parse CLI arguments early (before dynamic imports)
 const args = process.argv.slice(2);
 
+// CLI commands that should be routed to the CLI handler
+const CLI_COMMANDS = ['index', 'search', 'status', 'reindex', 'setup', 'logs'];
+
+// Check if any CLI command is present
+const hasCliCommand = args.length > 0 && (
+  CLI_COMMANDS.includes(args[0]) ||
+  args.includes('--help') ||
+  args.includes('-h') ||
+  args.includes('--version') ||
+  args.includes('-v')
+);
+
 // Global error handlers to catch crashes during runtime
 process.on('uncaughtException', (error) => {
   logCrash(error);
@@ -56,32 +73,28 @@ process.on('unhandledRejection', (reason) => {
 });
 
 async function main() {
-  // Dynamic imports to catch any import errors
-  const { startServer } = await import('./server.js');
-  const { runSetup, printHelp, printVersion, showLogs } = await import('./cli/setup.js');
-
-  // Handle CLI flags
-  if (args.includes('--help') || args.includes('-h')) {
-    printHelp();
-    process.exit(0);
+  // If CLI command detected, route to CLI handler
+  if (hasCliCommand) {
+    const { runCLI } = await import('./cli/commands.js');
+    await runCLI(process.argv);
+    return;
   }
 
-  if (args.includes('--version') || args.includes('-v')) {
-    printVersion();
-    process.exit(0);
-  }
-
-  if (args.includes('--setup') || args.includes('setup')) {
+  // Legacy flag support for backward compatibility
+  if (args.includes('--setup')) {
+    const { runSetup } = await import('./cli/setup.js');
     await runSetup();
     process.exit(0);
   }
 
-  if (args.includes('--logs') || args.includes('logs')) {
+  if (args.includes('--logs')) {
+    const { showLogs } = await import('./cli/setup.js');
     showLogs();
     process.exit(0);
   }
 
-  // Default: Start the MCP server
+  // Default: Start the MCP server (when no CLI arguments)
+  const { startServer } = await import('./server.js');
   await startServer();
 }
 

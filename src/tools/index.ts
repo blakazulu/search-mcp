@@ -6,6 +6,7 @@
  * - search_code: Semantic search (also exported as search_now)
  * - search_by_path: Find files by glob pattern
  * - get_index_status: Show index statistics
+ * - get_file_summary: Symbol extraction and complexity metrics
  * - reindex_project: Rebuild entire index
  * - reindex_file: Re-index single file
  * - delete_index: Remove project index
@@ -120,6 +121,19 @@ export {
   type SearchDocsResult,
   type DocsToolContext,
 } from './searchDocs.js';
+
+// get_file_summary tool - symbol extraction and complexity metrics (SMCP-090)
+export {
+  getFileSummary,
+  getFileSummaryTool,
+  GetFileSummaryInputSchema,
+  type GetFileSummaryInput,
+  type GetFileSummaryOutput,
+  type OutputSymbolInfo,
+  type OutputImportInfo,
+  type OutputExportInfo,
+  type OutputComplexityMetrics,
+} from './getFileSummary.js';
 
 // Tool description utilities
 export {

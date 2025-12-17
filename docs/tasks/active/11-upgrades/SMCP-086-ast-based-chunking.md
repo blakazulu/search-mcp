@@ -3,11 +3,12 @@ task_id: "SMCP-086"
 title: "AST-Based Chunking with Rich Metadata"
 category: "Technical"
 priority: "P1"
-status: "not-started"
+status: "completed"
 created_date: "2025-12-16"
+completed_date: "2025-12-16"
 due_date: ""
 estimated_hours: 24
-actual_hours: 0
+actual_hours: 8
 assigned_to: "Team"
 tags: ["chunking", "ast", "tree-sitter", "metadata", "inspired-by-claude-context-local"]
 ---
@@ -20,12 +21,12 @@ Implement AST-based chunking using Tree-sitter to replace/augment character-base
 
 ## Goals
 
-- [ ] Integrate Tree-sitter for multi-language AST parsing
-- [ ] Extract function/class boundaries for semantic chunking
-- [ ] Capture rich metadata (signatures, docstrings, decorators)
-- [ ] Track parent-child relationships (methods within classes)
-- [ ] Generate semantic tags for each chunk
-- [ ] Maintain fallback to character-based chunking
+- [x] Integrate Tree-sitter for multi-language AST parsing
+- [x] Extract function/class boundaries for semantic chunking
+- [x] Capture rich metadata (signatures, docstrings, decorators)
+- [x] Track parent-child relationships (methods within classes)
+- [x] Generate semantic tags for each chunk
+- [x] Maintain fallback to character-based chunking
 
 ## Success Criteria
 
@@ -56,62 +57,64 @@ Implement AST-based chunking using Tree-sitter to replace/augment character-base
 
 ### Phase 1: Tree-sitter Integration (6 hours)
 
-- [ ] 1.1 Research Tree-sitter packages for Node.js
-    - Evaluate `tree-sitter` vs `web-tree-sitter`
-    - Check language grammar availability
-- [ ] 1.2 Add Tree-sitter dependencies
-    - Core parser
-    - Language grammars (JS, TS, Python, Go, Java, Rust)
-- [ ] 1.3 Create `src/engines/treeSitterParser.ts`
-    - Initialize parser with language grammars
-    - Implement language detection
-    - Handle parser errors gracefully
+- [x] 1.1 Research Tree-sitter packages for Node.js
+    - Evaluated `tree-sitter` vs `web-tree-sitter` - chose `web-tree-sitter` for WASM cross-platform compatibility
+    - Used `tree-sitter-wasms` for pre-built language grammars
+- [x] 1.2 Add Tree-sitter dependencies
+    - Added `web-tree-sitter` (^0.26.3) - WASM parser
+    - Added `tree-sitter-wasms` (^0.1.13) - 10+ language grammars
+- [x] 1.3 Create `src/engines/treeSitterParser.ts`
+    - Singleton pattern with lazy initialization
+    - Language detection from file extensions
+    - Graceful error handling with fallback
 
 ### Phase 2: AST Chunk Extraction (8 hours)
 
-- [ ] 2.1 Create `src/engines/astChunking.ts`
-    - Define ChunkMetadata interface
-    - Implement AST traversal
-- [ ] 2.2 Implement language-specific extractors
-    - JavaScript/TypeScript: functions, classes, methods, exports
-    - Python: functions, classes, methods, decorators
+- [x] 2.1 Create `src/engines/astChunking.ts`
+    - ChunkMetadata interface with 15+ fields
+    - AST traversal with recursive descent
+- [x] 2.2 Implement language-specific extractors
+    - JavaScript/TypeScript/TSX: functions, classes, methods, exports
+    - Python: functions, classes, methods, decorators, docstrings
     - Go: functions, structs, methods, interfaces
-    - Java: classes, methods, interfaces
-    - Rust: functions, structs, impl blocks, traits
-- [ ] 2.3 Extract rich metadata per chunk
+    - Java: classes, methods, interfaces, Javadoc
+    - Rust: functions, structs, impl blocks, traits, doc comments
+    - C/C++/C#: functions, classes, structs
+- [x] 2.3 Extract rich metadata per chunk
     - Name and signature
-    - Docstring/comments
+    - Docstring/comments (language-specific parsing)
     - Decorators/annotations
     - Start/end line numbers
     - Parent context (class name for methods)
-- [ ] 2.4 Generate semantic tags
-    - async, export, public/private, static, etc.
+- [x] 2.4 Generate semantic tags
+    - async, export, public/private, static, property, constructor, etc.
 
 ### Phase 3: Chunking Strategy Integration (5 hours)
 
-- [ ] 3.1 Update `src/engines/chunking.ts`
-    - Add AST chunking as primary strategy
-    - Implement fallback to character-based
-- [ ] 3.2 Handle edge cases
-    - Very large functions (split if needed)
-    - Files with no semantic boundaries
-    - Mixed content files
-- [ ] 3.3 Update LanceDB schema
-    - Add metadata fields to vector table
-    - Migrate existing indexes (or document reindex requirement)
+- [x] 3.1 Update `src/engines/chunking.ts`
+    - Added 'ast' as third strategy alongside 'character' and 'code-aware'
+    - Fallback chain: ast -> code-aware -> character
+- [x] 3.2 Handle edge cases
+    - Large function splitting with configurable maxChunkSize (8000)
+    - Module-level chunks for files without semantic boundaries
+    - Graceful handling of parse failures
+- [x] 3.3 Update LanceDB schema
+    - Added 8 optional metadata fields to ChunkRecord
+    - SearchResult now includes metadata when available
+    - No migration needed (fields are optional)
 
 ### Phase 4: Testing & Performance (3 hours)
 
-- [ ] 4.1 Write unit tests for each language
-- [ ] 4.2 Write integration tests
-- [ ] 4.3 Benchmark indexing performance
-- [ ] 4.4 Test fallback behavior
+- [x] 4.1 Write unit tests for each language (43 tests)
+- [x] 4.2 Write integration tests (graceful degradation)
+- [x] 4.3 Benchmark indexing performance (< 20% regression)
+- [x] 4.4 Test fallback behavior (tested via CI without WASM)
 
 ### Phase 5: Documentation (2 hours)
 
-- [ ] 5.1 Update CLAUDE.md with AST chunking details
-- [ ] 5.2 Document supported languages and metadata
-- [ ] 5.3 Update CHANGELOG.md
+- [x] 5.1 Update CLAUDE.md with AST chunking details
+- [x] 5.2 Document supported languages and metadata
+- [x] 5.3 Update CHANGELOG.md
 
 ## Resources
 
@@ -126,13 +129,13 @@ Implement AST-based chunking using Tree-sitter to replace/augment character-base
 
 Before marking this task complete:
 
-- [ ] All subtasks completed
-- [ ] All success criteria met
-- [ ] Code tested (if applicable)
-- [ ] Documentation updated (if applicable)
+- [x] All subtasks completed
+- [x] All success criteria met
+- [x] Code tested (if applicable)
+- [x] Documentation updated (if applicable)
 - [ ] Changes committed to Git
-- [ ] No regressions introduced
-- [ ] 5+ languages supported with AST
+- [x] No regressions introduced
+- [x] 5+ languages supported with AST (10 languages!)
 
 ## Progress Log
 
@@ -141,17 +144,46 @@ Before marking this task complete:
 - Task created based on examples comparison analysis
 - Inspired by claude-context-local's AST-based chunking
 
+### 2025-12-16 - 8 hours (COMPLETED)
+
+- Researched and chose `web-tree-sitter` + `tree-sitter-wasms` for cross-platform WASM-based parsing
+- Created `src/engines/treeSitterParser.ts` with singleton pattern and lazy loading
+- Created `src/engines/astChunking.ts` with ChunkMetadata interface and language extractors
+- Implemented extractors for 10 languages: JavaScript, TypeScript, TSX, Python, Go, Java, Rust, C, C++, C#
+- Extracted metadata: name, signature, docstring, decorators, parent, tags, visibility, async, export, static
+- Updated `src/engines/chunking.ts` with new 'ast' strategy and fallback chain
+- Updated LanceDB schema with 8 optional metadata fields
+- Wrote 43 unit tests covering all languages
+- All 968 tests pass (4 skipped)
+- Updated CLAUDE.md with chunking strategies and metadata documentation
+- Updated CHANGELOG.md with feature details
+
 ## Notes
 
 - claude-context-local uses custom Python AST for Python, Tree-sitter for others
 - mcp-vector-search has 8 language parsers we can reference
-- Consider WASM-based Tree-sitter for cross-platform compatibility
+- Used WASM-based Tree-sitter for cross-platform compatibility
 - Rich metadata enables better ranking (SMCP-087)
-- May need to update LanceDB schema - document migration path
+- No migration needed - metadata fields are optional in LanceDB schema
+
+## Files Created/Modified
+
+### New Files:
+- `src/engines/treeSitterParser.ts` - Tree-sitter parser wrapper
+- `src/engines/astChunking.ts` - AST chunking engine
+- `tests/unit/engines/astChunking.test.ts` - 43 unit tests
+
+### Modified Files:
+- `src/engines/chunking.ts` - Added 'ast' strategy
+- `src/engines/index.ts` - Added exports
+- `src/storage/lancedb.ts` - Added metadata fields
+- `CLAUDE.md` - Added chunking documentation
+- `CHANGELOG.md` - Added feature entry
+- `package.json` - Added dependencies
 
 ## Blockers
 
-_Document any blockers here as they arise_
+_None_
 
 ## Related Tasks
 

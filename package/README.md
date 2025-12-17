@@ -266,6 +266,7 @@ File changes are detected automatically. Use `reindex_project` for a full rebuil
 | `search_by_path` | Find files by name/glob pattern | No |
 | `get_index_status` | Show index statistics and paths | No |
 | `get_config` | Get config file path and contents | No |
+| `get_file_summary` | Extract symbols and complexity metrics from a file | No |
 | `reindex_project` | Rebuild the entire index | Yes |
 | `reindex_file` | Re-index a single file | No |
 | `delete_index` | Remove the project index | Yes |

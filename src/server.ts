@@ -7,8 +7,8 @@
  *
  * Features:
  * - stdio transport for local MCP communication
- * - All 9 tools registered (search_code, search_docs, search_by_path,
- *   get_index_status, get_config, create_index, reindex_project, reindex_file, delete_index)
+ * - All 10 tools registered (search_code, search_docs, search_by_path,
+ *   get_index_status, get_config, get_file_summary, create_index, reindex_project, reindex_file, delete_index)
  * - Lazy initialization of shared components
  * - Graceful shutdown on SIGINT/SIGTERM
  * - Proper error handling and logging
@@ -108,6 +108,10 @@ import {
   getConfigTool,
   getConfig as getConfigHandler,
 } from './tools/getConfig.js';
+import {
+  getFileSummaryTool,
+  getFileSummary,
+} from './tools/getFileSummary.js';
 
 // ============================================================================
 // Tool Registry
@@ -129,6 +133,7 @@ const tools = [
   searchByPathTool,
   getIndexStatusTool,
   getConfigTool,
+  getFileSummaryTool,
   reindexProjectTool,
   reindexFileTool,
   deleteIndexTool,
@@ -144,6 +149,7 @@ type ToolName =
   | 'search_by_path'
   | 'get_index_status'
   | 'get_config'
+  | 'get_file_summary'
   | 'reindex_project'
   | 'reindex_file'
   | 'delete_index';
@@ -674,6 +680,20 @@ async function executeTool(
           projectPath,
         };
         result = await getConfigHandler({}, context);
+        break;
+      }
+
+      case 'get_file_summary': {
+        const context: ToolContext = {
+          projectPath,
+          orchestrator: serverContext.orchestrator || undefined,
+        };
+        const parsed = z.object({
+          path: z.string(),
+          includeComplexity: z.boolean().optional().default(true),
+          includeDocstrings: z.boolean().optional().default(true),
+        }).parse(args);
+        result = await getFileSummary(parsed, context);
         break;
       }
 

@@ -5,6 +5,396 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+#### Search-Triggered Auto-Reindexing (SMCP-094)
+- **New `autoReindexer` engine** (`src/engines/autoReindexer.ts`) - Search-triggered automatic reindexing inspired by mcp-vector-search
+  - Periodically checks for stale files during search operations
+  - Silently reindexes small changes (<=5 files by default) without user intervention
+  - No daemon process needed - reindexing happens opportunistically during search
+
+- **SearchTriggeredIndexer class** - Core implementation
+  - `preSearchHook()` - Call before search to check and auto-reindex stale files
+  - `checkStaleness()` - Compare current filesystem state with stored fingerprints
+  - `forceNextCheck()` - Force staleness check on next search
+  - `getStats()` - Get statistics about auto-reindex activity
+  - `updateConfig()` - Dynamically update configuration
+
+- **Configuration options (`AutoReindexConfig`):**
+  - `enabled` (boolean, default: true) - Enable/disable auto-reindexing
+  - `checkEveryNSearches` (number, default: 10) - Check staleness every N searches
+  - `maxAutoReindexFiles` (number, default: 5) - Maximum files to auto-reindex silently
+  - `stalenessThresholdMs` (number, default: 300000) - Minimum time between checks
+  - `logActivity` (boolean, default: true) - Log reindex activity
+
+- **Global instance management:**
+  - `getAutoReindexer(projectPath)` - Get or create cached indexer for a project
+  - `createAutoReindexer(projectPath, config?)` - Create new indexer instance
+  - `clearAutoReindexers()` - Clear all cached indexers
+  - `removeAutoReindexer(projectPath)` - Remove specific cached indexer
+
+- **Integration with search tools:**
+  - `search_code` now automatically checks for stale files before searching
+  - `search_docs` now automatically checks for stale files before searching
+  - Auto-reindex is non-blocking for large changes (logs info and continues)
+
+- **Benefits:**
+  - Index stays fresh without background processes
+  - Small changes (editing a few files) are auto-reindexed silently
+  - Large changes (new branch, many files) skip auto-reindex to avoid delays
+  - Search performance unaffected (staleness check is fast)
+
+### Testing
+- 35+ new unit tests for auto-reindexer (`tests/unit/engines/autoReindexer.test.ts`)
+- Tests cover configuration, staleness detection, concurrent access, path normalization
+- Edge case coverage: disabled mode, zero thresholds, concurrent calls
+
+#### LanceDB Vector Index Acceleration (SMCP-091)
+- **IVF-PQ Vector Index Support** - Automatic vector index creation for faster similarity search
+  - Automatic index creation for datasets with >= 10,000 chunks
+  - Configurable IVF-PQ parameters (numPartitions, numSubVectors, distanceType)
+  - Adaptive parameter calculation based on dataset size
+  - `sqrt(numRows)` partitions (clamped to 1-256)
+  - `dimension/16` or `dimension/8` sub-vectors based on divisibility
+
+- **New `LanceDBStore` methods:**
+  - `createVectorIndex(config?)` - Create IVF-PQ vector index with configurable parameters
+  - `getVectorIndexInfo()` - Get information about existing vector index
+
+- **Vector Index Configuration:**
+  - `indexType` - 'ivf_pq' or 'none' (default: auto based on chunk count)
+  - `numPartitions` - Number of IVF partitions (default: sqrt(numRows))
+  - `numSubVectors` - Number of PQ sub-vectors (default: dimension/16)
+  - `distanceType` - 'l2', 'cosine', or 'dot' (default: 'l2')
+  - `maxIterations` - Max kmeans iterations (default: 50)
+  - `sampleRate` - Kmeans sample rate (default: 256)
+
+- **Index information tracked in metadata:**
+  - `hasIndex` - Whether a vector index exists
+  - `indexType` - Type of index ('ivf_pq' or 'none')
+  - `numPartitions`, `numSubVectors`, `distanceType` - Index parameters
+  - `indexCreationTimeMs` - Time to create the index
+  - `chunkCount` - Chunks at time of index creation
+  - `createdAt` - Index creation timestamp
+
+- **get_index_status enhancement:**
+  - New `vectorIndex` field in status output showing index info
+
+- **Automatic integration:**
+  - Vector index created automatically during `create_index` for large codebases
+  - Graceful fallback to brute-force search if index creation fails
+
+- **Note:** GPU acceleration (CUDA/MPS) is NOT available in the LanceDB Node.js SDK.
+  Index building runs on CPU only. When LanceDB adds GPU support to the Node.js SDK,
+  we can enable it.
+
+#### Symbol Extraction & Complexity Metrics (SMCP-090)
+- **New `symbolExtractor` engine** (`src/engines/symbolExtractor.ts`) - On-demand symbol extraction and complexity analysis
+  - Reuses Tree-sitter infrastructure from SMCP-086
+  - Fast extraction (< 100ms per typical file)
+  - Extracts functions, classes, methods, interfaces, structs, traits, enums
+  - Extracts imports and exports with full details
+  - Calculates cyclomatic complexity per function
+  - Calculates nesting depth per function
+  - Provides overall complexity score (0-100)
+
+- **New `get_file_summary` MCP tool** - Retrieve file structure without reading entire files
+  - Returns functions, classes, imports, exports with metadata
+  - Returns complexity metrics for code quality assessment
+  - Returns line counts (total, code, blank, comments)
+  - Useful for AI assistants to understand code structure quickly
+  - Does NOT require confirmation (read-only operation)
+
+- **SymbolInfo metadata per symbol:**
+  - `name` - Symbol name
+  - `type` - function, class, method, interface, struct, trait, enum
+  - `startLine` / `endLine` - Line range
+  - `signature` - Full function/method signature
+  - `docstring` - Extracted documentation comment
+  - `isExported` / `isAsync` / `isStatic` - Boolean flags
+  - `visibility` - public / private / protected
+  - `paramCount` - Parameter count for functions/methods
+  - `returnType` - Return type if available
+  - `parentName` - Parent class/struct name for methods
+  - `decorators` - List of decorators/annotations
+  - `complexity` - Cyclomatic complexity (if includeComplexity: true)
+  - `nestingDepth` - Maximum nesting depth
+
+- **ComplexityMetrics per file:**
+  - `cyclomaticComplexity` - Sum of all function complexities
+  - `maxNestingDepth` - Maximum nesting in the file
+  - `avgFunctionComplexity` - Average function complexity
+  - `decisionPoints` - Count of if, while, for, &&, ||, etc.
+  - `overallScore` - Overall score (0-100, higher = better/less complex)
+
+- **Supported languages:** JavaScript, TypeScript, TSX, Python, Go, Java, Rust, C, C++, C#
+
+- **New API functions:**
+  - `extractFileSummary(source, absolutePath, relativePath, options?)` - Main extraction function
+  - `supportsSymbolExtraction(filePath)` - Check if language is supported
+  - `getSupportedLanguages()` - List supported languages
+
+### Testing
+- 60+ new unit tests for symbol extraction (`tests/unit/engines/symbolExtractor.test.ts`)
+- Tests cover all 10 supported languages
+- Complexity calculation tests
+- Performance tests (50 functions < 100ms, 100 functions < 200ms)
+- Edge case coverage: empty files, syntax errors, unicode, deep nesting
+
+#### Merkle DAG Change Detection (SMCP-089)
+- **New `merkleTree` engine** (`src/engines/merkleTree.ts`) - Content-hash based change detection
+  - Hierarchical Merkle tree structure: Project -> Directory -> File -> Chunk
+  - Chunk-level granularity for partial reindexing (vs file-level fingerprints)
+  - O(1) change detection via root hash comparison
+  - Efficient diff algorithm to identify only changed nodes
+
+- **MerkleTreeManager class** - State management for incremental indexing
+  - Content-hash based file tracking with chunk boundaries
+  - Snapshot persistence for fast startup (merkle-tree.json)
+  - Support for detecting moved/renamed chunks via content hash
+  - Snapshot creation for safe rollback on errors
+
+- **Hash computation functions**
+  - `computeChunkHash()` - Position-aware hash for chunk tracking
+  - `computeChunkContentHash()` - Position-independent hash for detecting moves
+  - `computeFileHash()` - File hash from ordered chunk hashes
+  - `computeProjectHash()` - Root hash from all file hashes
+
+- **Diff operations**
+  - `diffFileMaps()` - Compare two tree states to get changes
+  - `MerkleDiff` - Categorized changes (added/modified/removed files, chunk-level changes)
+  - `getChangedFiles()` - Quick list of changed files without full diff
+
+- **Benefits over file-level fingerprints**
+  - Changing one function in a large file can identify affected chunks only
+  - Potential for 50%+ reindex time reduction for small changes
+  - Foundation for future partial reindexing optimization
+
+- **Comprehensive test coverage**
+  - 39 unit tests for hash computation, diff algorithm, and MerkleTreeManager
+  - 13 integration tests for project indexing, change detection, and persistence
+  - Performance tests demonstrating O(1) root hash comparison
+
+#### Zero-Config CLI Interface (SMCP-088)
+- **New CLI commands** - Direct command-line access without MCP client setup
+  - `search-mcp index` - Create or update search index for current project
+  - `search-mcp search <query>` - Search code with natural language queries
+  - `search-mcp status` - Show index statistics and configuration
+  - `search-mcp reindex` - Rebuild entire index from scratch
+  - `search-mcp setup` - Configure MCP clients (existing functionality)
+  - `search-mcp logs` - Show log file locations (existing functionality)
+
+- **Rich terminal output** - Beautiful, informative CLI experience
+  - Progress bars for indexing (chunking, embedding phases)
+  - Colored output: cyan for headers, green for success, yellow for warnings, red for errors
+  - Spinners for operations in progress
+  - Formatted search results with file paths, line numbers, and scores
+  - Code snippet preview with truncation for long results
+
+- **Search command options**
+  - `-k, --top-k <number>` - Number of results to return (default: 10)
+  - `-m, --mode <mode>` - Search mode: hybrid, vector, or fts
+  - `-a, --alpha <number>` - Alpha weight for hybrid search (0-1)
+  - `-d, --docs` - Search documentation files instead of code
+  - `--json` - Output results as JSON for scripting
+
+- **JSON output mode** - All commands support `--json` flag for scripting
+  - Machine-readable output for CI/CD integration
+  - Structured error reporting
+  - Compatible with jq and other JSON tools
+
+### Dependencies
+- Added `commander` (^12.x) - CLI framework
+- Added `chalk` (^5.x) - Terminal colors
+- Added `ora` (^8.x) - Terminal spinners
+- Added `cli-progress` (^3.x) - Progress bars
+
+### Usage Examples
+
+```bash
+# Create index for current project
+npx @liraz-sbz/search-mcp index
+
+# Search for code
+npx @liraz-sbz/search-mcp search "authentication function"
+
+# Search with options
+npx @liraz-sbz/search-mcp search "error handling" --top-k 5 --mode hybrid
+
+# Search docs
+npx @liraz-sbz/search-mcp search "setup instructions" --docs
+
+# Get index status
+npx @liraz-sbz/search-mcp status
+
+# JSON output for scripting
+npx @liraz-sbz/search-mcp status --json | jq '.totalFiles'
+
+# Rebuild index
+npx @liraz-sbz/search-mcp reindex
+```
+
+#### AST-Based Chunking (SMCP-086)
+- **New `treeSitterParser` engine** (`src/engines/treeSitterParser.ts`) - WASM-based AST parsing using Tree-sitter
+  - Cross-platform support via `web-tree-sitter` (WASM)
+  - Pre-built grammars via `tree-sitter-wasms` for 10+ languages
+  - Lazy loading of language grammars for minimal startup time
+  - Singleton pattern with `TreeSitterParser.getInstance()`
+  - Language detection from file extensions
+
+- **New `astChunking` engine** (`src/engines/astChunking.ts`) - Semantic code chunking with rich metadata
+  - Supported languages: JavaScript, TypeScript, TSX, Python, Go, Java, Rust, C, C++, C#
+  - Extracts semantic units: functions, classes, methods, interfaces, structs, traits, impls
+  - Rich metadata per chunk: name, signature, docstring, decorators, parent info
+  - Semantic tags for search boosting (async, export, static, etc.)
+  - Configurable chunk size with automatic splitting of large functions
+
+- **New chunking strategy: `'ast'`** - Third strategy alongside `'character'` and `'code-aware'`
+  - Best accuracy for supported languages
+  - Falls back to code-aware, then character-based
+  - Use via `chunkFileWithStrategy(path, relativePath, { strategy: 'ast' })`
+
+- **LanceDB schema updates** - Optional metadata fields for AST chunks
+  - `chunk_type`, `chunk_name`, `chunk_signature`, `chunk_docstring`
+  - `chunk_parent`, `chunk_tags`, `chunk_language`
+  - `SearchResult` now includes metadata when available
+
+#### ChunkMetadata Interface
+```typescript
+interface ChunkMetadata {
+  type: ChunkType;           // function, class, method, interface, etc.
+  name?: string;             // Function/class/method name
+  signature?: string;        // Full signature
+  docstring?: string;        // Extracted docstring
+  decorators?: string[];     // Decorators/annotations
+  parentName?: string;       // Parent name (class for methods)
+  parentType?: ChunkType;    // Parent type
+  tags?: string[];           // Semantic tags
+  language: ASTLanguage;     // Programming language
+  isAsync?: boolean;         // Async function
+  isExport?: boolean;        // Exported
+  isStatic?: boolean;        // Static method
+  visibility?: 'public' | 'private' | 'protected';
+  paramCount?: number;       // Parameter count
+  returnType?: string;       // Return type
+  genericParams?: string[];  // Generic parameters
+}
+```
+
+### Dependencies
+- Added `web-tree-sitter` (^0.26.3) - WASM-based Tree-sitter parser
+- Added `tree-sitter-wasms` (^0.1.13) - Pre-built WASM grammars
+
+### Testing
+- 43 new unit tests for AST chunking (`tests/unit/engines/astChunking.test.ts`)
+- Tests cover all 10 supported languages
+- Metadata extraction tests for each language
+- Graceful degradation tests when parser unavailable
+
+#### Query Intent Detection (SMCP-085)
+- **New `queryIntent` engine** (`src/engines/queryIntent.ts`) - Classifies search queries into intent categories for better search ranking
+  - Detects 8 intent categories: FUNCTION, CLASS, ERROR, DATABASE, API, AUTH, TEST, CONFIG
+  - Multi-intent support - queries can match multiple categories with confidence scores
+  - Fast keyword-based detection with < 10ms latency overhead
+  - CamelCase and snake_case aware tokenization via `normalizeToTokens()`
+  - Entity-like query detection via `isEntityLikeQuery()`
+
+#### Intent-Based Search Boosting
+- **Chunk type boosting** - `getChunkTypeBoosts()` returns boost factors based on query intent
+  - CLASS intent boosts class chunks (1.3x)
+  - FUNCTION intent boosts function/method chunks (1.15x)
+  - TEST intent boosts function/method chunks (1.2x)
+- **Tag-based boosting** - `getIntentTagBoost()` boosts results with matching tags
+- **Name matching** - CamelCase-aware name matching with up to 1.4x boost for exact matches
+- **Integration with hybrid search** - `applyIntentBoosts()` function in `hybridSearch.ts`
+
+#### New API Functions
+- `detectQueryIntent(query, config?)` - Main intent detection function
+- `getChunkTypeBoosts(intent)` - Get boost factors for chunk types
+- `getIntentTagBoost(intent, tags)` - Get boost factor for tag overlap
+- `createIntentDetector(config)` - Create a pre-configured detector
+- `getIntentNames(intent)` - Extract intent category names
+- `hasIntent(intent, category, minConfidence?)` - Check for specific intent
+
+### Testing
+- 86 new unit tests for query intent detection
+- Tests cover all 8 intent categories
+- Performance tests verify < 10ms latency
+- Edge case coverage: empty queries, special characters, long queries
+
+#### Multi-Factor Search Ranking (SMCP-087)
+- **New `advancedRanking` engine** (`src/engines/advancedRanking.ts`) - Sophisticated multi-factor ranking algorithm inspired by claude-context-local
+  - Combines 7+ ranking signals for significantly better search result quality:
+    1. Base similarity score (from vector/hybrid search)
+    2. Query intent detection (via SMCP-085)
+    3. Chunk type boosting (dynamic based on intent)
+    4. Name matching with CamelCase/snake_case awareness
+    5. Path/filename relevance
+    6. Docstring/comment presence bonus
+    7. Complexity penalty for oversized chunks
+
+#### Core Ranking Features
+- **Chunk type boosting** - Dynamic boosts based on detected query intent
+  - CLASS intent: 1.3x boost for class chunks
+  - FUNCTION intent: 1.15x boost for function/method chunks
+  - TEST intent: 1.2x boost for function/method chunks
+- **Name matching** - CamelCase/snake_case-aware tokenization
+  - Exact match: 1.4x boost
+  - 80%+ token overlap: 1.3x (strong match)
+  - 50%+ token overlap: 1.2x (good match)
+  - 30%+ token overlap: 1.1x (partial match)
+  - Any overlap: 1.05x (weak match)
+- **Path relevance** - Boosts results when query tokens appear in file path
+  - 5% boost per matching token, capped at 20% total
+- **Docstring bonus** - 1.05x boost for documented code
+  - Reduced bonus for module docstrings on entity-like queries
+- **Complexity penalty** - Penalizes oversized chunks
+  - 2% penalty for chunks > 2000 chars
+  - 5% penalty for chunks > 4000 chars
+
+#### New API Functions
+- `applyAdvancedRanking(query, results, config?)` - Main ranking function with full factor breakdown
+- `calculateChunkTypeBoost(chunkType, boosts)` - Calculate type-based boost
+- `calculateNameBoost(name, query, tokens)` - Calculate name matching boost
+- `calculatePathBoost(path, tokens)` - Calculate path relevance boost
+- `calculateDocstringBonus(docstring, type, isEntity)` - Calculate documentation bonus
+- `calculateComplexityPenalty(text, thresholds)` - Calculate size penalty
+- `createRanker(config)` - Create pre-configured ranking function
+- `getRankingStats(results)` - Analyze ranking factor statistics
+
+#### Configuration
+```typescript
+interface AdvancedRankingConfig {
+  enabled: boolean;              // Enable/disable ranking (default: true)
+  intentConfig?: IntentConfig;   // Intent detection settings
+  weights?: {                    // Factor weight multipliers
+    chunkType: number;           // Default: 1.0
+    name: number;
+    path: number;
+    tag: number;
+    docstring: number;
+    complexity: number;
+  };
+  complexityThresholds?: {
+    mild: number;                // Default: 2000 chars
+    strong: number;              // Default: 4000 chars
+  };
+  docstringBonusValue?: number;  // Default: 1.05
+}
+```
+
+#### Integration with Hybrid Search
+- `applyAdvancedSearchRanking()` - Apply ranking to `HybridSearchResult[]`
+- `convertRankedToHybridResults()` - Convert back to hybrid results with updated scores
+
+### Testing
+- 73 new unit tests for advanced ranking (`tests/unit/engines/advancedRanking.test.ts`)
+- Tests cover all ranking factors
+- Performance tests: < 50ms for 100 results, < 200ms for 500 results
+- Edge cases: empty queries, unicode, very long queries
+
 ## [1.4.0] - 2025-12-16
 
 ### Added

@@ -9,6 +9,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Query Expansion & Synonyms (SMCP-095)
+- **New `queryExpansion` engine** (`src/engines/queryExpansion.ts`) - Improves search recall by expanding abbreviations and synonyms
+  - When users search for "auth", the query is expanded to include "authentication authorize login session token"
+  - Inspired by mcp-vector-search's query expansion system with 60+ expansion mappings
+  - Preserves original query terms while adding related terms for better recall
+
+- **60+ expansion mappings organized by category:**
+  - Authentication & Security: auth, login, oauth, jwt, password, permission, role
+  - Database & Storage: db, sql, mongo, postgres, redis, cache, orm, prisma
+  - API & HTTP: api, endpoint, route, http, rest, graphql, request, response
+  - Async & Concurrency: async, await, promise, callback, concurrent, thread
+  - Errors & Exceptions: err, error, exception, catch, throw, fail, handle
+  - Configuration & Settings: config, env, settings, options, param
+  - Common Abbreviations: util, fn, init, msg, req, res, ctx, src, dest, dir
+  - Programming Concepts: class, interface, function, method, property, type
+  - Testing: test, mock, spec, stub, spy, assert, expect
+  - Logging & Debugging: log, logger, debug, trace, console
+  - File & I/O: file, path, fs, read, write, save, load, parse
+  - Networking: socket, tcp, connect, client, server, url
+
+- **Core functions:**
+  - `expandQuery(query, config?)` - Expand a query with synonyms (returns string)
+  - `expandQueryWithDetails(query, config?)` - Expand with detailed results (returns QueryExpansionResult)
+  - `hasExpansion(term)` - Check if a term has expansion mappings
+  - `getExpansionTerms(term)` - Get expansion terms for a specific term
+  - `getExpansionKeys()` / `getExpansionCount()` - Query available expansions
+
+- **Configuration options (`QueryExpansionConfig`):**
+  - `enabled` (boolean, default: true) - Enable/disable query expansion
+  - `maxExpansionTerms` (number, default: 10) - Limit expansion terms added
+  - `customExpansions` (Record<string, string>) - Add custom expansion mappings
+
+- **Integration with search tools:**
+  - `search_code` now applies query expansion before generating embeddings
+  - `search_docs` now applies query expansion before generating embeddings
+  - Expanded query used for semantic search, original query preserved for FTS
+  - Non-blocking with < 1ms overhead per query
+
+- **Benefits:**
+  - Better recall for abbreviation-heavy queries (e.g., "auth" finds "authentication")
+  - Domain-specific term expansion (e.g., "db" finds "database", "sql", "mongo")
+  - Configurable and extensible with custom mappings
+  - Zero impact on search latency (expansion is sub-millisecond)
+
+### Testing
+- 72 new unit tests for query expansion (`tests/unit/engines/queryExpansion.test.ts`)
+- Tests cover all expansion categories, configuration options, edge cases
+- Performance tests verify < 1ms expansion time
+- Integration tests for search usability
+
 #### Search-Triggered Auto-Reindexing (SMCP-094)
 - **New `autoReindexer` engine** (`src/engines/autoReindexer.ts`) - Search-triggered automatic reindexing inspired by mcp-vector-search
   - Periodically checks for stale files during search operations

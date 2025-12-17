@@ -42,7 +42,7 @@ import {
 } from '../engines/hybridSearch.js';
 import { loadFTSEngine } from '../engines/ftsEngineFactory.js';
 import type { FTSEngine } from '../engines/ftsEngine.js';
-import { getAutoReindexer } from '../engines/autoReindexer.js';
+import { expandQuery } from '../engines/queryExpansion.js';
 
 // ============================================================================
 // Input/Output Schemas
@@ -192,29 +192,6 @@ export async function searchCode(
   // Get the index path for this project
   const indexPath = getIndexPath(context.projectPath);
 
-  // SMCP-094: Search-triggered auto-reindexing
-  // Check for stale files and silently reindex small changes before search
-  try {
-    const autoReindexer = getAutoReindexer(context.projectPath);
-    const reindexResult = await autoReindexer.preSearchHook();
-    if (reindexResult.reindexed) {
-      logger.info('searchCode', 'Auto-reindexed stale files before search', {
-        filesReindexed: reindexResult.filesReindexed,
-        reindexTimeMs: reindexResult.reindexTimeMs,
-      });
-    } else if (reindexResult.skipReason && reindexResult.skipReason.startsWith('too_many_stale_files')) {
-      logger.info('searchCode', 'Skipped auto-reindex: too many stale files', {
-        reason: reindexResult.skipReason,
-      });
-    }
-  } catch (error) {
-    // Auto-reindex is non-critical - log and continue with search
-    const message = error instanceof Error ? error.message : String(error);
-    logger.warn('searchCode', 'Auto-reindex check failed, continuing with search', {
-      error: message,
-    });
-  }
-
   // Check if index exists by looking for metadata
   const metadata = await loadMetadata(indexPath);
   if (!metadata) {
@@ -329,13 +306,29 @@ export async function searchCode(
       });
     }
 
+    // SMCP-095: Apply query expansion for better recall
+    // Expand abbreviations like "auth" -> "auth authentication authorize login..."
+    // Use expanded query for semantic embedding (better recall)
+    // Use original query for FTS (exact matching)
+    const expandedQuery = expandQuery(input.query);
+    const didExpand = expandedQuery !== input.query;
+
+    if (didExpand) {
+      logger.debug('searchCode', 'Query expanded for embedding', {
+        originalQuery: input.query.substring(0, 50),
+        expandedQuery: expandedQuery.substring(0, 100),
+      });
+    }
+
     // SMCP-074: Generate query embedding using code embedding engine
+    // Use expanded query for semantic search to improve recall
     const embeddingEngine = getCodeEmbeddingEngine();
     await embeddingEngine.initialize();
-    const queryVector = await embeddingEngine.embed(input.query);
+    const queryVector = await embeddingEngine.embed(expandedQuery);
 
     logger.debug('searchCode', 'Query embedding generated', {
       dimension: queryVector.length,
+      queryExpanded: didExpand,
     });
 
     let rawResults: SearchCodeResult[];

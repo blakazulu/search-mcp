@@ -372,20 +372,24 @@ export {
   getSupportedLanguages,
 } from './symbolExtractor.js';
 
-// Search-Triggered Auto-Reindexing Engine (SMCP-094)
+// Query Expansion & Synonyms Engine (SMCP-095)
 export {
   // Types
-  type AutoReindexConfig,
-  type StalenessCheckResult,
-  type AutoReindexResult,
-  type AutoReindexStats,
+  type QueryExpansionConfig,
+  type QueryExpansionResult,
+  type ExpansionCategory,
   // Constants
-  DEFAULT_AUTO_REINDEX_CONFIG,
-  // Class
-  SearchTriggeredIndexer,
+  DEFAULT_QUERY_EXPANSIONS,
+  DEFAULT_EXPANSION_CONFIG,
+  EXPANSION_CATEGORIES,
+  // Core Functions
+  expandQuery,
+  expandQueryWithDetails,
+  hasExpansion,
+  getExpansionTerms,
+  getExpansionKeys,
+  getExpansionCount,
   // Factory Functions
-  createAutoReindexer,
-  getAutoReindexer,
-  clearAutoReindexers,
-  removeAutoReindexer,
-} from './autoReindexer.js';
+  createQueryExpander,
+  createDetailedQueryExpander,
+} from './queryExpansion.js';

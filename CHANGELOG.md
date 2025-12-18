@@ -9,6 +9,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Multi-Language Code Chunking (SMCP-097)
+- **Extended code-aware chunking to support 22+ programming languages** (up from 3)
+  - Previously supported: TypeScript, JavaScript, Python
+  - Now supports 22 languages across 4 tiers with 40+ file extensions
+
+- **Tier 1 - High Priority Languages (8 new):**
+  - Java (.java): class, interface, enum, record, annotations
+  - Go (.go): func, type struct, type interface, const, var
+  - Rust (.rs): fn, struct, enum, impl, trait, macro, mod
+  - C# (.cs): class, struct, interface, enum, record, namespace, attributes
+  - C (.c, .h): function definitions, struct, enum, union, preprocessor
+  - C++ (.cpp, .hpp, .cc, .cxx, .hh, .hxx): class, namespace, templates, enum class
+  - Kotlin (.kt, .kts): fun, class, interface, object, companion object, annotations
+  - Swift (.swift): func, class, struct, enum, protocol, extension, attributes
+
+- **Tier 2 - Medium Priority Languages (4 new):**
+  - Ruby (.rb, .rake, .gemspec): def, class, module
+  - PHP (.php, .phtml): function, class, interface, trait, namespace
+  - Scala (.scala, .sc): def, class, trait, object, type
+  - Shell/Bash (.sh, .bash, .zsh, .fish): function declarations, case statements
+
+- **Tier 3 - Markup/Config Languages (11 new):**
+  - CSS (.css): rule blocks, @media, @keyframes, @font-face
+  - SCSS (.scss, .sass): mixins, functions, placeholders, variables
+  - LESS (.less): mixins, variables
+  - HTML (.html, .htm): script, style, semantic sections, template, form
+  - Vue SFCs (.vue): template, script, style blocks
+  - Svelte (.svelte): script, style, special blocks
+  - SQL (.sql): CREATE, ALTER, SELECT, INSERT/UPDATE/DELETE, DROP
+  - YAML (.yaml, .yml): top-level keys, document separators
+  - JSON (.json, .jsonc): top-level object keys
+  - XML (.xml, .xsl, .xslt): elements, processing instructions, comments, CDATA
+  - GraphQL (.graphql, .gql): type, interface, input, enum, query, mutation, subscription, fragment
+
+- **Tier 4 - Infrastructure Languages (3 new):**
+  - Terraform (.tf, .tfvars): resource, data, variable, output, module, provider, locals
+  - HCL (.hcl): generic blocks, assignments
+  - Dockerfile (Dockerfile, .dockerfile): FROM, RUN, COPY, ENV, ENTRYPOINT, CMD, WORKDIR, EXPOSE, ARG, LABEL
+
+- **Special filename support:**
+  - Dockerfile, Makefile, Gemfile, Rakefile, Jenkinsfile, Vagrantfile
+
+- **New exported functions:**
+  - `getLanguageDisplayName(language)` - Get human-readable language name
+  - `getSupportedLanguages()` - Get list of all supported language identifiers
+
+- **Benefits:**
+  - Chunks align with code structure across 22+ languages
+  - Better semantic search results for polyglot codebases
+  - Automatic language detection from 40+ file extensions
+  - Falls back to character-based chunking for unsupported languages
+
+### Testing
+- 82 comprehensive unit tests covering all 22 supported languages
+- Tests for language detection, boundary detection, and chunk splitting
+- Tests for special filenames (Dockerfile, Makefile, etc.)
+- Tests for Windows and Unix path handling
+
 #### Enhanced Setup Flow with Integrated Indexing (SMCP-088)
 - **`search-mcp setup` now verifies project directory before proceeding**
   - Shows detected project path at the start: "Detected project directory: /path/to/project"

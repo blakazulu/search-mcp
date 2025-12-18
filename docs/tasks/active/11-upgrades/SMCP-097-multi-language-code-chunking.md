@@ -3,11 +3,12 @@ task_id: "SMCP-097"
 title: "Multi-Language Code Chunking"
 category: "Technical"
 priority: "P2"
-status: "not-started"
+status: "completed"
 created_date: "2025-12-16"
+completed_date: "2025-12-18"
 due_date: ""
 estimated_hours: 16
-actual_hours: 0
+actual_hours: 8
 assigned_to: "Team"
 tags: ["chunking", "languages", "code-aware", "quality"]
 ---
@@ -74,19 +75,19 @@ const LANGUAGE_PATTERNS: Record<string, LanguageConfig> = {
 
 ## Goals
 
-- [ ] Add chunking patterns for 20+ languages
-- [ ] Maintain semantic boundaries (functions, classes, etc.)
-- [ ] Auto-detect language from file extension
-- [ ] Fallback to generic chunking for unknown languages
-- [ ] No performance regression
+- [x] Add chunking patterns for 20+ languages
+- [x] Maintain semantic boundaries (functions, classes, etc.)
+- [x] Auto-detect language from file extension
+- [x] Fallback to generic chunking for unknown languages
+- [x] No performance regression
 
 ## Success Criteria
 
-- All 20+ target languages supported
-- Chunks respect semantic boundaries
-- Extension-to-language mapping works correctly
-- Test coverage for each language
-- Chunking performance unchanged
+- [x] All 20+ target languages supported (22 languages implemented)
+- [x] Chunks respect semantic boundaries
+- [x] Extension-to-language mapping works correctly (40+ extensions)
+- [x] Test coverage for each language (82 tests)
+- [x] Chunking performance unchanged
 
 ## Dependencies
 
@@ -226,33 +227,33 @@ const EXTENSION_TO_LANGUAGE: Record<string, string> = {
 
 ### Phase 1: Tier 1 Languages (6 hours)
 
-- [ ] 1.1 Add Java chunking patterns
-- [ ] 1.2 Add Go chunking patterns
-- [ ] 1.3 Add Rust chunking patterns
-- [ ] 1.4 Add C# chunking patterns
-- [ ] 1.5 Add C/C++ chunking patterns
-- [ ] 1.6 Add Kotlin chunking patterns
-- [ ] 1.7 Add Swift chunking patterns
-- [ ] 1.8 Unit tests for Tier 1 languages
+- [x] 1.1 Add Java chunking patterns
+- [x] 1.2 Add Go chunking patterns
+- [x] 1.3 Add Rust chunking patterns
+- [x] 1.4 Add C# chunking patterns
+- [x] 1.5 Add C/C++ chunking patterns
+- [x] 1.6 Add Kotlin chunking patterns
+- [x] 1.7 Add Swift chunking patterns
+- [x] 1.8 Unit tests for Tier 1 languages
 
 ### Phase 2: Tier 2-3 Languages (6 hours)
 
-- [ ] 2.1 Add Ruby chunking patterns
-- [ ] 2.2 Add PHP chunking patterns
-- [ ] 2.3 Add Shell/Bash chunking patterns
-- [ ] 2.4 Add CSS/SCSS/LESS chunking patterns
-- [ ] 2.5 Add HTML/Vue/Svelte chunking patterns
-- [ ] 2.6 Add SQL chunking patterns
-- [ ] 2.7 Add YAML/JSON/XML chunking patterns
-- [ ] 2.8 Add GraphQL chunking patterns
+- [x] 2.1 Add Ruby chunking patterns
+- [x] 2.2 Add PHP chunking patterns
+- [x] 2.3 Add Shell/Bash chunking patterns
+- [x] 2.4 Add CSS/SCSS/LESS chunking patterns
+- [x] 2.5 Add HTML/Vue/Svelte chunking patterns
+- [x] 2.6 Add SQL chunking patterns
+- [x] 2.7 Add YAML/JSON/XML chunking patterns
+- [x] 2.8 Add GraphQL chunking patterns
 
 ### Phase 3: Integration & Testing (4 hours)
 
-- [ ] 3.1 Add Terraform/HCL/Dockerfile patterns
-- [ ] 3.2 Update extension mapping
-- [ ] 3.3 Integration tests with real code samples
-- [ ] 3.4 Performance benchmarks
-- [ ] 3.5 Documentation update
+- [x] 3.1 Add Terraform/HCL/Dockerfile patterns
+- [x] 3.2 Update extension mapping
+- [x] 3.3 Integration tests with real code samples
+- [x] 3.4 Performance benchmarks
+- [x] 3.5 Documentation update
 
 ## Resources
 
@@ -262,12 +263,12 @@ const EXTENSION_TO_LANGUAGE: Record<string, string> = {
 
 ## Acceptance Checklist
 
-- [ ] 20+ languages supported
-- [ ] All Tier 1 languages have comprehensive patterns
-- [ ] Extension mapping covers common extensions
-- [ ] Unit tests for each language
-- [ ] No performance regression
-- [ ] Documentation updated
+- [x] 20+ languages supported (22 implemented)
+- [x] All Tier 1 languages have comprehensive patterns
+- [x] Extension mapping covers common extensions (40+ extensions)
+- [x] Unit tests for each language (82 tests)
+- [x] No performance regression
+- [x] Documentation updated
 
 ## Progress Log
 
@@ -275,6 +276,22 @@ const EXTENSION_TO_LANGUAGE: Record<string, string> = {
 
 - Task created based on ROADMAP.md item
 - Interim solution before AST-based chunking (SMCP-086)
+
+### 2025-12-18 - 8 hours
+
+- Implemented support for 22 programming languages (up from 3)
+- Added 40+ file extension mappings
+- Added special filename detection (Dockerfile, Makefile, Gemfile, etc.)
+- Created generic boundary finder with configurable options (maxIndent, handleDecorators)
+- Added language-specific patterns for:
+  - Tier 1: Java, Go, Rust, C#, C, C++, Kotlin, Swift
+  - Tier 2: Ruby, PHP, Scala, Shell/Bash
+  - Tier 3: CSS, SCSS, LESS, HTML, Vue, Svelte, SQL, YAML, JSON, XML, GraphQL
+  - Tier 4: Terraform, HCL, Dockerfile
+- Created 82 comprehensive unit tests covering all languages
+- Added new exported functions: `getLanguageDisplayName()`, `getSupportedLanguages()`
+- Updated CHANGELOG.md with full feature documentation
+- All tests pass, build succeeds
 
 ## Notes
 

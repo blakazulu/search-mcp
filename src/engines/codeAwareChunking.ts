@@ -9,9 +9,28 @@
  * - Search results are more coherent and complete
  * - Reduced overlap requirement (from 20% to ~5%)
  *
- * Supported languages:
+ * Supported languages (20+):
  * - TypeScript/JavaScript: function declarations, class declarations, exports
  * - Python: def statements, class statements, decorators
+ * - Java: class, interface, enum, method declarations
+ * - Go: func, type struct, type interface declarations
+ * - Rust: fn, struct, enum, impl, trait, macro declarations
+ * - C#: class, struct, interface, enum, method declarations
+ * - C/C++: function definitions, struct, class, namespace
+ * - Kotlin: fun, class, interface, object declarations
+ * - Swift: func, class, struct, enum, protocol, extension
+ * - Ruby: def, class, module declarations
+ * - PHP: function, class, interface, trait declarations
+ * - Scala: def, class, trait, object declarations
+ * - Shell/Bash: function declarations
+ * - CSS/SCSS/LESS: rule blocks, @media, @keyframes
+ * - HTML: structural elements
+ * - Vue/Svelte: template, script, style blocks
+ * - SQL: CREATE, ALTER, SELECT statements
+ * - YAML/JSON/XML: structural markers
+ * - GraphQL: type, query, mutation, subscription
+ * - Terraform/HCL: resource, variable, output blocks
+ * - Dockerfile: FROM, RUN, COPY instructions
  *
  * Falls back to character-based chunking for unsupported languages or on errors.
  *
@@ -26,9 +45,58 @@ import { ChunkWithLines } from './chunking.js';
 // ============================================================================
 
 /**
- * Supported programming languages for code-aware chunking
+ * Supported programming languages for code-aware chunking (22 languages)
+ *
+ * Tier 1 - High Priority:
+ * - typescript, javascript, python (existing)
+ * - java, go, rust, csharp, c, cpp, kotlin, swift
+ *
+ * Tier 2 - Medium Priority:
+ * - ruby, php, scala, shell
+ *
+ * Tier 3 - Markup/Config:
+ * - css, scss, less, html, vue, svelte, sql, yaml, json, xml, graphql
+ *
+ * Tier 4 - Infrastructure:
+ * - terraform, hcl, dockerfile
  */
-export type SupportedLanguage = 'typescript' | 'javascript' | 'python' | 'unknown';
+export type SupportedLanguage =
+  // Tier 1 - Existing
+  | 'typescript'
+  | 'javascript'
+  | 'python'
+  // Tier 1 - New
+  | 'java'
+  | 'go'
+  | 'rust'
+  | 'csharp'
+  | 'c'
+  | 'cpp'
+  | 'kotlin'
+  | 'swift'
+  // Tier 2
+  | 'ruby'
+  | 'php'
+  | 'scala'
+  | 'shell'
+  // Tier 3
+  | 'css'
+  | 'scss'
+  | 'less'
+  | 'html'
+  | 'vue'
+  | 'svelte'
+  | 'sql'
+  | 'yaml'
+  | 'json'
+  | 'xml'
+  | 'graphql'
+  // Tier 4
+  | 'terraform'
+  | 'hcl'
+  | 'dockerfile'
+  // Unknown
+  | 'unknown';
 
 /**
  * Configuration for code-aware chunking
@@ -75,19 +143,119 @@ export const DEFAULT_CODE_AWARE_OPTIONS: CodeAwareChunkOptions = {
 // ============================================================================
 
 /**
- * File extension to language mapping
+ * File extension to language mapping (40+ extensions for 22 languages)
  */
 const EXTENSION_TO_LANGUAGE: Record<string, SupportedLanguage> = {
-  '.ts': 'typescript',
-  '.tsx': 'typescript',
-  '.mts': 'typescript',
-  '.cts': 'typescript',
+  // JavaScript family
   '.js': 'javascript',
   '.jsx': 'javascript',
   '.mjs': 'javascript',
   '.cjs': 'javascript',
+  '.ts': 'typescript',
+  '.tsx': 'typescript',
+  '.mts': 'typescript',
+  '.cts': 'typescript',
+
+  // Python
   '.py': 'python',
   '.pyw': 'python',
+  '.pyi': 'python',
+
+  // Java
+  '.java': 'java',
+
+  // Go
+  '.go': 'go',
+
+  // Rust
+  '.rs': 'rust',
+
+  // C#
+  '.cs': 'csharp',
+
+  // C/C++
+  '.c': 'c',
+  '.h': 'c',
+  '.cpp': 'cpp',
+  '.hpp': 'cpp',
+  '.cc': 'cpp',
+  '.cxx': 'cpp',
+  '.hh': 'cpp',
+  '.hxx': 'cpp',
+
+  // Kotlin
+  '.kt': 'kotlin',
+  '.kts': 'kotlin',
+
+  // Swift
+  '.swift': 'swift',
+
+  // Ruby
+  '.rb': 'ruby',
+  '.rake': 'ruby',
+  '.gemspec': 'ruby',
+
+  // PHP
+  '.php': 'php',
+  '.phtml': 'php',
+
+  // Scala
+  '.scala': 'scala',
+  '.sc': 'scala',
+
+  // Shell/Bash
+  '.sh': 'shell',
+  '.bash': 'shell',
+  '.zsh': 'shell',
+  '.fish': 'shell',
+
+  // CSS family
+  '.css': 'css',
+  '.scss': 'scss',
+  '.sass': 'scss',
+  '.less': 'less',
+
+  // HTML
+  '.html': 'html',
+  '.htm': 'html',
+
+  // Vue and Svelte
+  '.vue': 'vue',
+  '.svelte': 'svelte',
+
+  // SQL
+  '.sql': 'sql',
+
+  // Config formats
+  '.yaml': 'yaml',
+  '.yml': 'yaml',
+  '.json': 'json',
+  '.jsonc': 'json',
+  '.xml': 'xml',
+  '.xsl': 'xml',
+  '.xslt': 'xml',
+
+  // GraphQL
+  '.graphql': 'graphql',
+  '.gql': 'graphql',
+
+  // Infrastructure
+  '.tf': 'terraform',
+  '.tfvars': 'terraform',
+  '.hcl': 'hcl',
+  '.dockerfile': 'dockerfile',
+};
+
+/**
+ * Special filename to language mapping (for files without extensions)
+ */
+const FILENAME_TO_LANGUAGE: Record<string, SupportedLanguage> = {
+  dockerfile: 'dockerfile',
+  makefile: 'shell',
+  gemfile: 'ruby',
+  rakefile: 'ruby',
+  jenkinsfile: 'shell',
+  vagrantfile: 'ruby',
 };
 
 /**
@@ -97,6 +265,15 @@ const EXTENSION_TO_LANGUAGE: Record<string, SupportedLanguage> = {
  * @returns The detected language or 'unknown'
  */
 export function detectLanguage(filePath: string): SupportedLanguage {
+  // Extract filename from path
+  const filename = filePath.split(/[/\\]/).pop()?.toLowerCase() || '';
+
+  // Check for special filenames first (e.g., Dockerfile, Makefile)
+  if (FILENAME_TO_LANGUAGE[filename]) {
+    return FILENAME_TO_LANGUAGE[filename];
+  }
+
+  // Handle extension-based detection
   const ext = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
   return EXTENSION_TO_LANGUAGE[ext] || 'unknown';
 }
@@ -134,6 +311,445 @@ const PYTHON_BOUNDARY_PATTERNS = [
   { pattern: /^class\s+\w+/m, type: 'class' },
   // Decorated functions/classes (decorator is part of the boundary)
   { pattern: /^@\w+/m, type: 'decorator' },
+];
+
+// ============================================================================
+// Tier 1 Languages - High Priority
+// ============================================================================
+
+/**
+ * Regex patterns for detecting semantic boundaries in Java
+ */
+const JAVA_BOUNDARY_PATTERNS = [
+  // Class declarations
+  { pattern: /^(?:public|private|protected)?\s*(?:abstract|final|static)?\s*class\s+\w+/m, type: 'class' },
+  // Interface declarations
+  { pattern: /^(?:public)?\s*interface\s+\w+/m, type: 'interface' },
+  // Enum declarations
+  { pattern: /^(?:public)?\s*enum\s+\w+/m, type: 'enum' },
+  // Record declarations (Java 16+)
+  { pattern: /^(?:public|private|protected)?\s*record\s+\w+/m, type: 'record' },
+  // Annotations
+  { pattern: /^@\w+/m, type: 'annotation' },
+];
+
+/**
+ * Regex patterns for detecting semantic boundaries in Go
+ */
+const GO_BOUNDARY_PATTERNS = [
+  // Function declarations (including methods with receivers)
+  { pattern: /^func\s+(?:\(\w+\s+\*?\w+\)\s+)?\w+\s*\(/m, type: 'function' },
+  // Type struct declarations
+  { pattern: /^type\s+\w+\s+struct\s*\{/m, type: 'struct' },
+  // Type interface declarations
+  { pattern: /^type\s+\w+\s+interface\s*\{/m, type: 'interface' },
+  // Type alias declarations
+  { pattern: /^type\s+\w+\s+\w+/m, type: 'type' },
+  // Const blocks
+  { pattern: /^const\s+(?:\w+|\()/m, type: 'const' },
+  // Var blocks
+  { pattern: /^var\s+(?:\w+|\()/m, type: 'var' },
+];
+
+/**
+ * Regex patterns for detecting semantic boundaries in Rust
+ */
+const RUST_BOUNDARY_PATTERNS = [
+  // Function declarations (pub, async, unsafe)
+  { pattern: /^(?:pub(?:\s*\([^)]+\))?\s+)?(?:async\s+)?(?:unsafe\s+)?fn\s+\w+/m, type: 'function' },
+  // Struct declarations
+  { pattern: /^(?:pub(?:\s*\([^)]+\))?\s+)?struct\s+\w+/m, type: 'struct' },
+  // Enum declarations
+  { pattern: /^(?:pub(?:\s*\([^)]+\))?\s+)?enum\s+\w+/m, type: 'enum' },
+  // Impl blocks
+  { pattern: /^impl(?:\s*<[^>]+>)?\s+(?:\w+\s+for\s+)?\w+/m, type: 'impl' },
+  // Trait declarations
+  { pattern: /^(?:pub(?:\s*\([^)]+\))?\s+)?trait\s+\w+/m, type: 'trait' },
+  // Macro definitions
+  { pattern: /^macro_rules!\s+\w+/m, type: 'macro' },
+  // Mod declarations
+  { pattern: /^(?:pub(?:\s*\([^)]+\))?\s+)?mod\s+\w+/m, type: 'mod' },
+  // Use statements (for module-level grouping)
+  { pattern: /^(?:pub\s+)?use\s+/m, type: 'use' },
+];
+
+/**
+ * Regex patterns for detecting semantic boundaries in C#
+ */
+const CSHARP_BOUNDARY_PATTERNS = [
+  // Class declarations
+  { pattern: /^(?:public|private|protected|internal)?\s*(?:abstract|sealed|static|partial)?\s*class\s+\w+/m, type: 'class' },
+  // Struct declarations
+  { pattern: /^(?:public|private|protected|internal)?\s*(?:readonly\s+)?struct\s+\w+/m, type: 'struct' },
+  // Interface declarations
+  { pattern: /^(?:public|private|protected|internal)?\s*interface\s+\w+/m, type: 'interface' },
+  // Enum declarations
+  { pattern: /^(?:public|private|protected|internal)?\s*enum\s+\w+/m, type: 'enum' },
+  // Record declarations (C# 9+)
+  { pattern: /^(?:public|private|protected|internal)?\s*(?:sealed\s+)?record\s+\w+/m, type: 'record' },
+  // Namespace declarations
+  { pattern: /^namespace\s+[\w.]+/m, type: 'namespace' },
+  // Attributes
+  { pattern: /^\[\w+/m, type: 'attribute' },
+];
+
+/**
+ * Regex patterns for detecting semantic boundaries in C
+ */
+const C_BOUNDARY_PATTERNS = [
+  // Function definitions (type name followed by function name)
+  { pattern: /^(?:static\s+)?(?:inline\s+)?(?:const\s+)?(?:\w+\s+)+\w+\s*\([^)]*\)\s*\{/m, type: 'function' },
+  // Struct definitions
+  { pattern: /^(?:typedef\s+)?struct\s+\w*/m, type: 'struct' },
+  // Enum definitions
+  { pattern: /^(?:typedef\s+)?enum\s+\w*/m, type: 'enum' },
+  // Union definitions
+  { pattern: /^(?:typedef\s+)?union\s+\w*/m, type: 'union' },
+  // Preprocessor directives (for grouping)
+  { pattern: /^#(?:define|ifdef|ifndef|if)\s+/m, type: 'preprocessor' },
+];
+
+/**
+ * Regex patterns for detecting semantic boundaries in C++
+ */
+const CPP_BOUNDARY_PATTERNS = [
+  // Class declarations
+  { pattern: /^(?:template\s*<[^>]*>\s*)?(?:class|struct)\s+\w+/m, type: 'class' },
+  // Function definitions
+  { pattern: /^(?:virtual\s+)?(?:static\s+)?(?:inline\s+)?(?:const\s+)?(?:\w+(?:::\w+)*\s+)+\w+\s*\([^)]*\)/m, type: 'function' },
+  // Namespace declarations
+  { pattern: /^namespace\s+\w+/m, type: 'namespace' },
+  // Enum class declarations
+  { pattern: /^enum\s+(?:class\s+)?\w+/m, type: 'enum' },
+  // Template declarations
+  { pattern: /^template\s*<[^>]*>/m, type: 'template' },
+  // Preprocessor directives
+  { pattern: /^#(?:define|ifdef|ifndef|if)\s+/m, type: 'preprocessor' },
+];
+
+/**
+ * Regex patterns for detecting semantic boundaries in Kotlin
+ */
+const KOTLIN_BOUNDARY_PATTERNS = [
+  // Function declarations
+  { pattern: /^(?:private|public|protected|internal)?\s*(?:suspend\s+)?fun\s+(?:<[^>]+>\s*)?\w+/m, type: 'function' },
+  // Class declarations
+  { pattern: /^(?:private|public|protected|internal)?\s*(?:open|abstract|sealed|data|inner|enum)?\s*class\s+\w+/m, type: 'class' },
+  // Interface declarations
+  { pattern: /^(?:private|public|protected|internal)?\s*interface\s+\w+/m, type: 'interface' },
+  // Object declarations
+  { pattern: /^(?:private|public|protected|internal)?\s*object\s+\w+/m, type: 'object' },
+  // Companion object
+  { pattern: /^companion\s+object/m, type: 'companion' },
+  // Annotations
+  { pattern: /^@\w+/m, type: 'annotation' },
+];
+
+/**
+ * Regex patterns for detecting semantic boundaries in Swift
+ */
+const SWIFT_BOUNDARY_PATTERNS = [
+  // Function declarations
+  { pattern: /^(?:private|public|internal|fileprivate|open)?\s*(?:static\s+)?func\s+\w+/m, type: 'function' },
+  // Class declarations
+  { pattern: /^(?:private|public|internal|fileprivate|open)?\s*(?:final\s+)?class\s+\w+/m, type: 'class' },
+  // Struct declarations
+  { pattern: /^(?:private|public|internal|fileprivate)?\s*struct\s+\w+/m, type: 'struct' },
+  // Enum declarations
+  { pattern: /^(?:private|public|internal|fileprivate)?\s*enum\s+\w+/m, type: 'enum' },
+  // Protocol declarations
+  { pattern: /^(?:private|public|internal|fileprivate)?\s*protocol\s+\w+/m, type: 'protocol' },
+  // Extension declarations
+  { pattern: /^(?:private|public|internal|fileprivate)?\s*extension\s+\w+/m, type: 'extension' },
+  // Property wrappers and attributes
+  { pattern: /^@\w+/m, type: 'attribute' },
+];
+
+// ============================================================================
+// Tier 2 Languages - Medium Priority
+// ============================================================================
+
+/**
+ * Regex patterns for detecting semantic boundaries in Ruby
+ */
+const RUBY_BOUNDARY_PATTERNS = [
+  // Method definitions
+  { pattern: /^(?:def\s+(?:self\.)?)\w+/m, type: 'method' },
+  // Class definitions
+  { pattern: /^class\s+\w+/m, type: 'class' },
+  // Module definitions
+  { pattern: /^module\s+\w+/m, type: 'module' },
+  // Blocks/Procs (begin blocks)
+  { pattern: /^begin$/m, type: 'block' },
+];
+
+/**
+ * Regex patterns for detecting semantic boundaries in PHP
+ */
+const PHP_BOUNDARY_PATTERNS = [
+  // Function declarations
+  { pattern: /^(?:public|private|protected)?\s*(?:static\s+)?function\s+\w+/m, type: 'function' },
+  // Class declarations
+  { pattern: /^(?:abstract\s+|final\s+)?class\s+\w+/m, type: 'class' },
+  // Interface declarations
+  { pattern: /^interface\s+\w+/m, type: 'interface' },
+  // Trait declarations
+  { pattern: /^trait\s+\w+/m, type: 'trait' },
+  // Namespace declarations
+  { pattern: /^namespace\s+[\w\\]+/m, type: 'namespace' },
+];
+
+/**
+ * Regex patterns for detecting semantic boundaries in Scala
+ */
+const SCALA_BOUNDARY_PATTERNS = [
+  // Def declarations
+  { pattern: /^(?:private|protected)?\s*(?:override\s+)?def\s+\w+/m, type: 'def' },
+  // Class declarations
+  { pattern: /^(?:private|protected)?\s*(?:abstract\s+|final\s+|sealed\s+|case\s+)?class\s+\w+/m, type: 'class' },
+  // Trait declarations
+  { pattern: /^(?:private|protected)?\s*(?:sealed\s+)?trait\s+\w+/m, type: 'trait' },
+  // Object declarations
+  { pattern: /^(?:private|protected)?\s*(?:case\s+)?object\s+\w+/m, type: 'object' },
+  // Type aliases
+  { pattern: /^(?:private|protected)?\s*type\s+\w+/m, type: 'type' },
+];
+
+/**
+ * Regex patterns for detecting semantic boundaries in Shell/Bash
+ */
+const SHELL_BOUNDARY_PATTERNS = [
+  // Function declarations (both styles)
+  { pattern: /^(?:function\s+)?\w+\s*\(\)\s*\{/m, type: 'function' },
+  { pattern: /^function\s+\w+/m, type: 'function' },
+  // Case statements
+  { pattern: /^case\s+.+\s+in$/m, type: 'case' },
+  // If blocks (top-level)
+  { pattern: /^if\s+/m, type: 'if' },
+];
+
+// ============================================================================
+// Tier 3 Languages - Markup/Config
+// ============================================================================
+
+/**
+ * Regex patterns for detecting semantic boundaries in CSS
+ */
+const CSS_BOUNDARY_PATTERNS = [
+  // Rule blocks (class, id, element selectors)
+  { pattern: /^[.#]?[\w-]+(?:\s*,\s*[.#]?[\w-]+)*\s*\{/m, type: 'rule' },
+  // Media queries
+  { pattern: /^@media\s+/m, type: 'media' },
+  // Keyframes
+  { pattern: /^@keyframes\s+\w+/m, type: 'keyframes' },
+  // Font-face
+  { pattern: /^@font-face\s*\{/m, type: 'fontface' },
+  // Import statements
+  { pattern: /^@import\s+/m, type: 'import' },
+];
+
+/**
+ * Regex patterns for detecting semantic boundaries in SCSS
+ * Extends CSS patterns with SCSS-specific features
+ */
+const SCSS_BOUNDARY_PATTERNS = [
+  ...CSS_BOUNDARY_PATTERNS,
+  // Mixins
+  { pattern: /^@mixin\s+\w+/m, type: 'mixin' },
+  // Functions
+  { pattern: /^@function\s+\w+/m, type: 'function' },
+  // Extend
+  { pattern: /^%\w+\s*\{/m, type: 'placeholder' },
+  // Variables block
+  { pattern: /^\$[\w-]+\s*:/m, type: 'variable' },
+];
+
+/**
+ * Regex patterns for detecting semantic boundaries in LESS
+ * Similar to SCSS
+ */
+const LESS_BOUNDARY_PATTERNS = [
+  ...CSS_BOUNDARY_PATTERNS,
+  // Mixins (parameterized)
+  { pattern: /^\.[\w-]+\s*\([^)]*\)\s*\{/m, type: 'mixin' },
+  // Variables
+  { pattern: /^@[\w-]+\s*:/m, type: 'variable' },
+];
+
+/**
+ * Regex patterns for detecting semantic boundaries in HTML
+ */
+const HTML_BOUNDARY_PATTERNS = [
+  // Script tags
+  { pattern: /^<script[^>]*>/im, type: 'script' },
+  // Style tags
+  { pattern: /^<style[^>]*>/im, type: 'style' },
+  // Semantic elements
+  { pattern: /^<(?:header|footer|nav|main|article|section|aside)[^>]*>/im, type: 'section' },
+  // Template tags
+  { pattern: /^<template[^>]*>/im, type: 'template' },
+  // Form elements
+  { pattern: /^<form[^>]*>/im, type: 'form' },
+];
+
+/**
+ * Regex patterns for detecting semantic boundaries in Vue SFCs
+ */
+const VUE_BOUNDARY_PATTERNS = [
+  // Template block
+  { pattern: /^<template[^>]*>/im, type: 'template' },
+  // Script block (including setup)
+  { pattern: /^<script[^>]*>/im, type: 'script' },
+  // Style block (including scoped)
+  { pattern: /^<style[^>]*>/im, type: 'style' },
+];
+
+/**
+ * Regex patterns for detecting semantic boundaries in Svelte
+ */
+const SVELTE_BOUNDARY_PATTERNS = [
+  // Script block
+  { pattern: /^<script[^>]*>/im, type: 'script' },
+  // Style block
+  { pattern: /^<style[^>]*>/im, type: 'style' },
+  // Svelte special blocks
+  { pattern: /^\{#(?:if|each|await|key)\s+/m, type: 'block' },
+];
+
+/**
+ * Regex patterns for detecting semantic boundaries in SQL
+ */
+const SQL_BOUNDARY_PATTERNS = [
+  // CREATE statements
+  { pattern: /^CREATE\s+(?:TABLE|VIEW|INDEX|FUNCTION|PROCEDURE|TRIGGER|DATABASE|SCHEMA)/im, type: 'create' },
+  // ALTER statements
+  { pattern: /^ALTER\s+(?:TABLE|VIEW|INDEX|FUNCTION|PROCEDURE)/im, type: 'alter' },
+  // SELECT statements (complex queries)
+  { pattern: /^(?:WITH\s+\w+\s+AS\s*\(|SELECT\s+)/im, type: 'select' },
+  // INSERT/UPDATE/DELETE
+  { pattern: /^(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)/im, type: 'dml' },
+  // DROP statements
+  { pattern: /^DROP\s+(?:TABLE|VIEW|INDEX|FUNCTION|PROCEDURE)/im, type: 'drop' },
+];
+
+/**
+ * Regex patterns for detecting semantic boundaries in YAML
+ * Uses indentation-based detection
+ */
+const YAML_BOUNDARY_PATTERNS = [
+  // Top-level keys (no indentation)
+  { pattern: /^[\w-]+\s*:/m, type: 'key' },
+  // Document separator
+  { pattern: /^---$/m, type: 'document' },
+  // List at root level
+  { pattern: /^-\s+\w+/m, type: 'list' },
+];
+
+/**
+ * Regex patterns for detecting semantic boundaries in JSON
+ * JSON is structured, so we split at top-level keys
+ */
+const JSON_BOUNDARY_PATTERNS = [
+  // Top-level object key (assuming standard formatting)
+  { pattern: /^\s*"\w+"\s*:/m, type: 'key' },
+];
+
+/**
+ * Regex patterns for detecting semantic boundaries in XML
+ */
+const XML_BOUNDARY_PATTERNS = [
+  // Opening tags at low nesting levels
+  { pattern: /^<[\w:-]+(?:\s+[^>]*)?>$/m, type: 'element' },
+  // Processing instructions
+  { pattern: /^<\?[\w-]+/m, type: 'processing' },
+  // Comments (block)
+  { pattern: /^<!--/m, type: 'comment' },
+  // CDATA sections
+  { pattern: /^<!\[CDATA\[/m, type: 'cdata' },
+];
+
+/**
+ * Regex patterns for detecting semantic boundaries in GraphQL
+ */
+const GRAPHQL_BOUNDARY_PATTERNS = [
+  // Type definitions
+  { pattern: /^type\s+\w+/m, type: 'type' },
+  // Interface definitions
+  { pattern: /^interface\s+\w+/m, type: 'interface' },
+  // Input definitions
+  { pattern: /^input\s+\w+/m, type: 'input' },
+  // Enum definitions
+  { pattern: /^enum\s+\w+/m, type: 'enum' },
+  // Query/Mutation/Subscription
+  { pattern: /^(?:query|mutation|subscription)\s+\w*/m, type: 'operation' },
+  // Fragment definitions
+  { pattern: /^fragment\s+\w+\s+on\s+\w+/m, type: 'fragment' },
+  // Scalar definitions
+  { pattern: /^scalar\s+\w+/m, type: 'scalar' },
+  // Union definitions
+  { pattern: /^union\s+\w+/m, type: 'union' },
+];
+
+// ============================================================================
+// Tier 4 Languages - Infrastructure
+// ============================================================================
+
+/**
+ * Regex patterns for detecting semantic boundaries in Terraform
+ */
+const TERRAFORM_BOUNDARY_PATTERNS = [
+  // Resource blocks
+  { pattern: /^resource\s+"[\w-]+"\s+"[\w-]+"/m, type: 'resource' },
+  // Data blocks
+  { pattern: /^data\s+"[\w-]+"\s+"[\w-]+"/m, type: 'data' },
+  // Variable blocks
+  { pattern: /^variable\s+"[\w-]+"/m, type: 'variable' },
+  // Output blocks
+  { pattern: /^output\s+"[\w-]+"/m, type: 'output' },
+  // Module blocks
+  { pattern: /^module\s+"[\w-]+"/m, type: 'module' },
+  // Provider blocks
+  { pattern: /^provider\s+"[\w-]+"/m, type: 'provider' },
+  // Locals blocks
+  { pattern: /^locals\s*\{/m, type: 'locals' },
+  // Terraform block
+  { pattern: /^terraform\s*\{/m, type: 'terraform' },
+];
+
+/**
+ * Regex patterns for detecting semantic boundaries in HCL
+ * Similar to Terraform but more generic
+ */
+const HCL_BOUNDARY_PATTERNS = [
+  // Generic block definitions
+  { pattern: /^\w+\s+"[\w-]+"\s*\{/m, type: 'block' },
+  { pattern: /^\w+\s*\{/m, type: 'block' },
+  // Variable assignments
+  { pattern: /^[\w-]+\s*=/m, type: 'assignment' },
+];
+
+/**
+ * Regex patterns for detecting semantic boundaries in Dockerfile
+ */
+const DOCKERFILE_BOUNDARY_PATTERNS = [
+  // FROM instructions (new stage)
+  { pattern: /^FROM\s+/im, type: 'from' },
+  // RUN instructions (often multi-line)
+  { pattern: /^RUN\s+/im, type: 'run' },
+  // COPY/ADD instructions
+  { pattern: /^(?:COPY|ADD)\s+/im, type: 'copy' },
+  // ENV instructions
+  { pattern: /^ENV\s+/im, type: 'env' },
+  // ENTRYPOINT/CMD
+  { pattern: /^(?:ENTRYPOINT|CMD)\s+/im, type: 'entrypoint' },
+  // WORKDIR
+  { pattern: /^WORKDIR\s+/im, type: 'workdir' },
+  // EXPOSE
+  { pattern: /^EXPOSE\s+/im, type: 'expose' },
+  // ARG
+  { pattern: /^ARG\s+/im, type: 'arg' },
+  // LABEL
+  { pattern: /^LABEL\s+/im, type: 'label' },
 ];
 
 // ============================================================================
@@ -228,6 +844,193 @@ function findPythonBoundaries(text: string): SemanticBoundary[] {
 }
 
 /**
+ * Generic boundary finder using pattern matching
+ *
+ * @param text - Source code text
+ * @param patterns - Array of patterns to match
+ * @param options - Optional configuration for boundary detection
+ * @returns Array of semantic boundaries sorted by position
+ */
+function findGenericBoundaries(
+  text: string,
+  patterns: Array<{ pattern: RegExp; type: string }>,
+  options?: {
+    /** Maximum indentation level to consider (default: undefined = no limit) */
+    maxIndent?: number;
+    /** Whether to handle decorator-like patterns (e.g., @annotation) */
+    handleDecorators?: boolean;
+  }
+): SemanticBoundary[] {
+  const boundaries: SemanticBoundary[] = [];
+  const lines = text.split('\n');
+  let position = 0;
+  let prevWasDecorator = false;
+  const decoratorPattern = /^@\w+/;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmedLine = line.trimStart();
+    const indentLevel = line.length - trimmedLine.length;
+
+    // Skip lines with too much indentation if maxIndent is set
+    if (options?.maxIndent !== undefined && indentLevel > options.maxIndent) {
+      position += line.length + 1;
+      continue;
+    }
+
+    // Handle decorators/annotations if enabled
+    if (options?.handleDecorators && decoratorPattern.test(trimmedLine)) {
+      if (!prevWasDecorator) {
+        boundaries.push({
+          line: i + 1,
+          position,
+          type: 'decorator',
+        });
+      }
+      prevWasDecorator = true;
+      position += line.length + 1;
+      continue;
+    }
+
+    // Check each pattern against the trimmed line
+    let matched = false;
+    for (const { pattern, type } of patterns) {
+      if (pattern.test(trimmedLine)) {
+        // Skip if this is a definition preceded by a decorator (decorator is the boundary)
+        if (!(options?.handleDecorators && prevWasDecorator)) {
+          boundaries.push({
+            line: i + 1,
+            position,
+            type,
+          });
+        }
+        matched = true;
+        break;
+      }
+    }
+
+    if (options?.handleDecorators) {
+      prevWasDecorator = matched ? false : prevWasDecorator && !trimmedLine;
+    }
+
+    position += line.length + 1;
+  }
+
+  return boundaries;
+}
+
+/**
+ * Language configuration for generic boundary detection
+ */
+interface LanguageBoundaryConfig {
+  patterns: Array<{ pattern: RegExp; type: string }>;
+  options?: {
+    maxIndent?: number;
+    handleDecorators?: boolean;
+  };
+}
+
+/**
+ * Get boundary configuration for a language
+ */
+function getLanguageConfig(language: SupportedLanguage): LanguageBoundaryConfig | null {
+  switch (language) {
+    // Tier 1 - Existing (use specialized functions)
+    case 'typescript':
+    case 'javascript':
+      return { patterns: TS_JS_BOUNDARY_PATTERNS };
+
+    case 'python':
+      return { patterns: PYTHON_BOUNDARY_PATTERNS, options: { maxIndent: 4, handleDecorators: true } };
+
+    // Tier 1 - New
+    case 'java':
+      return { patterns: JAVA_BOUNDARY_PATTERNS, options: { handleDecorators: true } };
+
+    case 'go':
+      return { patterns: GO_BOUNDARY_PATTERNS };
+
+    case 'rust':
+      return { patterns: RUST_BOUNDARY_PATTERNS };
+
+    case 'csharp':
+      return { patterns: CSHARP_BOUNDARY_PATTERNS, options: { handleDecorators: true } };
+
+    case 'c':
+      return { patterns: C_BOUNDARY_PATTERNS };
+
+    case 'cpp':
+      return { patterns: CPP_BOUNDARY_PATTERNS };
+
+    case 'kotlin':
+      return { patterns: KOTLIN_BOUNDARY_PATTERNS, options: { handleDecorators: true } };
+
+    case 'swift':
+      return { patterns: SWIFT_BOUNDARY_PATTERNS, options: { handleDecorators: true } };
+
+    // Tier 2
+    case 'ruby':
+      return { patterns: RUBY_BOUNDARY_PATTERNS };
+
+    case 'php':
+      return { patterns: PHP_BOUNDARY_PATTERNS };
+
+    case 'scala':
+      return { patterns: SCALA_BOUNDARY_PATTERNS };
+
+    case 'shell':
+      return { patterns: SHELL_BOUNDARY_PATTERNS };
+
+    // Tier 3
+    case 'css':
+      return { patterns: CSS_BOUNDARY_PATTERNS };
+
+    case 'scss':
+      return { patterns: SCSS_BOUNDARY_PATTERNS };
+
+    case 'less':
+      return { patterns: LESS_BOUNDARY_PATTERNS };
+
+    case 'html':
+      return { patterns: HTML_BOUNDARY_PATTERNS };
+
+    case 'vue':
+      return { patterns: VUE_BOUNDARY_PATTERNS };
+
+    case 'svelte':
+      return { patterns: SVELTE_BOUNDARY_PATTERNS };
+
+    case 'sql':
+      return { patterns: SQL_BOUNDARY_PATTERNS };
+
+    case 'yaml':
+      return { patterns: YAML_BOUNDARY_PATTERNS };
+
+    case 'json':
+      return { patterns: JSON_BOUNDARY_PATTERNS };
+
+    case 'xml':
+      return { patterns: XML_BOUNDARY_PATTERNS };
+
+    case 'graphql':
+      return { patterns: GRAPHQL_BOUNDARY_PATTERNS };
+
+    // Tier 4
+    case 'terraform':
+      return { patterns: TERRAFORM_BOUNDARY_PATTERNS };
+
+    case 'hcl':
+      return { patterns: HCL_BOUNDARY_PATTERNS };
+
+    case 'dockerfile':
+      return { patterns: DOCKERFILE_BOUNDARY_PATTERNS };
+
+    default:
+      return null;
+  }
+}
+
+/**
  * Find semantic boundaries based on the detected language
  *
  * @param text - Source code text
@@ -235,6 +1038,7 @@ function findPythonBoundaries(text: string): SemanticBoundary[] {
  * @returns Array of semantic boundaries
  */
 function findBoundaries(text: string, language: SupportedLanguage): SemanticBoundary[] {
+  // Use specialized functions for languages that need special handling
   switch (language) {
     case 'typescript':
     case 'javascript':
@@ -242,6 +1046,11 @@ function findBoundaries(text: string, language: SupportedLanguage): SemanticBoun
     case 'python':
       return findPythonBoundaries(text);
     default:
+      // Use generic boundary finder for all other languages
+      const config = getLanguageConfig(language);
+      if (config) {
+        return findGenericBoundaries(text, config.patterns, config.options);
+      }
       return [];
   }
 }
@@ -524,14 +1333,67 @@ export function supportsCodeAwareChunking(filePath: string): boolean {
  */
 export function getLanguageName(filePath: string): string {
   const language = detectLanguage(filePath);
-  switch (language) {
-    case 'typescript':
-      return 'TypeScript';
-    case 'javascript':
-      return 'JavaScript';
-    case 'python':
-      return 'Python';
-    default:
-      return 'Unknown';
-  }
+  return getLanguageDisplayName(language);
+}
+
+/**
+ * Map of language identifiers to human-readable names
+ */
+const LANGUAGE_DISPLAY_NAMES: Record<SupportedLanguage, string> = {
+  // Tier 1
+  typescript: 'TypeScript',
+  javascript: 'JavaScript',
+  python: 'Python',
+  java: 'Java',
+  go: 'Go',
+  rust: 'Rust',
+  csharp: 'C#',
+  c: 'C',
+  cpp: 'C++',
+  kotlin: 'Kotlin',
+  swift: 'Swift',
+  // Tier 2
+  ruby: 'Ruby',
+  php: 'PHP',
+  scala: 'Scala',
+  shell: 'Shell',
+  // Tier 3
+  css: 'CSS',
+  scss: 'SCSS',
+  less: 'LESS',
+  html: 'HTML',
+  vue: 'Vue',
+  svelte: 'Svelte',
+  sql: 'SQL',
+  yaml: 'YAML',
+  json: 'JSON',
+  xml: 'XML',
+  graphql: 'GraphQL',
+  // Tier 4
+  terraform: 'Terraform',
+  hcl: 'HCL',
+  dockerfile: 'Dockerfile',
+  // Unknown
+  unknown: 'Unknown',
+};
+
+/**
+ * Get the human-readable display name for a language
+ *
+ * @param language - Language identifier
+ * @returns Human-readable name
+ */
+export function getLanguageDisplayName(language: SupportedLanguage): string {
+  return LANGUAGE_DISPLAY_NAMES[language] || 'Unknown';
+}
+
+/**
+ * Get a list of all supported languages
+ *
+ * @returns Array of supported language identifiers (excluding 'unknown')
+ */
+export function getSupportedLanguages(): SupportedLanguage[] {
+  return Object.keys(LANGUAGE_DISPLAY_NAMES).filter(
+    (lang) => lang !== 'unknown'
+  ) as SupportedLanguage[];
 }

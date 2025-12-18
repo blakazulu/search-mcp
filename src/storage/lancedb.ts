@@ -45,6 +45,9 @@ import {
  * - chunk_docstring: Extracted docstring/comment
  * - chunk_parent: Parent name (e.g., class name for methods)
  * - chunk_tags: Comma-separated semantic tags
+ *
+ * SMCP-098: Added chunk_hash for incremental reindexing:
+ * - chunk_hash: Position-independent hash of chunk text for change detection
  */
 export interface ChunkRecord {
   /** UUIDv4 unique identifier for the chunk */
@@ -61,6 +64,10 @@ export interface ChunkRecord {
   end_line: number;
   /** SHA256 hash of the source file content */
   content_hash: string;
+
+  // SMCP-098: Chunk-level hash for incremental reindexing
+  /** Position-independent SHA256 hash of chunk text (for detecting unchanged content) */
+  chunk_hash?: string;
 
   // AST metadata fields (SMCP-086) - all optional
   /** Chunk type (function, class, method, etc.) */
@@ -126,6 +133,8 @@ interface RawSearchResult {
   end_line: number;
   content_hash: string;
   _distance: number;
+  // SMCP-098: Chunk-level hash for incremental reindexing
+  chunk_hash?: string;
   // AST metadata fields (SMCP-086) - all optional
   chunk_type?: string;
   chunk_name?: string;
@@ -134,6 +143,24 @@ interface RawSearchResult {
   chunk_parent?: string;
   chunk_tags?: string;
   chunk_language?: string;
+}
+
+/**
+ * SMCP-098: Structure for existing chunks retrieved for incremental reindexing
+ */
+export interface ExistingChunk {
+  /** Chunk ID */
+  id: string;
+  /** Chunk text content */
+  text: string;
+  /** Start line in source file */
+  startLine: number;
+  /** End line in source file */
+  endLine: number;
+  /** Position-independent hash of chunk text */
+  chunkHash: string;
+  /** Full embedding vector (needed for reuse) */
+  vector: number[];
 }
 
 // ============================================================================
@@ -1391,6 +1418,208 @@ export class LanceDBStore {
     } catch {
       return false;
     }
+  }
+
+  // --------------------------------------------------------------------------
+  // SMCP-098: Incremental Reindexing Operations
+  // --------------------------------------------------------------------------
+
+  /**
+   * Get all chunks for a specific file path
+   *
+   * Used for incremental reindexing to retrieve existing chunks
+   * so we can compare them with new chunks and avoid re-embedding unchanged content.
+   *
+   * @param relativePath - Relative path of the file (forward-slash separated)
+   * @returns Array of existing chunks with their embeddings and hashes
+   */
+  async getChunksForFile(relativePath: string): Promise<ExistingChunk[]> {
+    if (!this.table) {
+      return [];
+    }
+
+    return this.mutex.withLock(async () => {
+      const table = await this.getTable();
+      const logger = getLogger();
+
+      // Escape the path to prevent SQL injection
+      const escapedPath = escapeSqlString(relativePath);
+      const whereClause = `path = '${escapedPath}'`;
+
+      logger.debug('lancedb', `Retrieving chunks for file: ${relativePath}`);
+
+      try {
+        const rows = (await table
+          .query()
+          .where(whereClause)
+          .select(['id', 'text', 'start_line', 'end_line', 'chunk_hash', 'vector'])
+          .toArray()) as unknown as Array<{
+          id: string;
+          text: string;
+          start_line: number;
+          end_line: number;
+          chunk_hash?: string;
+          vector: number[];
+        }>;
+
+        const chunks: ExistingChunk[] = rows.map((row) => ({
+          id: row.id,
+          text: row.text,
+          startLine: row.start_line,
+          endLine: row.end_line,
+          chunkHash: row.chunk_hash || '',
+          vector: row.vector,
+        }));
+
+        logger.debug('lancedb', `Retrieved ${chunks.length} chunks for file`, {
+          path: relativePath,
+          chunkCount: chunks.length,
+        });
+
+        return chunks;
+      } catch (error) {
+        const err = error as Error;
+        logger.error('lancedb', `getChunksForFile failed: ${err.message}`);
+        return [];
+      }
+    });
+  }
+
+  /**
+   * Delete chunks by their IDs
+   *
+   * Used for surgical removal of specific chunks during incremental reindexing.
+   *
+   * @param ids - Array of chunk IDs to delete
+   * @returns Number of chunks deleted
+   */
+  async deleteChunksByIds(ids: string[]): Promise<number> {
+    if (!this.table || ids.length === 0) {
+      return 0;
+    }
+
+    return this.mutex.withLock(async () => {
+      const table = await this.getTable();
+      const logger = getLogger();
+
+      // BUG #13 FIX: Validate ID format (UUIDv4 pattern) for defense in depth
+      const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      const validIds = ids.filter((id) => {
+        if (!uuidPattern.test(id)) {
+          logger.warn('lancedb', 'Invalid ID format in deleteChunksByIds, skipping', {
+            id: id.substring(0, 50),
+          });
+          return false;
+        }
+        return true;
+      });
+
+      if (validIds.length === 0) {
+        return 0;
+      }
+
+      logger.debug('lancedb', `Deleting ${validIds.length} chunks by ID`);
+
+      // Build SQL IN clause with escaped IDs
+      const escapedIds = validIds.map((id) => `'${escapeSqlString(id)}'`).join(', ');
+      const whereClause = `id IN (${escapedIds})`;
+
+      try {
+        // Get count before delete
+        const beforeCount = await table.countRows(whereClause);
+
+        if (beforeCount === 0) {
+          return 0;
+        }
+
+        // Delete chunks
+        await table.delete(whereClause);
+
+        logger.debug('lancedb', `Deleted ${beforeCount} chunks by ID`);
+        return beforeCount;
+      } catch (error) {
+        const err = error as Error;
+        logger.error('lancedb', `deleteChunksByIds failed: ${err.message}`);
+        return 0;
+      }
+    });
+  }
+
+  /**
+   * Update chunk metadata (line numbers) without re-embedding
+   *
+   * Used for moved chunks that have the same content but different positions.
+   * This avoids expensive re-embedding for content that hasn't changed.
+   *
+   * @param chunkId - ID of the chunk to update
+   * @param metadata - New metadata to apply
+   * @returns true if update was successful
+   */
+  async updateChunkMetadata(
+    chunkId: string,
+    metadata: { startLine: number; endLine: number }
+  ): Promise<boolean> {
+    if (!this.table) {
+      return false;
+    }
+
+    return this.mutex.withLock(async () => {
+      const table = await this.getTable();
+      const logger = getLogger();
+
+      // Validate ID format
+      const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (!uuidPattern.test(chunkId)) {
+        logger.warn('lancedb', 'Invalid ID format in updateChunkMetadata');
+        return false;
+      }
+
+      logger.debug('lancedb', `Updating chunk metadata: ${chunkId}`, {
+        startLine: metadata.startLine,
+        endLine: metadata.endLine,
+      });
+
+      try {
+        // LanceDB doesn't support UPDATE directly, so we need to:
+        // 1. Read the existing record
+        // 2. Delete it
+        // 3. Insert the updated record
+
+        const escapedId = escapeSqlString(chunkId);
+        const whereClause = `id = '${escapedId}'`;
+
+        const rows = (await table
+          .query()
+          .where(whereClause)
+          .toArray()) as unknown as ChunkRecord[];
+
+        if (rows.length === 0) {
+          logger.debug('lancedb', 'Chunk not found for metadata update', { chunkId });
+          return false;
+        }
+
+        const existingRecord = rows[0];
+
+        // Delete the old record
+        await table.delete(whereClause);
+
+        // Insert updated record
+        const updatedRecord: ChunkRecord = {
+          ...existingRecord,
+          start_line: metadata.startLine,
+          end_line: metadata.endLine,
+        };
+
+        await table.add([updatedRecord]);
+
+        logger.debug('lancedb', 'Chunk metadata updated successfully', { chunkId });
+        return true;
+      } catch (error) {
+        const err = error as Error;
+        logger.error('lancedb', `updateChunkMetadata failed: ${err.message}`);
+        return false;
+      }
+    });
   }
 }
 

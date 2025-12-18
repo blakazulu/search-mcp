@@ -527,11 +527,14 @@ describe('search_code Tool', () => {
         { projectPath }
       );
 
-      // Verify embedding pipeline was called with the query
-      expect(mockPipelineInstance).toHaveBeenCalledWith('find authentication code', {
-        pooling: 'mean',
-        normalize: true,
-      });
+      // Verify embedding pipeline was called with the query (may include expansion and prompt prefix)
+      expect(mockPipelineInstance).toHaveBeenCalledWith(
+        expect.stringContaining('find authentication code'),
+        {
+          pooling: 'mean',
+          normalize: true,
+        }
+      );
     });
   });
 

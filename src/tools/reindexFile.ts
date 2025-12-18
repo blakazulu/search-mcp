@@ -22,6 +22,7 @@ import { LanceDBStore, ChunkRecord } from '../storage/lancedb.js';
 import { FingerprintsManager } from '../storage/fingerprints.js';
 import { MetadataManager } from '../storage/metadata.js';
 import { chunkFile } from '../engines/chunking.js';
+import { computeChunkHash } from '../engines/incrementalReindex.js';
 import { getEmbeddingEngine } from '../engines/embedding.js';
 import { getIndexPath, toAbsolutePath, normalizePath, safeJoin, sanitizeIndexPath, getCodeFTSIndexPath } from '../utils/paths.js';
 import { hashFile } from '../utils/hash.js';
@@ -286,6 +287,8 @@ export async function reindexFile(
             start_line: chunk.startLine,
             end_line: chunk.endLine,
             content_hash: chunk.contentHash,
+            // SMCP-098: Include chunk_hash for schema consistency with createIndex
+            chunk_hash: computeChunkHash(chunk.text),
           });
         }
 

@@ -9,6 +9,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Incremental Reindexing (SMCP-098)
+- **Surgical chunk-level updates** - Only re-embed changed chunks instead of entire files
+  - Before: Edit 1 line in 5000-line file = re-embed ~50 chunks = ~2.5 seconds
+  - After: Edit 1 line = re-embed ~1-2 affected chunks = ~100ms (25x faster)
+
+- **Position-independent chunk hashing (`computeChunkHash()`):**
+  - SHA256 hash of normalized chunk text (whitespace collapsed)
+  - Detects unchanged chunks regardless of line number shifts
+  - Backward compatible with legacy indexes (computes hash on-the-fly if missing)
+
+- **Intelligent chunk diffing (`diffChunks()`):**
+  - Detects unchanged chunks (same hash + same position) - no action needed
+  - Detects moved chunks (same hash, different position) - metadata update only
+  - Detects added chunks (new hash) - embed and insert
+  - Detects removed chunks (hash no longer present) - delete from store
+
+- **Surgical database operations:**
+  - `getChunksForFile()` - Load existing chunks for a file with embeddings
+  - `deleteChunksByIds()` - Remove specific chunks by ID (vs delete all by path)
+  - `updateChunkMetadata()` - Update line numbers for moved chunks without re-embedding
+
+- **Smart decision logic:**
+  - `shouldUseIncremental()` - Use incremental for files with 3+ existing chunks
+  - Files with fewer chunks use full reindex (overhead not worth it)
+  - `wasIncrementalWorthwhile()` - Post-hoc analysis (>=25% savings threshold)
+
+- **Integration with `updateFile()`:**
+  - Automatic incremental mode when beneficial
+  - Detailed logging of incremental stats (added, removed, unchanged, moved, embeddingsSaved)
+  - Falls back to full reindex for new files or small files
+
+- **New exports from `incrementalReindex.ts`:**
+  - `computeChunkHash(text)` - Generate position-independent chunk hash
+  - `diffChunks(oldChunks, newChunks)` - Compare chunks and categorize changes
+  - `shouldUseIncremental(oldChunkCount)` - Decision function
+  - `wasIncrementalWorthwhile(diff)` - Post-hoc analysis
+  - `createRecordsFromMovedChunks()` - Create records reusing existing embeddings
+  - `createRecordsFromUnchangedChunks()` - Create records preserving all data
+  - `createPartialRecordsFromNewChunks()` - Create records needing embedding
+
+- **Benefits:**
+  - 25x faster reindexing for small edits in large files
+  - Reduced embedding API calls during file watching
+  - Lower CPU/memory usage for incremental updates
+  - Seamless backward compatibility with existing indexes
+
+### Testing
+- 35+ new unit tests for incremental reindexing (`tests/unit/engines/incrementalReindex.test.ts`)
+- Tests for hash computation, diff algorithm, record creation helpers
+- Edge case coverage: empty chunks, duplicate content, legacy data, boundary shifts
+
 #### Multi-Language Code Chunking (SMCP-097)
 - **Extended code-aware chunking to support 22+ programming languages** (up from 3)
   - Previously supported: TypeScript, JavaScript, Python

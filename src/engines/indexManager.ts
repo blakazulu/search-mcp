@@ -34,6 +34,12 @@ import {
 } from './embedding.js';
 import { createFTSEngine, type EngineSelectionResult } from './ftsEngineFactory.js';
 import type { FTSEngine, FTSChunk } from './ftsEngine.js';
+// SMCP-098: Incremental reindexing imports
+import {
+  diffChunks,
+  shouldUseIncremental,
+  computeChunkHash,
+} from './incrementalReindex.js';
 
 // Utility imports
 import { toRelativePath, toAbsolutePath, normalizePath, getIndexPath, safeJoin, getCodeFTSIndexPath } from '../utils/paths.js';
@@ -393,6 +399,7 @@ async function processFileBatch(
       fileHashes.set(relativePath, chunks[0].contentHash);
 
       // Collect chunks for embedding
+      // SMCP-098: Include chunk_hash for incremental reindexing
       for (const chunk of chunks) {
         allChunks.push({
           id: chunk.id,
@@ -402,6 +409,7 @@ async function processFileBatch(
           start_line: chunk.startLine,
           end_line: chunk.endLine,
           content_hash: chunk.contentHash,
+          chunk_hash: computeChunkHash(chunk.text),
         });
       }
     } catch (error) {
@@ -916,9 +924,12 @@ export async function createFullIndex(
 /**
  * Update a single file in the index
  *
+ * SMCP-098: Uses incremental reindexing to avoid re-embedding unchanged chunks.
+ * This dramatically improves performance for large files with small edits.
+ *
  * Handles three cases:
- * - File exists and changed: Delete old chunks, add new ones
- * - File exists and new: Add chunks
+ * - File exists and changed: Use incremental diff to minimize re-embedding
+ * - File exists and new: Add all chunks (full embedding)
  * - File deleted: Remove chunks
  *
  * @param projectPath - Absolute path to the project root
@@ -971,42 +982,114 @@ export async function updateFile(
         return;
       }
 
-      // Delete old chunks
-      await store.deleteByPath(relativePath);
+      // SMCP-098: Use incremental reindexing for existing files with chunks
+      const existingChunks = await store.getChunksForFile(relativePath);
+      const useIncremental = shouldUseIncremental(existingChunks.length);
 
-      // Chunk and embed the file
-      const chunks = await chunkFile(absolutePath, relativePath);
+      // Chunk the file
+      const newChunks = await chunkFile(absolutePath, relativePath);
 
-      if (chunks.length > 0) {
-        const texts = chunks.map((c) => c.text);
-        const embeddingResult = await embeddingEngine.embedBatch(texts);
+      if (useIncremental && existingChunks.length > 0) {
+        // SMCP-098: Incremental approach - diff and update surgically
+        const diff = diffChunks(existingChunks, newChunks);
 
-        // SECURITY (SMCP-054): Only insert chunks with successful embeddings
-        const records: ChunkRecord[] = [];
-        for (let successIdx = 0; successIdx < embeddingResult.successIndices.length; successIdx++) {
-          const originalIndex = embeddingResult.successIndices[successIdx];
-          const chunk = chunks[originalIndex];
-          records.push({
-            id: chunk.id,
-            path: chunk.path,
-            text: chunk.text,
-            vector: embeddingResult.vectors[successIdx],
-            start_line: chunk.startLine,
-            end_line: chunk.endLine,
-            content_hash: chunk.contentHash,
+        logger.info('IndexManager', 'Using incremental reindex', {
+          relativePath,
+          oldChunks: diff.stats.oldChunkCount,
+          newChunks: diff.stats.newChunkCount,
+          added: diff.stats.addedCount,
+          removed: diff.stats.removedCount,
+          unchanged: diff.stats.unchangedCount,
+          moved: diff.stats.movedCount,
+          embeddingsSaved: diff.stats.embeddingsSaved,
+        });
+
+        // Step 1: Delete removed chunks
+        if (diff.removed.length > 0) {
+          const removedIds = diff.removed.map((c) => c.id);
+          await store.deleteChunksByIds(removedIds);
+        }
+
+        // Step 2: Update moved chunks (metadata only, no re-embedding)
+        for (const moved of diff.moved) {
+          await store.updateChunkMetadata(moved.existing.id, {
+            startLine: moved.newStartLine,
+            endLine: moved.newEndLine,
           });
         }
 
-        // Log if any embeddings failed
-        if (embeddingResult.failedCount > 0) {
-          logger.warn('IndexManager', `${embeddingResult.failedCount} chunks failed to embed for file`, {
-            relativePath,
-            failedCount: embeddingResult.failedCount,
-          });
+        // Step 3: Embed and insert new chunks
+        if (diff.added.length > 0) {
+          const texts = diff.added.map((c) => c.text);
+          const embeddingResult = await embeddingEngine.embedBatch(texts);
+
+          const records: ChunkRecord[] = [];
+          for (let successIdx = 0; successIdx < embeddingResult.successIndices.length; successIdx++) {
+            const originalIndex = embeddingResult.successIndices[successIdx];
+            const chunk = diff.added[originalIndex];
+            records.push({
+              id: chunk.id,
+              path: relativePath,
+              text: chunk.text,
+              vector: embeddingResult.vectors[successIdx],
+              start_line: chunk.startLine,
+              end_line: chunk.endLine,
+              content_hash: newChunks[0]?.contentHash || newHash,
+              chunk_hash: chunk.chunkHash,
+            });
+          }
+
+          if (embeddingResult.failedCount > 0) {
+            logger.warn('IndexManager', `${embeddingResult.failedCount} chunks failed to embed`, {
+              relativePath,
+            });
+          }
+
+          if (records.length > 0) {
+            await store.insertChunks(records);
+          }
         }
 
-        if (records.length > 0) {
-          await store.insertChunks(records);
+        logger.debug('IndexManager', 'Incremental reindex complete', {
+          relativePath,
+          newlyEmbedded: diff.stats.addedCount,
+          reused: diff.stats.unchangedCount + diff.stats.movedCount,
+        });
+      } else {
+        // Full reindex approach for new files or small files
+        await store.deleteByPath(relativePath);
+
+        if (newChunks.length > 0) {
+          const texts = newChunks.map((c) => c.text);
+          const embeddingResult = await embeddingEngine.embedBatch(texts);
+
+          // SECURITY (SMCP-054): Only insert chunks with successful embeddings
+          const records: ChunkRecord[] = [];
+          for (let successIdx = 0; successIdx < embeddingResult.successIndices.length; successIdx++) {
+            const originalIndex = embeddingResult.successIndices[successIdx];
+            const chunk = newChunks[originalIndex];
+            records.push({
+              id: chunk.id,
+              path: chunk.path,
+              text: chunk.text,
+              vector: embeddingResult.vectors[successIdx],
+              start_line: chunk.startLine,
+              end_line: chunk.endLine,
+              content_hash: chunk.contentHash,
+              chunk_hash: computeChunkHash(chunk.text),
+            });
+          }
+
+          if (embeddingResult.failedCount > 0) {
+            logger.warn('IndexManager', `${embeddingResult.failedCount} chunks failed to embed for file`, {
+              relativePath,
+              failedCount: embeddingResult.failedCount,
+            });
+          }
+
+          if (records.length > 0) {
+            await store.insertChunks(records);
+          }
         }
       }
 
@@ -1014,7 +1097,7 @@ export async function updateFile(
       fingerprintsManager.set(relativePath, newHash);
       logger.debug('IndexManager', 'Updated file in index', {
         relativePath,
-        chunks: chunks.length,
+        chunks: newChunks.length,
       });
     }
 

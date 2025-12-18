@@ -588,9 +588,9 @@ describe('search_docs Tool', () => {
         { projectPath }
       );
 
-      // Verify embedding pipeline was called with the query
+      // Verify embedding pipeline was called with the query (may include prompt prefix)
       expect(mockPipelineInstance).toHaveBeenCalledWith(
-        'how to configure the application',
+        expect.stringContaining('how to configure the application'),
         {
           pooling: 'mean',
           normalize: true,

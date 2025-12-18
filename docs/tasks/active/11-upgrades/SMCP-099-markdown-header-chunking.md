@@ -3,11 +3,12 @@ task_id: "SMCP-099"
 title: "Markdown Header Chunking"
 category: "Technical"
 priority: "P2"
-status: "not-started"
+status: "completed"
 created_date: "2025-12-16"
+completed_date: "2025-12-18"
 due_date: ""
 estimated_hours: 6
-actual_hours: 0
+actual_hours: 4
 assigned_to: "Team"
 tags: ["chunking", "markdown", "docs", "quality"]
 ---
@@ -69,11 +70,11 @@ Create a config file with these options:
 
 ## Goals
 
-- [ ] Parse markdown headers (h1-h6)
-- [ ] Chunk at header boundaries
-- [ ] Include header hierarchy in chunk metadata
-- [ ] Handle large sections (sub-chunk if needed)
-- [ ] Preserve header context in embeddings
+- [x] Parse markdown headers (h1-h6)
+- [x] Chunk at header boundaries
+- [x] Include header hierarchy in chunk metadata
+- [x] Handle large sections (sub-chunk if needed)
+- [x] Preserve header context in embeddings
 
 ## Success Criteria
 
@@ -268,25 +269,25 @@ interface DocChunkMetadata {
 
 ### Phase 1: Parser (2 hours)
 
-- [ ] 1.1 Implement markdown header parser
-- [ ] 1.2 Build header hierarchy tracker
-- [ ] 1.3 Handle edge cases (no headers, setext headers)
-- [ ] 1.4 Unit tests for parser
+- [x] 1.1 Implement markdown header parser
+- [x] 1.2 Build header hierarchy tracker
+- [x] 1.3 Handle edge cases (no headers, setext headers)
+- [x] 1.4 Unit tests for parser
 
 ### Phase 2: Chunking (2 hours)
 
-- [ ] 2.1 Implement section-based chunking
-- [ ] 2.2 Add header context to chunks
-- [ ] 2.3 Handle large section sub-chunking
-- [ ] 2.4 Add breadcrumb formatting
+- [x] 2.1 Implement section-based chunking
+- [x] 2.2 Add header context to chunks
+- [x] 2.3 Handle large section sub-chunking
+- [x] 2.4 Add breadcrumb formatting
 
 ### Phase 3: Integration (2 hours)
 
-- [ ] 3.1 Integrate with docs indexing pipeline
-- [ ] 3.2 Update chunk metadata schema
-- [ ] 3.3 Add configuration options
-- [ ] 3.4 Integration tests
-- [ ] 3.5 Documentation update
+- [x] 3.1 Integrate with docs indexing pipeline
+- [x] 3.2 Update chunk metadata schema
+- [x] 3.3 Add configuration options
+- [x] 3.4 Integration tests
+- [x] 3.5 Documentation update
 
 ## Resources
 
@@ -296,12 +297,12 @@ interface DocChunkMetadata {
 
 ## Acceptance Checklist
 
-- [ ] Markdown headers parsed correctly
-- [ ] Chunks align with sections
-- [ ] Header hierarchy in metadata
-- [ ] Large sections sub-chunked properly
-- [ ] Search relevance improved
-- [ ] Tests pass
+- [x] Markdown headers parsed correctly
+- [x] Chunks align with sections
+- [x] Header hierarchy in metadata
+- [x] Large sections sub-chunked properly
+- [x] Search relevance improved
+- [x] Tests pass
 
 ## Progress Log
 
@@ -310,9 +311,26 @@ interface DocChunkMetadata {
 - Task created based on ROADMAP.md item
 - Focus on semantic chunking for documentation
 
+### 2025-12-18 - 4 hours
+
+- Implemented full markdown header chunking in `src/engines/markdownChunking.ts`
+- Features implemented:
+  - ATX header parsing (# through ######)
+  - Setext header parsing (=== and ---)
+  - YAML frontmatter detection and stripping
+  - Code block boundary detection
+  - Header hierarchy tracking with breadcrumb context
+  - Large section sub-chunking with "(continued)" markers
+  - Part number tracking in metadata
+- Integrated with `chunkDocFile()` in `docsChunking.ts`
+- Added 60+ unit tests in `tests/unit/engines/markdownChunking.test.ts`
+- Updated exports in `src/engines/index.ts`
+- Updated CHANGELOG.md with feature documentation
+- All tests passing, build successful
+
 ## Notes
 
-- Consider setext-style headers (`===` and `---` underlines)
-- Handle frontmatter (YAML between `---`)
-- May want to treat code blocks as atomic units
+- [x] Consider setext-style headers (`===` and `---` underlines) - Implemented
+- [x] Handle frontmatter (YAML between `---`) - Implemented
+- [x] May want to treat code blocks as atomic units - Implemented (code blocks preserved within sections)
 - Consider adding support for other doc formats (RST, AsciiDoc) later

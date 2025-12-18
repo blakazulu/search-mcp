@@ -9,6 +9,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Markdown Header Chunking (SMCP-099)
+- **Semantic chunking for markdown documentation** - Chunks align with section boundaries (h1-h6)
+  - Before: Arbitrary character-based splits could cut mid-section, losing context
+  - After: Each chunk represents a complete section with full header context
+
+- **Header hierarchy tracking:**
+  - Tracks path from root to current header (e.g., ["Installation", "Prerequisites", "Node.js"])
+  - Includes breadcrumb context in chunks: `[Installation > Prerequisites]`
+  - Proper handling of nested headers (h2 under h1, h3 under h2, etc.)
+
+- **Comprehensive markdown parsing:**
+  - ATX headers (# through ######) with trailing marker removal
+  - Setext headers (=== for h1, --- for h2)
+  - YAML frontmatter detection and stripping
+  - Code block boundary detection (prevents parsing headers inside code blocks)
+
+- **Smart large section handling:**
+  - Sub-chunks sections exceeding maxChunkSize (default: 8000 chars)
+  - Preserves header context with "(continued)" markers
+  - Tracks part numbers in metadata (part 1 of 3, etc.)
+
+- **Integration with docs pipeline:**
+  - Automatic for `.md` files (falls back to character-based for `.txt`)
+  - Can be disabled via `useMarkdownChunking: false` option
+  - Backward compatible - gracefully falls back on errors
+
+- **New exports from `markdownChunking.ts`:**
+  - Types: `MarkdownSection`, `MarkdownChunkMetadata`, `MarkdownChunkOptions`, `MarkdownChunk`
+  - Constants: `DEFAULT_MARKDOWN_CHUNK_OPTIONS`
+  - Parsing: `parseMarkdownSections()`, `stripFrontmatter()`, `findCodeBlockRanges()`, `parseATXHeader()`, `parseSetextUnderline()`
+  - Chunking: `chunkMarkdownContent()`, `chunkMarkdownFile()`, `shouldUseMarkdownChunking()`
+
+- **Benefits:**
+  - Improved search relevance for documentation queries
+  - Better context preservation in search results
+  - Section-aligned chunks for more coherent responses
+  - Header hierarchy in metadata enables filtering/boosting by section
+
+### Testing
+- 60+ new unit tests for markdown chunking (`tests/unit/engines/markdownChunking.test.ts`)
+- Tests for ATX/setext header parsing, frontmatter handling, code block detection
+- Integration tests with `chunkDocFile()` and file I/O
+- Edge case coverage: nested headers, mixed formats, special characters, large sections
+
 #### Incremental Reindexing (SMCP-098)
 - **Surgical chunk-level updates** - Only re-embed changed chunks instead of entire files
   - Before: Edit 1 line in 5000-line file = re-embed ~50 chunks = ~2.5 seconds

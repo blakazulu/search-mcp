@@ -92,7 +92,33 @@ export {
   DOC_SPLIT_OPTIONS,
   isDocFile,
   chunkDocFile,
+  type DocChunkOptions,
 } from './docsChunking.js';
+
+// Markdown Header Chunking Engine (SMCP-099)
+export {
+  // Types
+  type MarkdownSection,
+  type MarkdownChunkMetadata,
+  type MarkdownChunkOptions,
+  type MarkdownChunk,
+  // Constants
+  DEFAULT_MARKDOWN_CHUNK_OPTIONS,
+  // Parsing functions
+  stripFrontmatter,
+  findCodeBlockRanges,
+  isInsideCodeBlock,
+  parseATXHeader,
+  parseSetextUnderline,
+  parseMarkdownSections,
+  // Formatting functions
+  formatSection,
+  subChunkSection,
+  // Main chunking functions
+  chunkMarkdownContent,
+  shouldUseMarkdownChunking,
+  chunkMarkdownFile,
+} from './markdownChunking.js';
 
 // Embedding Engine
 export {

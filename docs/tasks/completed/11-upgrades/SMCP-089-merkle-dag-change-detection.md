@@ -9,14 +9,14 @@ due_date: ""
 estimated_hours: 14
 actual_hours: 0
 assigned_to: "Team"
-tags: ["indexing", "performance", "incremental", "merkle", "inspired-by-claude-context-local"]
+tags: ["indexing", "performance", "incremental", "merkle"]
 ---
 
 # Task: Merkle DAG Change Detection
 
 ## Overview
 
-Implement Merkle DAG-based change detection for more efficient incremental indexing. Currently search-mcp uses SHA256 fingerprints per file. claude-context-local uses a content-hash DAG that enables more granular change detection and efficient state management, especially beneficial for large codebases with frequent small changes.
+Implement Merkle DAG-based change detection for more efficient incremental indexing. Currently search-mcp uses SHA256 fingerprints per file. A content-hash DAG enables more granular change detection and efficient state management, especially beneficial for large codebases with frequent small changes.
 
 ## Goals
 
@@ -52,7 +52,7 @@ Implement Merkle DAG-based change detection for more efficient incremental index
 
 ### Phase 1: Research & Design (3 hours)
 
-- [x] 1.1 Study claude-context-local's Merkle DAG implementation
+- [x] 1.1 Study Merkle DAG implementations
     - Understand node structure
     - Understand diff algorithm
 - [x] 1.2 Design Merkle tree structure for search-mcp
@@ -102,9 +102,7 @@ Implement Merkle DAG-based change detection for more efficient incremental index
 
 ## Resources
 
-- [claude-context-local Merkle implementation](../../../examples/claude-context-local-main/)
 - [Current fingerprints implementation](../../../src/storage/)
-- [Examples comparison analysis](../../examples-comparison-analysis.md)
 - [Merkle tree concepts](https://en.wikipedia.org/wiki/Merkle_tree)
 
 ## Acceptance Checklist
@@ -131,11 +129,6 @@ Before marking this task complete:
 - Added 13 integration tests (tests/integration/merkleTree.integration.test.ts)
 - Updated CHANGELOG.md with feature documentation
 - Exported all types and functions from engines/index.ts
-
-### 2025-12-16 - 0 hours
-
-- Task created based on examples comparison analysis
-- Inspired by claude-context-local's Merkle DAG
 
 ## Notes
 

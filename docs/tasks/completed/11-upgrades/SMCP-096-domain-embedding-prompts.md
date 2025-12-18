@@ -10,14 +10,14 @@ due_date: ""
 estimated_hours: 4
 actual_hours: 3
 assigned_to: "Team"
-tags: ["embedding", "prompts", "quality", "inspired-by-claude-context-local"]
+tags: ["embedding", "prompts", "quality"]
 ---
 
 # Task: Domain-Specific Embedding Prompts
 
 ## Overview
 
-Use different prompts for document embedding vs query embedding, inspired by claude-context-local. This aligns with sentence-transformer best practices and improves retrieval quality.
+Use different prompts for document embedding vs query embedding. This aligns with sentence-transformer best practices and improves retrieval quality.
 
 ## Current Problem
 
@@ -130,7 +130,6 @@ const MODEL_PROMPTS: Record<string, { doc: string; query: string }> = {
 ## Resources
 
 - [BGE Model Card](https://huggingface.co/BAAI/bge-small-en-v1.5)
-- [claude-context-local prompts](../../../examples/claude-context-local-main/)
 - [Current embedding.ts](../../../src/engines/embedding.ts)
 
 ## Acceptance Checklist
@@ -142,11 +141,6 @@ const MODEL_PROMPTS: Record<string, { doc: string; query: string }> = {
 - [x] Tests pass
 
 ## Progress Log
-
-### 2025-12-16 - 0 hours
-
-- Task created based on deep dive analysis
-- claude-context-local uses "Retrieval-document" vs "InstructionRetrieval"
 
 ### 2025-12-18 - 3 hours
 

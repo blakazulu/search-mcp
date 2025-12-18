@@ -10,14 +10,14 @@ due_date: ""
 estimated_hours: 10
 actual_hours: 4
 assigned_to: "Team"
-tags: ["search", "intent", "nlp", "ranking", "inspired-by-claude-context-local"]
+tags: ["search", "intent", "nlp", "ranking"]
 ---
 
 # Task: Query Intent Detection
 
 ## Overview
 
-Implement query intent detection to classify search queries into categories (function search, error handling, database, API, auth, testing, etc.). This enables dynamic chunk type boosting and query optimization for better search results. Inspired by claude-context-local's intent detection system.
+Implement query intent detection to classify search queries into categories (function search, error handling, database, API, auth, testing, etc.). This enables dynamic chunk type boosting and query optimization for better search results.
 
 ## Goals
 
@@ -54,9 +54,9 @@ Implement query intent detection to classify search queries into categories (fun
 
 ### Phase 1: Research & Design (2 hours)
 
-- [x] 1.1 Study claude-context-local's intent detection
-    - Documented patterns and keywords from `searcher.py`
-    - Understood 6 original categories, expanded to 8
+- [x] 1.1 Study existing intent detection patterns
+    - Documented patterns and keywords
+    - Started with 6 categories, expanded to 8
 - [x] 1.2 Design intent categories for search-mcp
     - Defined 8 categories with comprehensive keyword lists
     - Added regex patterns for complex matching
@@ -108,7 +108,6 @@ Implement query intent detection to classify search queries into categories (fun
 
 ## Resources
 
-- [claude-context-local searcher.py](../../../examples/claude-context-local-main/searcher.py)
 - [Examples comparison analysis](../../examples-comparison-analysis.md)
 
 ## Acceptance Checklist
@@ -127,8 +126,6 @@ Before marking this task complete:
 
 ### 2025-12-16 - 4 hours
 
-- Task created based on examples comparison analysis
-- Inspired by claude-context-local's query intent detection
 - Implemented complete query intent detection system
 - Created `src/engines/queryIntent.ts` with:
   - IntentCategory enum (8 categories)
@@ -149,8 +146,7 @@ Before marking this task complete:
 
 ## Notes
 
-- claude-context-local detects 6 categories: function, error handling, database, API, auth, testing
-- We extended to 8 categories: added CLASS and CONFIG
+- Extended from 6 categories (function, error handling, database, API, auth, testing) to 8: added CLASS and CONFIG
 - Keep detection simple - keyword matching is fast and effective
 - Added code-specific patterns (CamelCase, snake_case detection)
 - This is a key enabler for SMCP-087 Multi-Factor Ranking

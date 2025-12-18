@@ -10,14 +10,14 @@ due_date: ""
 estimated_hours: 24
 actual_hours: 8
 assigned_to: "Team"
-tags: ["chunking", "ast", "tree-sitter", "metadata", "inspired-by-claude-context-local"]
+tags: ["chunking", "ast", "tree-sitter", "metadata"]
 ---
 
 # Task: AST-Based Chunking with Rich Metadata
 
 ## Overview
 
-Implement AST-based chunking using Tree-sitter to replace/augment character-based chunking. Inspired by claude-context-local which extracts rich metadata including function signatures, docstrings, decorators, and parent-child relationships. This enables better search ranking and more meaningful code snippets.
+Implement AST-based chunking using Tree-sitter to replace/augment character-based chunking. Extract rich metadata including function signatures, docstrings, decorators, and parent-child relationships. This enables better search ranking and more meaningful code snippets.
 
 ## Goals
 
@@ -118,12 +118,9 @@ Implement AST-based chunking using Tree-sitter to replace/augment character-base
 
 ## Resources
 
-- [claude-context-local AST chunking](../../../examples/claude-context-local-main/)
-- [mcp-vector-search parsers](../../../examples/mcp-vector-search-main/src/parsers/)
 - [Tree-sitter Node.js](https://github.com/tree-sitter/node-tree-sitter)
 - [web-tree-sitter](https://github.com/tree-sitter/tree-sitter/tree/master/lib/binding_web)
 - [Current chunking.ts](../../../src/engines/chunking.ts)
-- [Examples comparison analysis](../../examples-comparison-analysis.md)
 
 ## Acceptance Checklist
 
@@ -138,11 +135,6 @@ Before marking this task complete:
 - [x] 5+ languages supported with AST (10 languages!)
 
 ## Progress Log
-
-### 2025-12-16 - 0 hours
-
-- Task created based on examples comparison analysis
-- Inspired by claude-context-local's AST-based chunking
 
 ### 2025-12-16 - 8 hours (COMPLETED)
 
@@ -160,8 +152,6 @@ Before marking this task complete:
 
 ## Notes
 
-- claude-context-local uses custom Python AST for Python, Tree-sitter for others
-- mcp-vector-search has 8 language parsers we can reference
 - Used WASM-based Tree-sitter for cross-platform compatibility
 - Rich metadata enables better ranking (SMCP-087)
 - No migration needed - metadata fields are optional in LanceDB schema

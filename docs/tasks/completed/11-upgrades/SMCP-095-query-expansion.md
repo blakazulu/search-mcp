@@ -10,14 +10,14 @@ due_date: ""
 estimated_hours: 6
 actual_hours: 4
 assigned_to: "Team"
-tags: ["search", "query", "synonyms", "inspired-by-mcp-vector-search"]
+tags: ["search", "query", "synonyms"]
 ---
 
 # Task: Query Expansion & Synonyms
 
 ## Overview
 
-Implement query expansion with synonym mappings, inspired by mcp-vector-search's 59 expansion rules. When users search for "auth", also search for "authentication authorize login".
+Implement query expansion with synonym mappings. When users search for "auth", also search for "authentication authorize login".
 
 ## Current Problem
 
@@ -134,7 +134,7 @@ async function search(query: string, options: SearchOptions) {
 
 - [x] 1.1 Create expansion dictionary (50+ mappings) - 60+ mappings created
 - [x] 1.2 Organize by category - 12 categories
-- [x] 1.3 Research common code abbreviations - mcp-vector-search + domain knowledge
+- [x] 1.3 Research common code abbreviations
 
 ### Phase 2: Implementation (2 hours)
 
@@ -151,7 +151,7 @@ async function search(query: string, options: SearchOptions) {
 
 ## Resources
 
-- [mcp-vector-search expansions](../../../examples/mcp-vector-search-main/)
+_No external resources required._
 
 ## Acceptance Checklist
 
@@ -176,4 +176,3 @@ async function search(query: string, options: SearchOptions) {
 ### 2025-12-16 - 0 hours
 
 - Task created based on deep dive analysis
-- mcp-vector-search has 59 expansion rules

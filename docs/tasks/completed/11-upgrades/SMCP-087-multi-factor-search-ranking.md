@@ -10,14 +10,14 @@ due_date: ""
 estimated_hours: 16
 actual_hours: 4
 assigned_to: "Team"
-tags: ["search", "ranking", "quality", "inspired-by-claude-context-local"]
+tags: ["search", "ranking", "quality"]
 ---
 
 # Task: Multi-Factor Search Ranking
 
 ## Overview
 
-Implement a sophisticated multi-factor ranking algorithm inspired by claude-context-local. Currently search-mcp uses simple RRF (Reciprocal Rank Fusion) with 2 signals (vector + FTS). The claude-context-local example uses 7+ ranking signals for significantly better result quality.
+Implement a sophisticated multi-factor ranking algorithm. Currently search-mcp uses simple RRF (Reciprocal Rank Fusion) with 2 signals (vector + FTS). Enhanced implementations use 7+ ranking signals for significantly better result quality.
 
 ## Goals
 
@@ -55,7 +55,7 @@ Implement a sophisticated multi-factor ranking algorithm inspired by claude-cont
 
 ### Phase 1: Research & Design (3 hours)
 
-- [x] 1.1 Study claude-context-local's `searcher.py` ranking implementation
+- [x] 1.1 Study multi-factor ranking implementations
     - Documented all ranking factors used
     - Understand weight calculations
 - [x] 1.2 Design ranking algorithm for search-mcp
@@ -134,9 +134,7 @@ Implement a sophisticated multi-factor ranking algorithm inspired by claude-cont
 
 ## Resources
 
-- [claude-context-local searcher.py](../../../examples/claude-context-local-main/searcher.py)
 - [Current hybridSearch.ts](../../../src/engines/hybridSearch.ts)
-- [Examples comparison analysis](../../examples-comparison-analysis.md)
 
 ## Acceptance Checklist
 
@@ -154,7 +152,6 @@ Before marking this task complete:
 
 ### 2025-12-16 - 4 hours
 
-- Task created based on examples comparison analysis
 - Implemented complete advancedRanking.ts module
 - Integrated with hybridSearch.ts
 - Added 73 comprehensive unit tests
@@ -164,7 +161,7 @@ Before marking this task complete:
 
 ## Notes
 
-- claude-context-local uses 7+ ranking signals vs our previous 2 (vector + FTS)
+- Advanced implementations use 7+ ranking signals vs our previous 2 (vector + FTS)
 - Query intent detection (SMCP-085) enables dynamic factor boosting
 - Advanced ranking is configurable and can be disabled via config
 - Works with AST metadata (SMCP-086) for full effectiveness when available

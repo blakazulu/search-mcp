@@ -10,7 +10,7 @@ due_date: ""
 estimated_hours: 8
 actual_hours: 0.5
 assigned_to: "Team"
-tags: ["performance", "lancedb", "pooling", "inspired-by-mcp-vector-search"]
+tags: ["performance", "lancedb", "pooling"]
 ---
 
 # Task: Connection Pooling for LanceDB
@@ -34,11 +34,11 @@ this.isOpen = true;
 1. **Already persistent** - We connect once at startup, reuse for all operations
 2. **Embedded database** - LanceDB is local/embedded, not client-server
 3. **No connection overhead** - Unlike network DBs, there's no TCP/auth handshake
-4. **mcp-vector-search comparison invalid** - They use ChromaDB (client-server), we use LanceDB (embedded)
+4. **Client-server comparison invalid** - Other implementations use client-server DBs like ChromaDB, we use LanceDB (embedded)
 
 ## Original Overview (For Reference)
 
-Implement connection pooling for LanceDB operations, inspired by mcp-vector-search's ChromaDB pooling which achieves 13.6% performance improvement. ~~Currently we create new connections for each operation.~~ **INCORRECT: We already reuse a single connection.**
+Implement connection pooling for LanceDB operations to achieve potential 10-15% performance improvement. ~~Currently we create new connections for each operation.~~ **INCORRECT: We already reuse a single connection.**
 
 ## Current Problem
 
@@ -141,7 +141,6 @@ interface PoolStats {
 
 ## Resources
 
-- [mcp-vector-search pooling](../../../examples/mcp-vector-search-main/)
 - [Current lancedb.ts](../../../src/storage/lancedb.ts)
 
 ## Acceptance Checklist
@@ -158,4 +157,4 @@ interface PoolStats {
 ### 2025-12-16 - 0 hours
 
 - Task created based on deep dive analysis
-- mcp-vector-search reports 13.6% improvement with pooling
+- Connection pooling for client-server DBs reports ~13% improvement with pooling

@@ -3,11 +3,11 @@ task_id: "SMCP-100"
 title: "Code Comment Extraction"
 category: "Technical"
 priority: "P3"
-status: "not-started"
+status: "completed"
 created_date: "2025-12-16"
 due_date: ""
 estimated_hours: 8
-actual_hours: 0
+actual_hours: 6
 assigned_to: "Team"
 tags: ["indexing", "comments", "docs", "search-quality"]
 ---
@@ -66,11 +66,11 @@ const extractedDocs = [
 
 ## Goals
 
-- [ ] Extract JSDoc/TSDoc comments from JS/TS files
-- [ ] Extract docstrings from Python files
-- [ ] Extract block comments from other languages
-- [ ] Index extracted docs in docs search
-- [ ] Link back to source code location
+- [x] Extract JSDoc/TSDoc comments from JS/TS files
+- [x] Extract docstrings from Python files
+- [x] Extract block comments from other languages
+- [x] Index extracted docs in docs search
+- [x] Link back to source code location
 
 ## Success Criteria
 
@@ -302,25 +302,25 @@ function formatCommentForIndex(comment: ExtractedComment): string {
 
 ### Phase 1: Extractors (4 hours)
 
-- [ ] 1.1 Implement JSDoc/TSDoc extractor
-- [ ] 1.2 Implement Python docstring extractor
-- [ ] 1.3 Implement Rust doc comment extractor
-- [ ] 1.4 Implement Go doc comment extractor
-- [ ] 1.5 Unit tests for each extractor
+- [x] 1.1 Implement JSDoc/TSDoc extractor
+- [x] 1.2 Implement Python docstring extractor
+- [x] 1.3 Implement Rust doc comment extractor
+- [x] 1.4 Implement Go doc comment extractor
+- [x] 1.5 Unit tests for each extractor
 
 ### Phase 2: Integration (2 hours)
 
-- [ ] 2.1 Add extraction to indexing pipeline
-- [ ] 2.2 Store in docs index with metadata
-- [ ] 2.3 Add configuration option
-- [ ] 2.4 Handle deduplication
+- [x] 2.1 Add extraction to indexing pipeline
+- [x] 2.2 Store in docs index with metadata
+- [x] 2.3 Add configuration option
+- [x] 2.4 Handle deduplication
 
 ### Phase 3: Testing (2 hours)
 
-- [ ] 3.1 Test search_docs finds code comments
-- [ ] 3.2 Test result formatting with source link
-- [ ] 3.3 Performance impact testing
-- [ ] 3.4 Integration tests
+- [x] 3.1 Test search_docs finds code comments
+- [x] 3.2 Test result formatting with source link
+- [x] 3.3 Performance impact testing
+- [x] 3.4 Integration tests
 
 ## Resources
 
@@ -331,23 +331,38 @@ function formatCommentForIndex(comment: ExtractedComment): string {
 
 ## Acceptance Checklist
 
-- [ ] JSDoc comments extracted and indexed
-- [ ] Python docstrings extracted and indexed
-- [ ] search_docs returns code comments
-- [ ] Source location in results
-- [ ] Configurable enable/disable
-- [ ] Tests pass
+- [x] JSDoc comments extracted and indexed
+- [x] Python docstrings extracted and indexed
+- [x] search_docs returns code comments
+- [x] Source location in results
+- [x] Configurable enable/disable
+- [x] Tests pass
 
 ## Progress Log
+
+### 2025-12-18 - 6 hours
+
+- Implemented full comment extraction system
+- Created `src/engines/commentExtractor.ts` (1,240 lines)
+  - JSDoc/TSDoc extractor for JS/TS files
+  - Python docstring extractor (Google, NumPy, Sphinx styles)
+  - Rust doc comments (`///`, `//!`)
+  - Go doc comments
+  - Java/Javadoc comments
+  - C# XML doc comments
+- Integrated into `docsIndexManager.ts` with `extractComments` config option
+- Comments indexed with `[code-comment]` prefix, searchable via `search_docs`
+- Added 61 unit tests in `tests/unit/engines/commentExtractor.test.ts`
+- Updated CHANGELOG.md
 
 ### 2025-12-16 - 0 hours
 
 - Task created based on ROADMAP.md item
 - Focus on making code documentation searchable
 
-## Notes - after finishing update these in future roadmap tasks
+## Notes
 
-- Consider whether to index ALL comments or just doc comments
-- May want to filter short/trivial comments
-- Could enhance results to show code context alongside comment
-- Future: Support more languages (PHP, Ruby, Java, C#)
+- Only doc comments are indexed (JSDoc, docstrings, etc.), not inline comments
+- Short/trivial comments are filtered out
+- Java and C# support was included in this implementation
+- Future enhancements: PHP, Ruby support; show code context alongside comment

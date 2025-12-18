@@ -10,14 +10,14 @@ due_date: ""
 estimated_hours: 12
 actual_hours: 8
 assigned_to: "Team"
-tags: ["analysis", "symbols", "complexity", "llm-context", "inspired-by-code-index-mcp"]
+tags: ["analysis", "symbols", "complexity", "llm-context"]
 ---
 
 # Task: Symbol Extraction & Complexity Metrics
 
 ## Overview
 
-Implement symbol extraction and complexity metrics for files, inspired by code-index-mcp. This adds a `get_file_summary` capability that provides LLM-friendly summaries including functions, classes, imports, exports, and complexity scores. Valuable for AI assistants to understand code structure without reading entire files.
+Implement symbol extraction and complexity metrics for files. This adds a `get_file_summary` capability that provides LLM-friendly summaries including functions, classes, imports, exports, and complexity scores. Valuable for AI assistants to understand code structure without reading entire files.
 
 ## Goals
 
@@ -53,7 +53,7 @@ Implement symbol extraction and complexity metrics for files, inspired by code-i
 
 ### Phase 1: Design (2 hours) - COMPLETED
 
-- [x] 1.1 Study code-index-mcp's get_file_summary implementation
+- [x] 1.1 Study get_file_summary implementations
     - Documented returned fields
     - Understand complexity calculation
 - [x] 1.2 Design FileSummary interface
@@ -149,10 +149,8 @@ Note: Caching was deferred as the extraction is already fast (< 100ms). Can add 
 
 ## Resources
 
-- [code-index-mcp file analysis](../../../examples/code-index-mcp-master/)
 - [Tree-sitter queries](https://tree-sitter.github.io/tree-sitter/using-parsers#query-syntax)
 - [Cyclomatic complexity](https://en.wikipedia.org/wiki/Cyclomatic_complexity)
-- [Examples comparison analysis](../../examples-comparison-analysis.md)
 
 ## Acceptance Checklist
 
@@ -167,11 +165,6 @@ Before marking this task complete:
 - [x] MCP tool works correctly
 
 ## Progress Log
-
-### 2025-12-16 - 0 hours
-
-- Task created based on examples comparison analysis
-- Inspired by code-index-mcp's get_file_summary
 
 ### 2025-12-17 - 8 hours
 

@@ -10,7 +10,7 @@ due_date: ""
 estimated_hours: 10
 actual_hours: 0.5
 assigned_to: "Team"
-tags: ["indexing", "auto-update", "ux", "inspired-by-mcp-vector-search"]
+tags: ["indexing", "auto-update", "ux"]
 ---
 
 # Task: Search-Triggered Auto-Reindexing
@@ -36,7 +36,7 @@ The only gap would be "check every N searches" but this adds minimal value over 
 
 ## Original Overview (For Reference)
 
-Implement automatic reindexing triggered by search operations, inspired by mcp-vector-search. When users search, we check if the index is stale and silently reindex changed files. No daemon process needed.
+Implement automatic reindexing triggered by search operations. When users search, we check if the index is stale and silently reindex changed files. No daemon process needed.
 
 ## Original Problem Statement
 
@@ -147,7 +147,6 @@ async function handleSearchCode(params) {
 
 ## Resources
 
-- [mcp-vector-search auto-indexing](../../../examples/mcp-vector-search-main/)
 - [Current indexing pipeline](../../../src/tools/)
 
 ## Acceptance Checklist
@@ -164,4 +163,4 @@ async function handleSearchCode(params) {
 ### 2025-12-16 - 0 hours
 
 - Task created based on deep dive analysis
-- mcp-vector-search uses this for "always fresh" index feel
+- Search-triggered reindexing provides an "always fresh" index feel

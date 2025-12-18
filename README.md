@@ -3,7 +3,8 @@
 **Make your AI 40x smarter about your code.**
 
 ```bash
-npx --yes @liraz-sbz/search-mcp@latest --setup
+# Navigate to your project, then run:
+npx @liraz-sbz/search-mcp setup
 ```
 
 Your AI assistant searches your entire codebase semantically. No API keys. No cloud. 100% local.
@@ -83,30 +84,32 @@ AI: "Based on src/auth/login.ts, here's how login works..."
 
 **Prerequisites:** [Node.js 18+](https://nodejs.org/)
 
-### Option 1: Setup Wizard (Recommended)
+### Option 1: Interactive Setup (Recommended)
+
+Navigate to your project folder and run:
+
+```bash
+npx @liraz-sbz/search-mcp setup
+```
+
+This interactive wizard will:
+- Confirm you're in the correct project folder
+- Auto-detect and configure your AI assistants (Claude Desktop, Claude Code, Cursor, Windsurf)
+- Offer to index your project immediately with progress bars
+
+**See all CLI commands:** [CLI Reference](docs/readme-files/cli.md)
+
+### Option 2: Quick Setup (One-liner)
 
 ```bash
 npx --yes @liraz-sbz/search-mcp@latest --setup
 ```
 
-This auto-detects your installed AI assistants and configures them for you.
+Configures your AI assistants automatically. You'll need to index separately via your AI assistant.
 
-### Option 2: Manual Configuration
+### Option 3: Manual Configuration
 
-<details>
-<summary><b>Claude Code</b></summary>
-
-```bash
-claude mcp add search -- npx @liraz-sbz/search-mcp
-```
-</details>
-
-<details>
-<summary><b>Claude Desktop</b></summary>
-
-Edit config file:
-- **Mac:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+Add to your MCP config file:
 
 ```json
 {
@@ -118,20 +121,19 @@ Edit config file:
   }
 }
 ```
-</details>
 
-<details>
-<summary><b>Cursor / Windsurf / Other</b></summary>
+**Config file locations:**
+- **Claude Desktop (Mac):** `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Claude Desktop (Windows):** `%APPDATA%\Claude\claude_desktop_config.json`
+- **Claude Code:** `claude mcp add search -- npx @liraz-sbz/search-mcp`
 
-See the [Getting Started Guide](docs/readme-files/getting-started.md) for your client.
-</details>
+**See full guide:** [Getting Started](docs/readme-files/getting-started.md)
 
-### After Configuration
+### After Setup
 
 1. **Restart your AI assistant**
 2. **Verify connection:** Type `/mcp` and check that "search" is listed
-3. **Create index:** Say `"Use search-mcp to create an index for this project"`
-4. **Start searching:** Ask `"How does login work?"`
+3. **Start searching:** Ask `"How does login work?"`
 
 That's it!
 

@@ -3,6 +3,12 @@
  *
  * Detects installed MCP clients and helps configure them to use search-mcp.
  * Supports Claude Desktop, Claude Code, Cursor, and Windsurf.
+ *
+ * Enhanced flow (SMCP-088):
+ * 1. Configure MCP client(s)
+ * 2. Ask if user wants to index the current project
+ * 3. If index exists, offer to delete and recreate
+ * 4. Run indexing with progress display
  */
 
 import * as fs from 'node:fs';
@@ -10,6 +16,8 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { execSync } from 'node:child_process';
 import * as readline from 'node:readline';
+import ora, { Ora } from 'ora';
+import cliProgress from 'cli-progress';
 
 const PACKAGE_NAME = '@liraz-sbz/search-mcp';
 
@@ -270,6 +278,352 @@ function print(text: string, color?: 'green' | 'yellow' | 'red' | 'cyan' | 'dim'
   }
 }
 
+// ============================================================================
+// Indexing Support Functions
+// ============================================================================
+
+/**
+ * Create a progress bar for indexing
+ */
+function createProgressBar(format: string): cliProgress.SingleBar {
+  return new cliProgress.SingleBar({
+    format: format,
+    barCompleteChar: '\u2588',
+    barIncompleteChar: '\u2591',
+    hideCursor: true,
+    clearOnComplete: false,
+  }, cliProgress.Presets.shades_classic);
+}
+
+/**
+ * Helper to safely stop a spinner
+ */
+function stopSpinner(spinner: Ora | null, message?: string): void {
+  if (spinner) {
+    if (message) {
+      spinner.succeed(message);
+    } else {
+      spinner.succeed();
+    }
+  }
+}
+
+/**
+ * Helper to safely stop a progress bar
+ */
+function stopProgressBar(bar: cliProgress.SingleBar | null): void {
+  if (bar) {
+    bar.stop();
+  }
+}
+
+/**
+ * Format duration in milliseconds to human-readable string
+ */
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  const minutes = Math.floor(ms / 60000);
+  const seconds = Math.round((ms % 60000) / 1000);
+  return `${minutes}m ${seconds}s`;
+}
+
+/**
+ * Format relative time (e.g., "2 days ago")
+ */
+function formatRelativeTime(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffSeconds = Math.floor(diffMs / 1000);
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  const diffHours = Math.floor(diffMinutes / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffDays > 0) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+  if (diffHours > 0) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+  if (diffMinutes > 0) return `${diffMinutes} minute${diffMinutes > 1 ? 's' : ''} ago`;
+  return 'just now';
+}
+
+/**
+ * Check if an index exists and return its status
+ */
+async function checkExistingIndex(projectPath: string): Promise<{
+  exists: boolean;
+  totalFiles?: number;
+  totalChunks?: number;
+  lastUpdated?: string;
+  storageSize?: string;
+} | null> {
+  try {
+    const { getIndexPath } = await import('../utils/paths.js');
+    const { loadMetadata } = await import('../storage/metadata.js');
+    const { collectStatus } = await import('../tools/getIndexStatus.js');
+
+    const indexPath = getIndexPath(projectPath);
+    const metadata = await loadMetadata(indexPath);
+
+    if (!metadata) {
+      return { exists: false };
+    }
+
+    // Get full status for detailed info
+    const status = await collectStatus({ projectPath });
+
+    return {
+      exists: true,
+      totalFiles: status.totalFiles,
+      totalChunks: status.totalChunks,
+      lastUpdated: status.lastUpdated,
+      storageSize: status.storageSize,
+    };
+  } catch {
+    return { exists: false };
+  }
+}
+
+/**
+ * Delete an existing index
+ */
+async function deleteExistingIndex(projectPath: string): Promise<boolean> {
+  try {
+    const { getIndexPath } = await import('../utils/paths.js');
+    const { safeDeleteIndex } = await import('../tools/deleteIndex.js');
+
+    const indexPath = getIndexPath(projectPath);
+    const result = await safeDeleteIndex(indexPath);
+    return result.success;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Run indexing with progress display
+ */
+async function runIndexingWithProgress(projectPath: string): Promise<{
+  success: boolean;
+  filesIndexed: number;
+  chunksCreated: number;
+  duration: string;
+  error?: string;
+}> {
+  const { IndexManager } = await import('../engines/indexManager.js');
+  const { DocsIndexManager } = await import('../engines/docsIndexManager.js');
+  const { getIndexPath } = await import('../utils/paths.js');
+  const { loadConfig } = await import('../storage/config.js');
+
+  const indexPath = getIndexPath(projectPath);
+  const config = await loadConfig(indexPath);
+
+  let progressBar: cliProgress.SingleBar | null = null;
+  let currentPhase = '';
+  let phaseSpinner: Ora | null = null;
+
+  // Progress callback with inline type to avoid dynamic import issues
+  const progressCallback = (progress: {
+    phase: 'scanning' | 'chunking' | 'embedding' | 'storing';
+    current: number;
+    total: number;
+    currentFile?: string;
+  }) => {
+    // Handle phase transitions
+    if (progress.phase !== currentPhase) {
+      // Stop previous progress bar
+      stopProgressBar(progressBar);
+      progressBar = null;
+      stopSpinner(phaseSpinner);
+      phaseSpinner = null;
+
+      currentPhase = progress.phase;
+
+      // Start new indicator based on phase
+      switch (progress.phase) {
+        case 'scanning':
+          phaseSpinner = ora('Scanning files...').start();
+          break;
+        case 'chunking':
+          progressBar = createProgressBar('  Chunking  [{bar}] {percentage}% | {value}/{total} files');
+          progressBar.start(progress.total, 0);
+          break;
+        case 'embedding':
+          progressBar = createProgressBar('  Embedding [{bar}] {percentage}% | {value}/{total} chunks');
+          progressBar.start(progress.total, 0);
+          break;
+        case 'storing':
+          phaseSpinner = ora('Storing chunks...').start();
+          break;
+      }
+    }
+
+    // Update progress
+    if (progressBar && progress.total > 0) {
+      progressBar.update(progress.current);
+    }
+    if (phaseSpinner && progress.phase === 'scanning' && progress.total > 0) {
+      phaseSpinner.text = `Scanning files... (${progress.current}/${progress.total})`;
+    }
+  };
+
+  try {
+    // Run code indexing
+    const indexManager = new IndexManager(projectPath);
+    const codeResult = await indexManager.createIndex(progressCallback);
+
+    // Run docs indexing if enabled
+    let docsFilesIndexed = 0;
+    let docsChunksCreated = 0;
+    let docsDurationMs = 0;
+
+    if (config.indexDocs) {
+      stopSpinner(phaseSpinner);
+      phaseSpinner = ora('Indexing documentation...').start();
+
+      const docsIndexManager = new DocsIndexManager(projectPath, indexPath);
+      await docsIndexManager.initialize();
+      const docsResult = await docsIndexManager.createDocsIndex();
+      await docsIndexManager.close();
+
+      docsFilesIndexed = docsResult.filesIndexed;
+      docsChunksCreated = docsResult.chunksCreated;
+      docsDurationMs = docsResult.durationMs;
+
+      stopSpinner(phaseSpinner, 'Documentation indexed');
+      phaseSpinner = null;
+    }
+
+    // Clean up progress indicators
+    stopProgressBar(progressBar);
+    stopSpinner(phaseSpinner);
+
+    // Combine results
+    const totalDurationMs = codeResult.durationMs + docsDurationMs;
+    const totalFilesIndexed = codeResult.filesIndexed + docsFilesIndexed;
+    const totalChunksCreated = codeResult.chunksCreated + docsChunksCreated;
+
+    return {
+      success: true,
+      filesIndexed: totalFilesIndexed,
+      chunksCreated: totalChunksCreated,
+      duration: formatDuration(totalDurationMs),
+    };
+  } catch (error) {
+    // Clean up on error
+    stopProgressBar(progressBar);
+    if (phaseSpinner) phaseSpinner.fail('Indexing failed');
+
+    return {
+      success: false,
+      filesIndexed: 0,
+      chunksCreated: 0,
+      duration: '0s',
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
+ * Detect project root from current directory
+ */
+async function detectProject(): Promise<string> {
+  try {
+    const { detectProjectRoot } = await import('../engines/projectRoot.js');
+    const result = await detectProjectRoot(process.cwd());
+    return result.projectPath;
+  } catch {
+    // If no project markers found, use current directory
+    return process.cwd();
+  }
+}
+
+/**
+ * Run the indexing flow after configuration
+ * Returns true if indexing was performed or skipped, false if there was an error
+ */
+async function runIndexingFlow(): Promise<boolean> {
+  console.log('');
+
+  // Ask if user wants to index
+  const indexAnswer = await prompt('Would you like to index this project now? [Y/n]: ');
+
+  if (indexAnswer.toLowerCase() === 'n') {
+    print('Skipping indexing.', 'dim');
+    return true;
+  }
+
+  console.log('');
+  const spinner = ora('Detecting project root...').start();
+
+  try {
+    // Step 1: Detect project
+    const projectPath = await detectProject();
+    spinner.succeed(`Project detected: ${projectPath}`);
+
+    // Step 2: Check for existing index
+    const existingIndex = await checkExistingIndex(projectPath);
+
+    if (existingIndex?.exists) {
+      console.log('');
+      print('Existing index found:', 'yellow');
+      console.log(`  Files:    ${existingIndex.totalFiles?.toLocaleString() || 'unknown'}`);
+      console.log(`  Chunks:   ${existingIndex.totalChunks?.toLocaleString() || 'unknown'}`);
+      console.log(`  Size:     ${existingIndex.storageSize || 'unknown'}`);
+      if (existingIndex.lastUpdated) {
+        console.log(`  Updated:  ${formatRelativeTime(existingIndex.lastUpdated)}`);
+      }
+      console.log('');
+
+      const deleteAnswer = await prompt('Delete and recreate index? [y/N]: ');
+
+      if (deleteAnswer.toLowerCase() !== 'y') {
+        print('Keeping existing index.', 'dim');
+        return true;
+      }
+
+      // Delete existing index
+      const deleteSpinner = ora('Deleting existing index...').start();
+      const deleted = await deleteExistingIndex(projectPath);
+
+      if (!deleted) {
+        deleteSpinner.fail('Failed to delete existing index');
+        return false;
+      }
+
+      deleteSpinner.succeed('Existing index deleted');
+    }
+
+    // Step 3: Run indexing
+    console.log('');
+    print(`Creating index for: ${projectPath}`, 'cyan');
+    console.log('');
+
+    const result = await runIndexingWithProgress(projectPath);
+
+    if (!result.success) {
+      print(`Indexing failed: ${result.error}`, 'red');
+      return false;
+    }
+
+    // Step 4: Show results
+    console.log('');
+    print('Index created successfully!', 'green');
+    console.log(`  Files indexed:  ${result.filesIndexed.toLocaleString()}`);
+    console.log(`  Chunks created: ${result.chunksCreated.toLocaleString()}`);
+    console.log(`  Duration:       ${result.duration}`);
+
+    return true;
+  } catch (error) {
+    spinner.fail('Failed to detect project');
+    print(`Error: ${error instanceof Error ? error.message : String(error)}`, 'red');
+    return false;
+  }
+}
+
+// ============================================================================
+// Main Setup Flow
+// ============================================================================
+
 /**
  * Main setup flow
  */
@@ -277,6 +631,26 @@ export async function runSetup(): Promise<void> {
   console.log('');
   print('Search MCP Setup', 'cyan');
   print('================', 'cyan');
+  console.log('');
+
+  // Step 0: Verify project directory
+  const projectPath = await detectProject();
+  print('Detected project directory:', 'cyan');
+  console.log(`  ${projectPath}`);
+  console.log('');
+
+  const confirmProject = await prompt('Is this the correct project folder? [Y/n]: ');
+  if (confirmProject.toLowerCase() === 'n') {
+    console.log('');
+    print('Please navigate to your project root directory and run setup again.', 'yellow');
+    console.log('');
+    console.log('  Example:');
+    console.log(`    cd /path/to/your/project`);
+    console.log(`    npx ${PACKAGE_NAME} setup`);
+    console.log('');
+    return;
+  }
+
   console.log('');
 
   // Detect available clients
@@ -301,11 +675,15 @@ export async function runSetup(): Promise<void> {
 
   if (unconfiguredClients.length === 0 && configuredClients.length > 0) {
     print('All detected MCP clients are already configured!', 'green');
+
+    // Offer indexing even if clients are already configured
+    await runIndexingFlow();
+
     console.log('');
     print('Next steps:', 'cyan');
     console.log('  1. Restart your AI assistant');
     console.log('  2. Type /mcp to verify "search" is connected');
-    console.log('  3. Say: "Use search-mcp to create an index for this project"');
+    console.log('  3. Ask: "Search for authentication code"');
     console.log('');
     return;
   }
@@ -400,11 +778,15 @@ export async function runSetup(): Promise<void> {
 
   if (result.success) {
     print(result.message, 'green');
+
+    // Offer indexing after successful configuration
+    await runIndexingFlow();
+
     console.log('');
-    print('Next steps:', 'cyan');
+    print('Setup complete! Next steps:', 'cyan');
     console.log('  1. Restart your AI assistant');
     console.log('  2. Type /mcp to verify "search" is connected');
-    console.log('  3. Say: "Use search-mcp to create an index for this project"');
+    console.log('  3. Ask: "Search for authentication code"');
   } else {
     print(result.message, 'red');
   }

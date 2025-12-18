@@ -7,7 +7,7 @@ status: "completed"
 created_date: "2025-12-16"
 due_date: ""
 estimated_hours: 12
-actual_hours: 8
+actual_hours: 10
 assigned_to: "Team"
 tags: ["cli", "ux", "developer-experience", "inspired-by-mcp-vector-search"]
 ---
@@ -103,6 +103,15 @@ Implement a user-friendly CLI interface inspired by mcp-vector-search. Currently
 - [x] 4.4 Update package.json bin entry (already configured)
 - [x] 4.5 Test on Windows (tested and working)
 
+### Phase 5: Enhanced Setup Flow (2 hours)
+
+- [x] 5.1 Add project directory confirmation at start
+- [x] 5.2 Add indexing prompt after client configuration
+- [x] 5.3 Check for existing index and show stats
+- [x] 5.4 Offer to delete and recreate existing index
+- [x] 5.5 Run indexing with progress bars and spinners
+- [x] 5.6 Show success summary with files/chunks/duration
+
 ## Resources
 
 - [mcp-vector-search CLI](../../../examples/mcp-vector-search-main/src/cli/)
@@ -141,6 +150,16 @@ Before marking this task complete:
 - Updated CHANGELOG.md with new features
 - All tests passing
 - Tested on Windows with DirectML GPU acceleration
+
+### 2025-12-18 - 2 hours
+
+- Enhanced `setup` command with integrated indexing flow
+- Added project directory confirmation at start of setup (prevents wrong directory indexing)
+- After configuring MCP clients, prompts user to index current project
+- If existing index found, shows stats (files, chunks, size, last updated)
+- Offers to delete and recreate existing index
+- Progress bars and spinners show indexing progress
+- Updated CHANGELOG.md with enhanced setup flow documentation
 
 ## Implementation Details
 

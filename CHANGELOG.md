@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Enhanced Setup Flow with Integrated Indexing (SMCP-088)
+- **`search-mcp setup` now verifies project directory before proceeding**
+  - Shows detected project path at the start: "Detected project directory: /path/to/project"
+  - Asks for confirmation: "Is this the correct project folder? [Y/n]"
+  - If user says no, shows helpful instructions to navigate to the correct directory
+  - Prevents accidental indexing of wrong directories
+
+- **`search-mcp setup` now offers to index the project after client configuration**
+  - After configuring MCP clients, users are prompted: "Would you like to index this project now?"
+  - If an existing index is found, shows stats (files, chunks, size, last updated) and asks: "Delete and recreate index?"
+  - Progress bars and spinners show indexing progress through all phases (scanning, chunking, embedding, storing)
+  - Complete one-command setup: configure clients AND index the project in a single flow
+
+- **New setup flow:**
+  1. Detect and confirm project directory
+  2. Configure MCP client(s)
+  3. Prompt: "Would you like to index this project now? [Y/n]"
+  4. If index exists: show stats and ask "Delete and recreate index? [y/N]"
+  5. If user confirms: delete existing index, then create fresh index with progress display
+  6. Show success summary with files indexed, chunks created, duration
+
+- **Benefits:**
+  - True zero-config experience: `npx @liraz-sbz/search-mcp setup` does everything
+  - Users no longer need to manually run `search-mcp index` after setup
+  - Clear feedback on existing index state before recreating
+  - Consistent progress display matching the standalone `index` command
+
 #### Domain-Specific Embedding Prompts (SMCP-096)
 - **Different prompts for document embedding vs query embedding** - Follows BGE model best practices
   - Documents are embedded without prefix (optimized for passages)

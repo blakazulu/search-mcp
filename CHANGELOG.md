@@ -9,6 +9,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Code Comment Extraction (SMCP-100)
+- **Extract documentation comments from code files** - JSDoc, docstrings, and other doc comments are now searchable via `search_docs`
+  - Before: Only `.md` and `.txt` files were indexed in the docs search
+  - After: Documentation embedded in code (JSDoc, Python docstrings, Rust doc comments, etc.) is extracted and indexed
+
+- **Multi-language support:**
+  - JavaScript/TypeScript: JSDoc and TSDoc (`/** ... */`)
+  - Python: Docstrings (`"""..."""`, `'''...'''`) with Google-style sections (Args, Returns, Raises)
+  - Rust: Doc comments (`///`, `//!`)
+  - Go: Doc comments (`//` preceding declarations)
+  - Java: Javadoc (`/** ... */`)
+  - C#: XML documentation (`/// <summary>`)
+  - C/C++: Doxygen-style comments
+
+- **Rich metadata extraction:**
+  - Symbol association (function, class, method, etc.)
+  - Tag parsing (@param, @returns, @throws, etc.)
+  - Line number tracking for source navigation
+  - Language detection
+
+- **Configuration option:**
+  - `extractComments: true` (default) - Enable/disable comment extraction in `search-mcp.config.json`
+
+- **New exports from `commentExtractor.ts`:**
+  - Types: `CommentType`, `CommentTag`, `ExtractedComment`, `CommentExtractionOptions`
+  - Constants: `DEFAULT_COMMENT_OPTIONS`, `SUPPORTED_EXTENSIONS`
+  - Core: `extractComments()`, `supportsCommentExtraction()`, `formatCommentForIndex()`
+  - Tag parsing: `parseJSDocTags()`, `parsePythonDocTags()`
+  - Content cleaning: `cleanJSDocContent()`, `cleanPythonDocstring()`, `cleanRustDocContent()`, `cleanGoDocContent()`
+
+- **Integration with docs indexing pipeline:**
+  - Comments are extracted during `create_index` and `reindex_project`
+  - Indexed in the docs LanceDB table with `[code-comment]` path prefix
+  - Searchable via `search_docs` tool alongside regular documentation
+
+- **Benefits:**
+  - API documentation is now searchable without separate doc generation
+  - Function/class documentation appears in search results
+  - Better code understanding without leaving the search context
+
 #### Markdown Header Chunking (SMCP-099)
 - **Semantic chunking for markdown documentation** - Chunks align with section boundaries (h1-h6)
   - Before: Arbitrary character-based splits could cut mid-section, losing context

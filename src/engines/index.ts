@@ -224,7 +224,34 @@ export {
   applyDocsDelta,
   DocsIndexManager,
   type DocsDeltaResult,
+  extractCodeComments,
 } from './docsIndexManager.js';
+
+// Code Comment Extraction Engine (SMCP-100)
+export {
+  // Types
+  type CommentType,
+  type CommentTag,
+  type ExtractedComment,
+  type CommentExtractor,
+  type CommentExtractionOptions,
+  // Constants
+  DEFAULT_COMMENT_OPTIONS,
+  SUPPORTED_EXTENSIONS,
+  // Core Functions
+  extractComments,
+  supportsCommentExtraction,
+  formatCommentForIndex,
+  getSupportedExtensions,
+  // Tag Parsing
+  parseJSDocTags,
+  parsePythonDocTags,
+  // Content Cleaning
+  cleanJSDocContent,
+  cleanPythonDocstring,
+  cleanRustDocContent,
+  cleanGoDocContent,
+} from './commentExtractor.js';
 
 // Indexing Strategy Interface
 export {

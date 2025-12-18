@@ -36,6 +36,12 @@ import {
   DOCS_MODEL_NAME,
   DOCS_EMBEDDING_DIMENSION,
 } from './embedding.js';
+import {
+  extractComments,
+  supportsCommentExtraction,
+  formatCommentForIndex,
+  type ExtractedComment,
+} from './commentExtractor.js';
 
 // Utility imports
 import {
@@ -111,6 +117,10 @@ export interface DocsIndexResult {
   warning?: string;
   /** Number of doc files found by glob before filtering (for diagnostics) */
   globFilesFound?: number;
+  /** Number of code files scanned for comments (SMCP-100) */
+  codeFilesScanned?: number;
+  /** Number of comments extracted from code (SMCP-100) */
+  commentsExtracted?: number;
 }
 
 /**
@@ -282,6 +292,244 @@ export async function scanDocFiles(
     files: indexableDocFiles,
     globFilesFound: allDocFiles.length,
   };
+}
+
+// ============================================================================
+// Code Comment Extraction (SMCP-100)
+// ============================================================================
+
+/**
+ * Scan code files and extract documentation comments
+ *
+ * Extracts JSDoc, docstrings, and other documentation comments from code files
+ * to make them searchable via the docs index.
+ *
+ * @param projectPath - Absolute path to the project root
+ * @param policy - Initialized IndexingPolicy instance
+ * @param config - Project configuration
+ * @param onProgress - Optional callback for progress updates
+ * @returns Array of extracted comments with metadata
+ */
+export async function extractCodeComments(
+  projectPath: string,
+  policy: IndexingPolicy,
+  config: Config,
+  onProgress?: DocsProgressCallback
+): Promise<{ comments: ExtractedComment[]; codeFilesScanned: number; errors: string[] }> {
+  const logger = getLogger();
+  const normalizedProjectPath = normalizePath(projectPath);
+  const allComments: ExtractedComment[] = [];
+  const errors: string[] = [];
+
+  // Check if comment extraction is enabled
+  if (!config.extractComments) {
+    logger.debug('DocsIndexManager', 'Comment extraction disabled in config');
+    return { comments: [], codeFilesScanned: 0, errors: [] };
+  }
+
+  logger.info('DocsIndexManager', 'Starting code comment extraction', {
+    projectPath: normalizedProjectPath,
+  });
+
+  // Scan for code files that support comment extraction
+  const codePatterns = [
+    '**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx', '**/*.mjs', '**/*.cjs',
+    '**/*.py', '**/*.pyw',
+    '**/*.go',
+    '**/*.rs',
+    '**/*.java',
+    '**/*.cs',
+    '**/*.c', '**/*.cpp', '**/*.h', '**/*.hpp',
+  ];
+
+  const codeFiles: string[] = [];
+
+  try {
+    for (const pattern of codePatterns) {
+      const files = await glob(pattern, {
+        cwd: normalizedProjectPath,
+        nodir: true,
+        dot: true,
+        absolute: false,
+      });
+
+      for (const file of files) {
+        const normalized = file.replace(/\\/g, '/');
+        if (!codeFiles.includes(normalized)) {
+          codeFiles.push(normalized);
+        }
+      }
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('DocsIndexManager', 'Failed to scan for code files', { error: message });
+    return { comments: [], codeFilesScanned: 0, errors: [message] };
+  }
+
+  logger.info('DocsIndexManager', 'Found code files for comment extraction', {
+    count: codeFiles.length,
+  });
+
+  // Filter through policy and extract comments
+  let scannedCount = 0;
+  const indexableFiles: string[] = [];
+
+  for (const relativePath of codeFiles) {
+    const absolutePath = toAbsolutePath(relativePath, normalizedProjectPath);
+
+    try {
+      const result = await policy.shouldIndex(relativePath, absolutePath);
+      if (result.shouldIndex && supportsCommentExtraction(relativePath)) {
+        indexableFiles.push(relativePath);
+      }
+    } catch (error) {
+      // Skip files that can't be checked
+      logger.debug('DocsIndexManager', 'Skipping code file due to policy check error', {
+        file: relativePath,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  logger.info('DocsIndexManager', 'Filtered code files for comment extraction', {
+    total: codeFiles.length,
+    indexable: indexableFiles.length,
+  });
+
+  // Extract comments from indexable files
+  for (let i = 0; i < indexableFiles.length; i++) {
+    const relativePath = indexableFiles[i];
+    const absolutePath = toAbsolutePath(relativePath, normalizedProjectPath);
+
+    // Report progress periodically
+    if (onProgress && (i % 50 === 0 || i === indexableFiles.length - 1)) {
+      onProgress({
+        phase: 'scanning',
+        current: i + 1,
+        total: indexableFiles.length,
+        currentFile: relativePath,
+      });
+    }
+
+    try {
+      // Read file content
+      const content = await fs.promises.readFile(absolutePath, 'utf-8');
+
+      // Extract comments
+      const comments = await extractComments(content, relativePath);
+
+      if (comments.length > 0) {
+        allComments.push(...comments);
+        logger.debug('DocsIndexManager', 'Extracted comments from file', {
+          file: relativePath,
+          count: comments.length,
+        });
+      }
+
+      scannedCount++;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.debug('DocsIndexManager', 'Failed to extract comments from file', {
+        file: relativePath,
+        error: message,
+      });
+      errors.push(`${relativePath}: ${message}`);
+    }
+  }
+
+  logger.info('DocsIndexManager', 'Code comment extraction complete', {
+    filesScanned: scannedCount,
+    commentsExtracted: allComments.length,
+    errors: errors.length,
+  });
+
+  return { comments: allComments, codeFilesScanned: scannedCount, errors };
+}
+
+/**
+ * Convert extracted comments to ChunkRecords for indexing
+ *
+ * @param comments - Array of extracted comments
+ * @param embeddingEngine - Initialized embedding engine
+ * @param onProgress - Optional progress callback
+ * @returns Array of ChunkRecords ready for insertion
+ */
+async function processCommentBatch(
+  comments: ExtractedComment[],
+  embeddingEngine: EmbeddingEngine,
+  onProgress?: DocsProgressCallback
+): Promise<{ chunks: ChunkRecord[]; errors: string[] }> {
+  const logger = getLogger();
+  const errors: string[] = [];
+
+  if (comments.length === 0) {
+    return { chunks: [], errors: [] };
+  }
+
+  // Format comments for indexing
+  const textsAndRecords: { text: string; comment: ExtractedComment }[] = comments.map(comment => ({
+    text: formatCommentForIndex(comment),
+    comment,
+  }));
+
+  const texts = textsAndRecords.map(t => t.text);
+
+  logger.debug('DocsIndexManager', `Generating embeddings for ${texts.length} comment chunks`);
+
+  // Report embedding phase
+  if (onProgress) {
+    onProgress({
+      phase: 'embedding',
+      current: 0,
+      total: texts.length,
+    });
+  }
+
+  // Generate embeddings
+  const embeddingResult = await embeddingEngine.embedBatch(texts, (completed, total) => {
+    if (onProgress) {
+      onProgress({
+        phase: 'embedding',
+        current: completed,
+        total,
+      });
+    }
+  });
+
+  // Create ChunkRecords for successful embeddings
+  const chunks: ChunkRecord[] = [];
+  for (let successIdx = 0; successIdx < embeddingResult.successIndices.length; successIdx++) {
+    const originalIndex = embeddingResult.successIndices[successIdx];
+    const { text, comment } = textsAndRecords[originalIndex];
+
+    // Create a unique ID that indicates this is a code comment
+    const chunkId = `comment:${comment.filePath}:${comment.startLine}:${uuidv4().slice(0, 8)}`;
+
+    // Use the file path with a marker for code comments
+    // This allows filtering comments in search results if needed
+    const indexPath = `[code-comment] ${comment.filePath}`;
+
+    chunks.push({
+      id: chunkId,
+      path: indexPath,
+      text,
+      vector: embeddingResult.vectors[successIdx],
+      start_line: comment.startLine,
+      end_line: comment.endLine,
+      content_hash: '', // Comments don't need content hash tracking
+    });
+  }
+
+  // Log embedding failures
+  if (embeddingResult.failedCount > 0) {
+    logger.warn('DocsIndexManager', `${embeddingResult.failedCount} comment chunks failed to embed`, {
+      failedCount: embeddingResult.failedCount,
+      successCount: embeddingResult.vectors.length,
+    });
+    errors.push(`${embeddingResult.failedCount} comment chunks failed to embed`);
+  }
+
+  return { chunks, errors };
 }
 
 // ============================================================================
@@ -497,10 +745,43 @@ export async function createDocsIndex(
     const { files, globFilesFound } = scanResult;
 
     if (files.length === 0) {
-      logger.warn('DocsIndexManager', 'No doc files to index', {
+      logger.info('DocsIndexManager', 'No doc files to index, checking for code comments', {
         globFilesFound,
         projectPath: normalizedProjectPath,
       });
+
+      // Even with no doc files, we may still want to extract comments
+      let codeFilesScanned = 0;
+      let commentsExtracted = 0;
+      let totalChunks = 0;
+
+      if (config.extractComments) {
+        const commentResult = await extractCodeComments(
+          normalizedProjectPath,
+          policy,
+          config,
+          onProgress
+        );
+
+        codeFilesScanned = commentResult.codeFilesScanned;
+        commentsExtracted = commentResult.comments.length;
+        errors.push(...commentResult.errors);
+
+        if (commentResult.comments.length > 0) {
+          const { chunks: commentChunks, errors: commentErrors } = await processCommentBatch(
+            commentResult.comments,
+            embeddingEngine,
+            onProgress
+          );
+
+          errors.push(...commentErrors);
+
+          if (commentChunks.length > 0) {
+            await store.insertChunks(commentChunks);
+            totalChunks = commentChunks.length;
+          }
+        }
+      }
 
       await fingerprintsManager.save();
 
@@ -512,10 +793,12 @@ export async function createDocsIndex(
       return {
         success: true,
         filesIndexed: 0,
-        chunksCreated: 0,
+        chunksCreated: totalChunks,
         durationMs: Date.now() - startTime,
         warning,
         globFilesFound,
+        codeFilesScanned,
+        commentsExtracted,
       };
     }
 
@@ -588,6 +871,58 @@ export async function createDocsIndex(
     fingerprintsManager.setAll(allHashes);
     await fingerprintsManager.save();
 
+    // SMCP-100: Extract and index code comments
+    let codeFilesScanned = 0;
+    let commentsExtracted = 0;
+
+    if (config.extractComments) {
+      logger.info('DocsIndexManager', 'Starting code comment extraction (SMCP-100)');
+
+      const commentResult = await extractCodeComments(
+        normalizedProjectPath,
+        policy,
+        config,
+        onProgress
+      );
+
+      codeFilesScanned = commentResult.codeFilesScanned;
+      commentsExtracted = commentResult.comments.length;
+      errors.push(...commentResult.errors);
+
+      // Process and store comments
+      if (commentResult.comments.length > 0) {
+        logger.info('DocsIndexManager', 'Processing extracted comments', {
+          count: commentResult.comments.length,
+        });
+
+        const { chunks: commentChunks, errors: commentErrors } = await processCommentBatch(
+          commentResult.comments,
+          embeddingEngine,
+          onProgress
+        );
+
+        errors.push(...commentErrors);
+
+        // Store comment chunks
+        if (commentChunks.length > 0) {
+          if (onProgress) {
+            onProgress({
+              phase: 'storing',
+              current: commentChunks.length,
+              total: commentChunks.length,
+            });
+          }
+
+          await store.insertChunks(commentChunks);
+          totalChunks += commentChunks.length;
+
+          logger.info('DocsIndexManager', 'Stored comment chunks', {
+            count: commentChunks.length,
+          });
+        }
+      }
+    }
+
     // SMCP-074: Update metadata with docs model info and stats
     const metadataManager = new MetadataManager(normalizedIndexPath);
     const existingMetadata = await metadataManager.load();
@@ -607,6 +942,8 @@ export async function createDocsIndex(
     logger.info('DocsIndexManager', 'Full docs index created successfully', {
       filesIndexed: allHashes.size,
       chunksCreated: totalChunks,
+      codeFilesScanned,
+      commentsExtracted,
       durationMs,
       errorCount: errors.length,
     });
@@ -617,6 +954,8 @@ export async function createDocsIndex(
       chunksCreated: totalChunks,
       durationMs,
       errors: errors.length > 0 ? errors : undefined,
+      codeFilesScanned,
+      commentsExtracted,
     };
   } catch (error) {
     await store.close();

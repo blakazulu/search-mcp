@@ -163,6 +163,9 @@ export const ConfigSchema = z
 
     /** Hybrid search configuration (combining vector and keyword search) */
     hybridSearch: HybridSearchSchema.default(DEFAULT_HYBRID_SEARCH),
+
+    /** Whether to extract code comments (JSDoc, docstrings) and index them in docs search (SMCP-100) */
+    extractComments: z.boolean().default(true),
   })
   .strict()
   .passthrough(); // Allow underscore-prefixed documentation fields
@@ -205,6 +208,7 @@ export const DEFAULT_CONFIG: Config = {
   indexingStrategy: 'realtime',
   chunkingStrategy: 'code-aware',
   hybridSearch: DEFAULT_HYBRID_SEARCH,
+  extractComments: true,
 };
 
 /**

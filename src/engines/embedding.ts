@@ -26,6 +26,47 @@ import {
  */
 export const CODE_MODEL_NAME = 'Xenova/bge-small-en-v1.5';
 
+// ============================================================================
+// Domain-Specific Embedding Prompts (SMCP-096)
+// ============================================================================
+
+/**
+ * Prompt type for embedding operations.
+ * - 'document': Used when indexing content (no prefix for BGE models)
+ * - 'query': Used when searching (adds instruction prefix for better retrieval)
+ */
+export type PromptType = 'document' | 'query';
+
+/**
+ * Model-specific prompt configurations.
+ * BGE models benefit from instruction prefixes for queries but not for documents.
+ * Based on BGE model documentation: https://huggingface.co/BAAI/bge-small-en-v1.5
+ */
+export interface ModelPromptConfig {
+  /** Prefix for document/passage embedding (usually empty for BGE) */
+  documentPrefix: string;
+  /** Prefix for query embedding (instruction for BGE models) */
+  queryPrefix: string;
+}
+
+/**
+ * Prompt configurations for supported embedding models.
+ * BGE models use an instruction prefix for queries to improve retrieval quality.
+ * Documents are embedded without prefix as per BGE documentation.
+ */
+export const MODEL_PROMPTS: Record<string, ModelPromptConfig> = {
+  // BGE-small-en-v1.5 (code embedding model)
+  'Xenova/bge-small-en-v1.5': {
+    documentPrefix: '', // No prefix for documents
+    queryPrefix: 'Represent this sentence for searching relevant passages: ',
+  },
+  // BGE-base-en-v1.5 (docs embedding model)
+  'Xenova/bge-base-en-v1.5': {
+    documentPrefix: '', // No prefix for documents
+    queryPrefix: 'Represent this sentence for searching relevant passages: ',
+  },
+};
+
 /**
  * Dimension of code embedding vectors
  * BGE-small produces 384-dimensional vectors
@@ -133,6 +174,22 @@ export interface EmbeddingEngineConfig {
    * - undefined: Auto-detect best available device
    */
   device?: ComputeDevice;
+}
+
+/**
+ * Get the prompt prefix for a given model and prompt type.
+ * Falls back to empty string if model is not in the configuration.
+ *
+ * @param modelName - The model name (e.g., 'Xenova/bge-small-en-v1.5')
+ * @param promptType - The type of embedding ('document' or 'query')
+ * @returns The prefix string to prepend to the text
+ */
+export function getPromptPrefix(modelName: string, promptType: PromptType): string {
+  const config = MODEL_PROMPTS[modelName];
+  if (!config) {
+    return ''; // Unknown model, use no prefix
+  }
+  return promptType === 'query' ? config.queryPrefix : config.documentPrefix;
 }
 
 /**
@@ -500,11 +557,17 @@ export class EmbeddingEngine {
   /**
    * Embed a single text string into a vector.
    *
+   * SMCP-096: Supports domain-specific prompts for improved retrieval quality.
+   * - Use 'document' when indexing content (no prefix for BGE models)
+   * - Use 'query' when searching (adds instruction prefix for BGE models)
+   *
    * @param text - The text to embed
-   * @returns A 384-dimensional vector
+   * @param promptType - The type of embedding: 'document' for indexing, 'query' for searching.
+   *                     Defaults to 'document' for backward compatibility.
+   * @returns A vector with dimensions matching the configured model
    * @throws MCPError with MODEL_DOWNLOAD_FAILED if model not initialized
    */
-  async embed(text: string): Promise<number[]> {
+  async embed(text: string, promptType: PromptType = 'document'): Promise<number[]> {
     // Ensure model is initialized
     await this.initialize();
 
@@ -513,14 +576,21 @@ export class EmbeddingEngine {
     }
 
     const logger = getLogger();
+
+    // SMCP-096: Apply domain-specific prompt prefix
+    const prefix = getPromptPrefix(this.config.modelName, promptType);
+    const textWithPrefix = prefix + text;
+
     logger.debug('EmbeddingEngine', 'Embedding single text', {
       textLength: text.length,
+      promptType,
+      hasPrefix: prefix.length > 0,
     });
 
     let output: { data: unknown; dispose?: () => void } | null = null;
     try {
-      // Run the embedding
-      output = await this.pipeline(text, {
+      // Run the embedding with the prefixed text
+      output = await this.pipeline(textWithPrefix, {
         pooling: 'mean',
         normalize: true,
       });
@@ -541,6 +611,7 @@ export class EmbeddingEngine {
       logger.error('EmbeddingEngine', 'Failed to embed text', {
         error: err.message,
         textLength: text.length,
+        promptType,
       });
       throw err;
     } finally {
@@ -558,6 +629,10 @@ export class EmbeddingEngine {
   /**
    * Embed multiple texts in batches for efficiency.
    *
+   * SMCP-096: Supports domain-specific prompts for improved retrieval quality.
+   * - Use 'document' when indexing content (no prefix for BGE models)
+   * - Use 'query' when searching (adds instruction prefix for BGE models)
+   *
    * Batch size is optimized based on compute device:
    * - GPU: 64 texts per batch (higher parallelism)
    * - CPU: 32 texts per batch (balance speed and memory)
@@ -568,17 +643,24 @@ export class EmbeddingEngine {
    *
    * @param texts - Array of texts to embed
    * @param onProgress - Optional callback for progress updates
+   * @param promptType - The type of embedding: 'document' for indexing, 'query' for searching.
+   *                     Defaults to 'document' for backward compatibility.
    * @returns BatchEmbeddingResult with only successful embeddings, their indices, and failure count
    */
   async embedBatch(
     texts: string[],
-    onProgress?: EmbeddingProgressCallback
+    onProgress?: EmbeddingProgressCallback,
+    promptType: PromptType = 'document'
   ): Promise<BatchEmbeddingResult> {
-    return this.embedBatchWithStats(texts, onProgress);
+    return this.embedBatchWithStats(texts, onProgress, promptType);
   }
 
   /**
    * Embed multiple texts with failure tracking (MCP-13)
+   *
+   * SMCP-096: Supports domain-specific prompts for improved retrieval quality.
+   * - Use 'document' when indexing content (no prefix for BGE models)
+   * - Use 'query' when searching (adds instruction prefix for BGE models)
    *
    * Unlike embedBatch, this method returns detailed statistics about failures
    * and only includes successfully embedded vectors.
@@ -590,11 +672,14 @@ export class EmbeddingEngine {
    *
    * @param texts - Array of texts to embed
    * @param onProgress - Optional callback for progress updates
+   * @param promptType - The type of embedding: 'document' for indexing, 'query' for searching.
+   *                     Defaults to 'document' for backward compatibility.
    * @returns BatchEmbeddingResult with vectors, success indices, and failure count
    */
   async embedBatchWithStats(
     texts: string[],
-    onProgress?: EmbeddingProgressCallback
+    onProgress?: EmbeddingProgressCallback,
+    promptType: PromptType = 'document'
   ): Promise<BatchEmbeddingResult> {
     if (texts.length === 0) {
       return { vectors: [], successIndices: [], failedCount: 0 };
@@ -612,11 +697,17 @@ export class EmbeddingEngine {
     const deviceType = this.deviceInfo?.device || 'cpu';
     const startTime = Date.now();
 
+    // SMCP-096: Get the prompt prefix for this model and type
+    const prefix = getPromptPrefix(this.config.modelName, promptType);
+    const hasPrefix = prefix.length > 0;
+
     logger.info('EmbeddingEngine', 'Starting batch embedding', {
       totalTexts: texts.length,
       batchSize: effectiveBatchSize,
       device: deviceType,
       gpuName: this.deviceInfo?.gpuName,
+      promptType,
+      hasPrefix,
     });
 
     const vectors: number[][] = [];
@@ -641,8 +732,11 @@ export class EmbeddingEngine {
         const originalIndex = i + j;
         let output: { data: unknown; dispose?: () => void } | null = null;
 
+        // SMCP-096: Apply prompt prefix
+        const textWithPrefix = prefix + text;
+
         try {
-          output = await this.pipeline(text, {
+          output = await this.pipeline(textWithPrefix, {
             pooling: 'mean',
             normalize: true,
           });
@@ -707,18 +801,25 @@ export class EmbeddingEngine {
   /**
    * Embed texts and return full results with original text.
    *
+   * SMCP-096: Supports domain-specific prompts for improved retrieval quality.
+   * - Use 'document' when indexing content (no prefix for BGE models)
+   * - Use 'query' when searching (adds instruction prefix for BGE models)
+   *
    * SECURITY (SMCP-054): Returns only successful embeddings.
    * Failed embeddings are excluded from results (no zero vectors).
    *
    * @param texts - Array of texts to embed
    * @param onProgress - Optional callback for progress updates
+   * @param promptType - The type of embedding: 'document' for indexing, 'query' for searching.
+   *                     Defaults to 'document' for backward compatibility.
    * @returns Array of EmbeddingResult objects for successful embeddings only
    */
   async embedWithResults(
     texts: string[],
-    onProgress?: EmbeddingProgressCallback
+    onProgress?: EmbeddingProgressCallback,
+    promptType: PromptType = 'document'
   ): Promise<EmbeddingResult[]> {
-    const batchResult = await this.embedBatchWithStats(texts, onProgress);
+    const batchResult = await this.embedBatchWithStats(texts, onProgress, promptType);
 
     // Return only successful embeddings (SMCP-054: no zero vectors)
     return batchResult.successIndices.map((originalIndex, successIdx) => ({
@@ -832,28 +933,41 @@ export function resetEmbeddingEngine(): void {
 /**
  * Embed a single text string using the singleton engine.
  *
+ * SMCP-096: Supports domain-specific prompts for improved retrieval quality.
+ * - Use 'document' when indexing content (no prefix for BGE models)
+ * - Use 'query' when searching (adds instruction prefix for BGE models)
+ *
  * @param text - The text to embed
+ * @param promptType - The type of embedding: 'document' for indexing, 'query' for searching.
+ *                     Defaults to 'document' for backward compatibility.
  * @returns A 384-dimensional vector
  */
-export async function embedText(text: string): Promise<number[]> {
+export async function embedText(text: string, promptType: PromptType = 'document'): Promise<number[]> {
   const engine = getEmbeddingEngine();
-  return engine.embed(text);
+  return engine.embed(text, promptType);
 }
 
 /**
  * Embed multiple texts using the singleton engine.
+ *
+ * SMCP-096: Supports domain-specific prompts for improved retrieval quality.
+ * - Use 'document' when indexing content (no prefix for BGE models)
+ * - Use 'query' when searching (adds instruction prefix for BGE models)
  *
  * SECURITY (SMCP-054): Returns BatchEmbeddingResult with only successful embeddings.
  * No zero vectors are inserted for failed embeddings.
  *
  * @param texts - Array of texts to embed
  * @param onProgress - Optional callback for progress updates
+ * @param promptType - The type of embedding: 'document' for indexing, 'query' for searching.
+ *                     Defaults to 'document' for backward compatibility.
  * @returns BatchEmbeddingResult with successful embeddings, their indices, and failure count
  */
 export async function embedBatch(
   texts: string[],
-  onProgress?: EmbeddingProgressCallback
+  onProgress?: EmbeddingProgressCallback,
+  promptType: PromptType = 'document'
 ): Promise<BatchEmbeddingResult> {
   const engine = getEmbeddingEngine();
-  return engine.embedBatch(texts, onProgress);
+  return engine.embedBatch(texts, onProgress, promptType);
 }

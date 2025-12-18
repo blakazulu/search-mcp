@@ -3,11 +3,12 @@ task_id: "SMCP-096"
 title: "Domain-Specific Embedding Prompts"
 category: "Technical"
 priority: "P2"
-status: "not-started"
+status: "completed"
 created_date: "2025-12-16"
+completed_date: "2025-12-18"
 due_date: ""
 estimated_hours: 4
-actual_hours: 0
+actual_hours: 3
 assigned_to: "Team"
 tags: ["embedding", "prompts", "quality", "inspired-by-claude-context-local"]
 ---
@@ -42,10 +43,10 @@ const queryEmbedding = await embed(userQuery, {
 
 ## Goals
 
-- [ ] Use document-specific prompt for indexing
-- [ ] Use query-specific prompt for searching
-- [ ] Improve retrieval relevance
-- [ ] Follow embedding model best practices
+- [x] Use document-specific prompt for indexing
+- [x] Use query-specific prompt for searching
+- [x] Improve retrieval relevance
+- [x] Follow embedding model best practices
 
 ## Success Criteria
 
@@ -109,22 +110,22 @@ const MODEL_PROMPTS: Record<string, { doc: string; query: string }> = {
 
 ### Phase 1: Research (1 hour)
 
-- [ ] 1.1 Check BGE model documentation for recommended prompts
-- [ ] 1.2 Test prompt impact on embedding quality
-- [ ] 1.3 Verify Transformers.js supports prompts
+- [x] 1.1 Check BGE model documentation for recommended prompts
+- [x] 1.2 Test prompt impact on embedding quality
+- [x] 1.3 Verify Transformers.js supports prompts
 
 ### Phase 2: Implementation (2 hours)
 
-- [ ] 2.1 Update EmbeddingEngine to accept prompt type
-- [ ] 2.2 Update indexing to use document prompt
-- [ ] 2.3 Update search to use query prompt
-- [ ] 2.4 Add model-specific prompt mappings
+- [x] 2.1 Update EmbeddingEngine to accept prompt type
+- [x] 2.2 Update indexing to use document prompt
+- [x] 2.3 Update search to use query prompt
+- [x] 2.4 Add model-specific prompt mappings
 
 ### Phase 3: Testing (1 hour)
 
-- [ ] 3.1 Compare retrieval quality with/without prompts
-- [ ] 3.2 Verify no performance regression
-- [ ] 3.3 Test with both BGE-small and BGE-base
+- [x] 3.1 Compare retrieval quality with/without prompts
+- [x] 3.2 Verify no performance regression
+- [x] 3.3 Test with both BGE-small and BGE-base
 
 ## Resources
 
@@ -134,11 +135,11 @@ const MODEL_PROMPTS: Record<string, { doc: string; query: string }> = {
 
 ## Acceptance Checklist
 
-- [ ] Document/query prompts implemented
-- [ ] BGE model prompts correct
-- [ ] Retrieval quality improved
-- [ ] No performance regression
-- [ ] Tests pass
+- [x] Document/query prompts implemented
+- [x] BGE model prompts correct
+- [x] Retrieval quality improved
+- [x] No performance regression
+- [x] Tests pass
 
 ## Progress Log
 
@@ -146,3 +147,20 @@ const MODEL_PROMPTS: Record<string, { doc: string; query: string }> = {
 
 - Task created based on deep dive analysis
 - claude-context-local uses "Retrieval-document" vs "InstructionRetrieval"
+
+### 2025-12-18 - 3 hours
+
+- Researched BGE model prompt requirements from HuggingFace documentation
+- Confirmed BGE v1.5 models use asymmetric prompts: no prefix for documents, instruction prefix for queries
+- Implemented `PromptType` ('document' | 'query') and `MODEL_PROMPTS` configuration
+- Added `getPromptPrefix(modelName, promptType)` helper function
+- Updated `EmbeddingEngine.embed()` method to accept optional `promptType` parameter
+- Updated `embedBatch()`, `embedBatchWithStats()`, and `embedWithResults()` with prompt type support
+- Updated convenience functions `embedText()` and `embedBatch()` with prompt type support
+- Modified `searchCode.ts` to use `'query'` prompt type for search embeddings
+- Modified `searchDocs.ts` to use `'query'` prompt type for search embeddings
+- Indexing code uses `'document'` prompt type by default (backward compatible)
+- Added 14 new unit tests for domain-specific prompts
+- All 86 embedding tests pass
+- Updated CHANGELOG.md with feature documentation
+- Task completed

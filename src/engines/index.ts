@@ -107,6 +107,11 @@ export {
   // Common constants
   BATCH_SIZE,
   GPU_BATCH_SIZE,
+  // Domain-specific prompts (SMCP-096)
+  type PromptType,
+  type ModelPromptConfig,
+  MODEL_PROMPTS,
+  getPromptPrefix,
   // Types
   type EmbeddingResult,
   type EmbeddingProgressCallback,

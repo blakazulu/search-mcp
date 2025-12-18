@@ -9,6 +9,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Domain-Specific Embedding Prompts (SMCP-096)
+- **Different prompts for document embedding vs query embedding** - Follows BGE model best practices
+  - Documents are embedded without prefix (optimized for passages)
+  - Queries are embedded with instruction prefix: "Represent this sentence for searching relevant passages: "
+  - This asymmetric approach improves retrieval quality as recommended by BGE model authors
+
+- **New `PromptType` enum** - Specifies the type of embedding:
+  - `'document'` - Used when indexing content (no prefix)
+  - `'query'` - Used when searching (adds instruction prefix)
+
+- **Model-specific prompt configurations (`MODEL_PROMPTS`):**
+  - `Xenova/bge-small-en-v1.5` (code embedding): document='', query='Represent this sentence for...'
+  - `Xenova/bge-base-en-v1.5` (docs embedding): document='', query='Represent this sentence for...'
+
+- **New `getPromptPrefix(modelName, promptType)` helper function:**
+  - Returns the appropriate prefix for a given model and prompt type
+  - Falls back to empty string for unknown models
+
+- **Updated embedding methods with prompt type support:**
+  - `embed(text, promptType?)` - Single text embedding with optional prompt type
+  - `embedBatch(texts, onProgress?, promptType?)` - Batch embedding with optional prompt type
+  - `embedBatchWithStats(texts, onProgress?, promptType?)` - Batch with stats and prompt type
+  - `embedWithResults(texts, onProgress?, promptType?)` - Batch with results and prompt type
+  - Convenience functions `embedText()` and `embedBatch()` also updated
+
+- **Integration with search tools:**
+  - `search_code` now uses `'query'` prompt type for embedding search queries
+  - `search_docs` now uses `'query'` prompt type for embedding search queries
+  - Indexing operations use `'document'` prompt type by default (no code changes needed)
+
+- **Benefits:**
+  - Improved retrieval relevance following sentence-transformer best practices
+  - Compatible with current BGE models (no reindexing required)
+  - No significant performance impact (just a string prefix)
+  - Backward compatible (defaults to document prompt type)
+
+### Testing
+- 14 new unit tests for domain-specific prompts in `tests/unit/engines/embedding.test.ts`
+- Tests verify prefix application for both document and query prompt types
+- Tests cover `getPromptPrefix()` helper function and `MODEL_PROMPTS` constant
+
 #### Query Expansion & Synonyms (SMCP-095)
 - **New `queryExpansion` engine** (`src/engines/queryExpansion.ts`) - Improves search recall by expanding abbreviations and synonyms
   - When users search for "auth", the query is expanded to include "authentication authorize login session token"

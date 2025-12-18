@@ -1,21 +1,21 @@
 {
-  "timestamp": "2025-12-17T21:57:36.472Z",
+  "timestamp": "2025-12-18T06:31:27.071Z",
   "results": [
     {
       "queryId": 1,
       "query": "how does file watching work",
       "type": "Conceptual",
       "mcp": {
-        "searchTimeMs": 1156,
+        "searchTimeMs": 1953,
         "resultCount": 9,
-        "totalChars": 34594,
-        "estimatedTokens": 8649
+        "totalChars": 34646,
+        "estimatedTokens": 8662
       },
       "grep": {
-        "filesMatched": 28,
-        "totalMatches": 617,
-        "totalChars": 528602,
-        "estimatedTokens": 132151
+        "filesMatched": 26,
+        "totalMatches": 615,
+        "totalChars": 493421,
+        "estimatedTokens": 123355
       },
       "dragDrop": {
         "filesCount": 3,
@@ -28,16 +28,16 @@
       "query": "error handling patterns",
       "type": "Pattern",
       "mcp": {
-        "searchTimeMs": 480,
-        "resultCount": 7,
-        "totalChars": 28293,
-        "estimatedTokens": 7073
+        "searchTimeMs": 837,
+        "resultCount": 8,
+        "totalChars": 32004,
+        "estimatedTokens": 8001
       },
       "grep": {
-        "filesMatched": 61,
-        "totalMatches": 2815,
-        "totalChars": 1145063,
-        "estimatedTokens": 286266
+        "filesMatched": 60,
+        "totalMatches": 2720,
+        "totalChars": 1120414,
+        "estimatedTokens": 280104
       },
       "dragDrop": {
         "filesCount": 1,
@@ -50,21 +50,21 @@
       "query": "LanceDB vector search",
       "type": "Technical",
       "mcp": {
-        "searchTimeMs": 480,
+        "searchTimeMs": 589,
         "resultCount": 7,
-        "totalChars": 26669,
-        "estimatedTokens": 6667
+        "totalChars": 26476,
+        "estimatedTokens": 6619
       },
       "grep": {
-        "filesMatched": 64,
-        "totalMatches": 2365,
-        "totalChars": 1129620,
-        "estimatedTokens": 282405
+        "filesMatched": 63,
+        "totalMatches": 2289,
+        "totalChars": 1104971,
+        "estimatedTokens": 276243
       },
       "dragDrop": {
         "filesCount": 4,
-        "totalChars": 103560,
-        "estimatedTokens": 25890
+        "totalChars": 101512,
+        "estimatedTokens": 25378
       }
     },
     {
@@ -72,16 +72,16 @@
       "query": "security vulnerabilities",
       "type": "Broad",
       "mcp": {
-        "searchTimeMs": 475,
-        "resultCount": 7,
-        "totalChars": 30178,
-        "estimatedTokens": 7545
+        "searchTimeMs": 592,
+        "resultCount": 6,
+        "totalChars": 26222,
+        "estimatedTokens": 6556
       },
       "grep": {
-        "filesMatched": 42,
-        "totalMatches": 411,
-        "totalChars": 816236,
-        "estimatedTokens": 204059
+        "filesMatched": 41,
+        "totalMatches": 406,
+        "totalChars": 791871,
+        "estimatedTokens": 197968
       },
       "dragDrop": {
         "filesCount": 3,
@@ -94,16 +94,16 @@
       "query": "configuration options",
       "type": "Documentation",
       "mcp": {
-        "searchTimeMs": 479,
-        "resultCount": 9,
-        "totalChars": 29840,
-        "estimatedTokens": 7460
+        "searchTimeMs": 589,
+        "resultCount": 10,
+        "totalChars": 33730,
+        "estimatedTokens": 8433
       },
       "grep": {
-        "filesMatched": 61,
-        "totalMatches": 1616,
-        "totalChars": 1112722,
-        "estimatedTokens": 278181
+        "filesMatched": 60,
+        "totalMatches": 1558,
+        "totalChars": 1088073,
+        "estimatedTokens": 272018
       },
       "dragDrop": {
         "filesCount": 2,
@@ -113,10 +113,10 @@
     }
   ],
   "totals": {
-    "mcp": 37394,
-    "grep": 1183062,
-    "dragDrop": 76843,
-    "mcpVsGrep": "31.6",
-    "mcpVsDragDrop": "2.1"
+    "mcp": 38271,
+    "grep": 1149688,
+    "dragDrop": 76331,
+    "mcpVsGrep": "30.0",
+    "mcpVsDragDrop": "2.0"
   }
 }

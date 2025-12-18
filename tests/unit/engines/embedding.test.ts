@@ -321,10 +321,11 @@ describe('Embedding Engine', () => {
         expect(engine.isInitialized()).toBe(true);
       });
 
-      it('should call pipeline with correct options', async () => {
+      it('should call pipeline with correct options (default document prompt)', async () => {
         const { EmbeddingEngine } = await import('../../../src/engines/embedding.js');
         const engine = new EmbeddingEngine();
 
+        // Default prompt type is 'document' which has no prefix for BGE models
         await engine.embed('Test text');
 
         expect(mockPipelineInstance).toHaveBeenCalledWith('Test text', {
@@ -389,6 +390,77 @@ describe('Embedding Engine', () => {
         // Should throw an error for dimension mismatch
         await expect(engine.embed('Test text')).rejects.toThrow(
           'Invalid embedding dimension: expected 384, got 256'
+        );
+      });
+    });
+
+    describe('Domain-Specific Prompts (SMCP-096)', () => {
+      it('should not add prefix for document prompt type (default)', async () => {
+        const { EmbeddingEngine } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine();
+
+        await engine.embed('Test text', 'document');
+
+        // Document prompt type has no prefix for BGE models
+        expect(mockPipelineInstance).toHaveBeenCalledWith('Test text', {
+          pooling: 'mean',
+          normalize: true,
+        });
+      });
+
+      it('should add query instruction prefix for query prompt type', async () => {
+        const { EmbeddingEngine } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine();
+
+        await engine.embed('Test text', 'query');
+
+        // Query prompt type adds the BGE instruction prefix
+        expect(mockPipelineInstance).toHaveBeenCalledWith(
+          'Represent this sentence for searching relevant passages: Test text',
+          {
+            pooling: 'mean',
+            normalize: true,
+          }
+        );
+      });
+
+      it('should apply query prefix in embedBatch', async () => {
+        const { EmbeddingEngine } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine();
+
+        const texts = ['Query 1', 'Query 2'];
+        await engine.embedBatch(texts, undefined, 'query');
+
+        // Both texts should have the query prefix
+        expect(mockPipelineInstance).toHaveBeenNthCalledWith(
+          1,
+          'Represent this sentence for searching relevant passages: Query 1',
+          { pooling: 'mean', normalize: true }
+        );
+        expect(mockPipelineInstance).toHaveBeenNthCalledWith(
+          2,
+          'Represent this sentence for searching relevant passages: Query 2',
+          { pooling: 'mean', normalize: true }
+        );
+      });
+
+      it('should use document prompt by default in embedBatch', async () => {
+        const { EmbeddingEngine } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine();
+
+        const texts = ['Doc 1', 'Doc 2'];
+        await engine.embedBatch(texts);
+
+        // No prefix for document prompt type (default)
+        expect(mockPipelineInstance).toHaveBeenNthCalledWith(
+          1,
+          'Doc 1',
+          { pooling: 'mean', normalize: true }
+        );
+        expect(mockPipelineInstance).toHaveBeenNthCalledWith(
+          2,
+          'Doc 2',
+          { pooling: 'mean', normalize: true }
         );
       });
     });
@@ -990,6 +1062,79 @@ describe('Embedding Engine', () => {
         // Accept any valid device type - 'dml' on Windows, 'webgpu' in browser, 'cpu' as fallback
         expect(['cpu', 'webgpu', 'dml']).toContain(device);
         expect(engine.getDeviceInfo()).not.toBeNull();
+      });
+    });
+  });
+
+  describe('Domain-Specific Prompt Utilities (SMCP-096)', () => {
+    describe('MODEL_PROMPTS constant', () => {
+      it('should define prompts for BGE-small model', async () => {
+        const { MODEL_PROMPTS, CODE_MODEL_NAME } = await import('../../../src/engines/embedding.js');
+
+        expect(MODEL_PROMPTS[CODE_MODEL_NAME]).toBeDefined();
+        expect(MODEL_PROMPTS[CODE_MODEL_NAME].documentPrefix).toBe('');
+        expect(MODEL_PROMPTS[CODE_MODEL_NAME].queryPrefix).toBe(
+          'Represent this sentence for searching relevant passages: '
+        );
+      });
+
+      it('should define prompts for BGE-base model', async () => {
+        const { MODEL_PROMPTS, DOCS_MODEL_NAME } = await import('../../../src/engines/embedding.js');
+
+        expect(MODEL_PROMPTS[DOCS_MODEL_NAME]).toBeDefined();
+        expect(MODEL_PROMPTS[DOCS_MODEL_NAME].documentPrefix).toBe('');
+        expect(MODEL_PROMPTS[DOCS_MODEL_NAME].queryPrefix).toBe(
+          'Represent this sentence for searching relevant passages: '
+        );
+      });
+    });
+
+    describe('getPromptPrefix function', () => {
+      it('should return empty string for document prompt type', async () => {
+        const { getPromptPrefix, CODE_MODEL_NAME } = await import('../../../src/engines/embedding.js');
+
+        const prefix = getPromptPrefix(CODE_MODEL_NAME, 'document');
+        expect(prefix).toBe('');
+      });
+
+      it('should return query instruction for query prompt type', async () => {
+        const { getPromptPrefix, CODE_MODEL_NAME } = await import('../../../src/engines/embedding.js');
+
+        const prefix = getPromptPrefix(CODE_MODEL_NAME, 'query');
+        expect(prefix).toBe('Represent this sentence for searching relevant passages: ');
+      });
+
+      it('should return empty string for unknown models', async () => {
+        const { getPromptPrefix } = await import('../../../src/engines/embedding.js');
+
+        const docPrefix = getPromptPrefix('unknown/model', 'document');
+        const queryPrefix = getPromptPrefix('unknown/model', 'query');
+
+        expect(docPrefix).toBe('');
+        expect(queryPrefix).toBe('');
+      });
+
+      it('should work with docs model', async () => {
+        const { getPromptPrefix, DOCS_MODEL_NAME } = await import('../../../src/engines/embedding.js');
+
+        const docPrefix = getPromptPrefix(DOCS_MODEL_NAME, 'document');
+        const queryPrefix = getPromptPrefix(DOCS_MODEL_NAME, 'query');
+
+        expect(docPrefix).toBe('');
+        expect(queryPrefix).toBe('Represent this sentence for searching relevant passages: ');
+      });
+    });
+
+    describe('PromptType type', () => {
+      it('should accept document and query as valid prompt types', async () => {
+        const { EmbeddingEngine } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine();
+
+        // Both should work without errors
+        await engine.embed('test', 'document');
+        await engine.embed('test', 'query');
+
+        expect(mockPipelineInstance).toHaveBeenCalledTimes(2);
       });
     });
   });

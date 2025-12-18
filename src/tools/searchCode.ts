@@ -322,9 +322,10 @@ export async function searchCode(
 
     // SMCP-074: Generate query embedding using code embedding engine
     // Use expanded query for semantic search to improve recall
+    // SMCP-096: Use 'query' prompt type for better retrieval quality
     const embeddingEngine = getCodeEmbeddingEngine();
     await embeddingEngine.initialize();
-    const queryVector = await embeddingEngine.embed(expandedQuery);
+    const queryVector = await embeddingEngine.embed(expandedQuery, 'query');
 
     logger.debug('searchCode', 'Query embedding generated', {
       dimension: queryVector.length,

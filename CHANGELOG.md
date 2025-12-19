@@ -5,9 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.5.0] - 2025-12-19
 
 ### Added
+
+#### Updated Benchmarks
+- **Token efficiency improved to 57.9x vs grep** (up from 40-43x)
+  - Full codebase benchmark: 306 files, 4,231 chunks
+  - MCP uses only 1.7% of the tokens that grep would require
+  - Best query performance: 89.9x efficiency for "error handling patterns"
+- **Updated documentation** with new benchmark results in README.md and search-comparison-test.md
 
 #### Code Comment Extraction (SMCP-100)
 - **Extract documentation comments from code files** - JSDoc, docstrings, and other doc comments are now searchable via `search_docs`

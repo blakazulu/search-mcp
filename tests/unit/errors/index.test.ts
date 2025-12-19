@@ -38,9 +38,9 @@ describe('Error Handling System', () => {
       expect(ErrorCode.SYMLINK_NOT_ALLOWED).toBe('SYMLINK_NOT_ALLOWED');
     });
 
-    it('should have exactly 10 error codes', () => {
+    it('should have exactly 12 error codes', () => {
       const codes = Object.values(ErrorCode);
-      expect(codes.length).toBe(10);
+      expect(codes.length).toBe(12);
     });
 
     it('should have unique values for each code', () => {

@@ -1,6 +1,6 @@
 # Search MCP 🔍
 
-**Make your AI 40x smarter about your code.**
+**Make your AI 58x smarter about your code.**
 
 ```bash
 # Navigate to your project, then run:
@@ -23,9 +23,9 @@ Your AI assistant searches your entire codebase semantically. No API keys. No cl
 | Without Search MCP | With Search MCP |
 |--------------------|-----------------|
 | Copy-paste files manually | AI finds code automatically |
-| ~159,000 tokens per query | ~7,800 tokens per query |
+| ~488,000 tokens per query | ~8,400 tokens per query |
 | "Context limit exceeded" | Always fits |
-| Multiple tool calls | Single 14ms search |
+| Multiple tool calls | Single semantic search |
 
 ---
 
@@ -184,13 +184,14 @@ See more [examples and use cases](docs/readme-files/examples.md).
 
 | Metric | Value |
 |--------|-------|
-| **Efficiency vs Grep** | 40-43x fewer tokens |
-| **Search speed** | 14-315ms (config dependent) |
-| **Tokens per query** | ~7,800 |
+| **Efficiency vs Grep** | **58x fewer tokens** |
+| **Search speed** | ~400ms (with GPU acceleration) |
+| **Tokens per query** | ~8,400 |
+| **Codebase tested** | 306 files, 4,231 chunks |
 
 Semantic search returns focused code chunks instead of entire files. Your AI stays under context limits even on large codebases.
 
-[Full benchmark details →](docs/readme-files/search-comparison-test.md) | [Full codebase analysis →](tests/reports/full-codebase-analysis-2025-12-13.md)
+[Full benchmark details →](docs/readme-files/search-comparison-test.md)
 
 ---
 

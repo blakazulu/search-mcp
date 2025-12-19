@@ -119,6 +119,7 @@ describe('Config Manager', () => {
         enhancedToolDescriptions: true,
         indexingStrategy: 'lazy' as const,
         chunkingStrategy: 'character' as const,
+        extractComments: true,
         hybridSearch: {
           enabled: false,
           ftsEngine: 'native' as const,
@@ -431,6 +432,7 @@ describe('Config Manager', () => {
         enhancedToolDescriptions: true,
         indexingStrategy: 'lazy',
         chunkingStrategy: 'character',
+        extractComments: true,
         hybridSearch: {
           enabled: false,
           ftsEngine: 'native',
@@ -782,6 +784,7 @@ describe('Config Manager', () => {
           enhancedToolDescriptions: true,
           indexingStrategy: 'git',
           chunkingStrategy: 'character',
+          extractComments: true,
           hybridSearch: {
             enabled: false,
             ftsEngine: 'js',

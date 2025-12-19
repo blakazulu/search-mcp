@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2025-12-19
+
+### Added
+
+#### Clean CLI Output (SMCP-101)
+- **Silent console mode for cleaner CLI output** - Verbose log messages are now suppressed during CLI operations
+  - Before: CLI showed timestamped log messages mixed with progress bars
+  - After: Clean progress bars and spinners without log noise
+
+- **`--verbose` flag for debugging** - Re-enable detailed logging when needed
+  - `npx @liraz-sbz/search-mcp setup --verbose` - Show all logs during setup
+  - `npx @liraz-sbz/search-mcp index --verbose` - Show all logs during indexing
+  - `npx @liraz-sbz/search-mcp reindex --verbose` - Show all logs during reindexing
+
+- **ONNX runtime warning suppression** - Native ONNX warnings no longer pollute console output
+  - Filters "nodes were not assigned to preferred execution providers" warnings
+  - Filters "Unable to determine content-length" messages during model download
+  - Warnings still visible in debug mode (DEBUG=1 or SEARCH_MCP_DEBUG=1)
+
+- **Aggregated progress tracking** - Progress bars now accumulate across batches
+  - Before: Progress bars reset to 0% for each processing batch
+  - After: Single continuous progress bar per phase (scanning, chunking, embedding)
+
+- **Separate progress sections for code and docs** - Clear visual separation between code and docs indexing
+  - "Code Index:" section with scanning, chunking, embedding progress
+  - "Docs Index:" section with same progress phases (if docs indexing enabled)
+  - Summary shows separate stats: code files/chunks and docs files/chunks
+
+- **Compute device choice during setup** - Users can now choose between GPU and CPU before indexing
+  - GPU (DirectML): Faster indexing but may cause system stuttering
+  - CPU: Slower but system stays responsive
+  - Only shown on Windows (DirectML is Windows-only)
+  - New `setPreferredDevice()` API for programmatic control
+
+- **Logger `setSilentConsole()` method** - New API to programmatically suppress console output
+  - Logs still written to log files for debugging
+  - Only console output is suppressed
+
 ## [1.5.0] - 2025-12-19
 
 ### Added
@@ -712,6 +750,12 @@ interface AdvancedRankingConfig {
 - Tests cover all ranking factors
 - Performance tests: < 50ms for 100 results, < 200ms for 500 results
 - Edge cases: empty queries, unicode, very long queries
+
+### Fixed
+- **Tree-sitter WASM files not found when running via npx** - Added support for hoisted npm dependencies
+  - When npm installs dependencies via npx, it hoists them to a parent `node_modules` folder
+  - Added additional search paths to find `web-tree-sitter` and `tree-sitter-wasms` in hoisted locations
+  - This fixes "Could not find web-tree-sitter WASM file" errors during code comment extraction
 
 ## [1.4.0] - 2025-12-16
 

@@ -450,6 +450,7 @@ export class EmbeddingEngine {
   /**
    * Initialize the pipeline with a specific device.
    * Handles shader compilation detection for WebGPU and DirectML initialization.
+   * Suppresses ONNX runtime warnings that pollute console output.
    */
   private async initializePipelineWithDevice(
     device: ComputeDevice,
@@ -468,11 +469,31 @@ export class EmbeddingEngine {
       `Loading ${this.config.displayName} model on ${deviceDisplayName} (may download on first use)...`
     );
 
-    // Create the feature extraction pipeline
-    // Note: Using @ts-expect-error due to complex union types in @huggingface/transformers v3
-    // The pipeline function has 60+ overloads which exceed TypeScript's union type complexity limit
-    // @ts-expect-error - TypeScript cannot handle the complex union type of pipeline()
-    this.pipeline = await pipeline('feature-extraction', this.config.modelName, {
+    // Suppress ONNX runtime warnings during model initialization (SMCP-101)
+    // These warnings are informational and clutter the CLI output:
+    // - "Some nodes were not assigned to the preferred execution providers"
+    // - "Unable to determine content-length from response headers"
+    const originalStderrWrite = process.stderr.write.bind(process.stderr);
+    const isDebugMode = process.env.DEBUG === '1' || process.env.DEBUG === 'true' || process.env.SEARCH_MCP_DEBUG;
+
+    if (!isDebugMode) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (process.stderr.write as any) = (chunk: string | Uint8Array, encoding?: BufferEncoding, cb?: (err?: Error | null) => void) => {
+        const str = typeof chunk === 'string' ? chunk : chunk?.toString?.() || '';
+        // Filter ONNX runtime warnings and content-length messages
+        if (str.includes('onnxruntime') || str.includes('Unable to determine content-length')) {
+          return true; // Suppress the output
+        }
+        return originalStderrWrite(chunk, encoding, cb);
+      };
+    }
+
+    try {
+      // Create the feature extraction pipeline
+      // Note: Using @ts-expect-error due to complex union types in @huggingface/transformers v3
+      // The pipeline function has 60+ overloads which exceed TypeScript's union type complexity limit
+      // @ts-expect-error - TypeScript cannot handle the complex union type of pipeline()
+      this.pipeline = await pipeline('feature-extraction', this.config.modelName, {
       device: device,
       dtype: 'fp32', // Use fp32 for consistent embeddings across devices
       progress_callback: (progress: {
@@ -511,14 +532,20 @@ export class EmbeddingEngine {
       },
     });
 
-    // Log a hint about shader compilation on first GPU run
-    const isGPU = device === 'webgpu' || device === 'dml';
-    if (isGPU) {
-      const elapsed = Date.now() - startTime;
-      if (elapsed > 5000 && !shaderCompilationLogged) {
-        logger.info('EmbeddingEngine', `${deviceDisplayName} initialized (subsequent runs will be faster)`, {
-          initTimeMs: elapsed,
-        });
+      // Log a hint about shader compilation on first GPU run
+      const isGPU = device === 'webgpu' || device === 'dml';
+      if (isGPU) {
+        const elapsed = Date.now() - startTime;
+        if (elapsed > 5000 && !shaderCompilationLogged) {
+          logger.info('EmbeddingEngine', `${deviceDisplayName} initialized (subsequent runs will be faster)`, {
+            initTimeMs: elapsed,
+          });
+        }
+      }
+    } finally {
+      // Restore original stderr.write (SMCP-101)
+      if (!isDebugMode) {
+        process.stderr.write = originalStderrWrite;
       }
     }
   }
@@ -850,6 +877,43 @@ let docsEngineInstance: EmbeddingEngine | null = null;
 let engineInstance: EmbeddingEngine | null = null;
 
 /**
+ * User-preferred compute device for embedding generation.
+ * Set via setPreferredDevice() before creating engine instances.
+ */
+let preferredDevice: ComputeDevice | undefined = undefined;
+
+/**
+ * Set the preferred compute device for embedding generation.
+ * Must be called BEFORE getCodeEmbeddingEngine() or getDocsEmbeddingEngine()
+ * to take effect. If engines are already created, call resetEmbeddingEngine() first.
+ *
+ * @param device - The device to use: 'cpu', 'dml' (DirectML GPU), or undefined for auto-detect
+ *
+ * @example
+ * ```typescript
+ * // Force CPU usage (slower but doesn't impact system responsiveness)
+ * setPreferredDevice('cpu');
+ *
+ * // Force DirectML GPU (faster but may cause system stuttering)
+ * setPreferredDevice('dml');
+ *
+ * // Auto-detect best device (default behavior)
+ * setPreferredDevice(undefined);
+ * ```
+ */
+export function setPreferredDevice(device: ComputeDevice | undefined): void {
+  preferredDevice = device;
+}
+
+/**
+ * Get the currently configured preferred device.
+ * @returns The preferred device or undefined if auto-detect is enabled
+ */
+export function getPreferredDevice(): ComputeDevice | undefined {
+  return preferredDevice;
+}
+
+/**
  * Get the singleton code embedding engine instance.
  *
  * Uses BGE-small model (384 dimensions) optimized for code search.
@@ -860,7 +924,11 @@ let engineInstance: EmbeddingEngine | null = null;
  */
 export function getCodeEmbeddingEngine(): EmbeddingEngine {
   if (!codeEngineInstance) {
-    codeEngineInstance = new EmbeddingEngine(CODE_ENGINE_CONFIG);
+    const config: EmbeddingEngineConfig = {
+      ...CODE_ENGINE_CONFIG,
+      device: preferredDevice,
+    };
+    codeEngineInstance = new EmbeddingEngine(config);
   }
   return codeEngineInstance;
 }
@@ -876,7 +944,11 @@ export function getCodeEmbeddingEngine(): EmbeddingEngine {
  */
 export function getDocsEmbeddingEngine(): EmbeddingEngine {
   if (!docsEngineInstance) {
-    docsEngineInstance = new EmbeddingEngine(DOCS_ENGINE_CONFIG);
+    const config: EmbeddingEngineConfig = {
+      ...DOCS_ENGINE_CONFIG,
+      device: preferredDevice,
+    };
+    docsEngineInstance = new EmbeddingEngine(config);
   }
   return docsEngineInstance;
 }

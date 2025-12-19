@@ -195,8 +195,10 @@ export class TreeSitterParser {
 
     // Try to find the WASM file in node_modules
     const possiblePaths = [
-      // Relative to current file (ES module)
+      // Relative to current file (ES module) - nested node_modules
       path.join(path.dirname(fileURLToPath(import.meta.url)), '../../node_modules/web-tree-sitter/web-tree-sitter.wasm'),
+      // Hoisted in parent node_modules (npx scenario where deps are hoisted)
+      path.join(path.dirname(fileURLToPath(import.meta.url)), '../../../web-tree-sitter/web-tree-sitter.wasm'),
       // From project root
       path.join(process.cwd(), 'node_modules/web-tree-sitter/web-tree-sitter.wasm'),
       // Global node_modules (npm link scenario)
@@ -228,8 +230,10 @@ export class TreeSitterParser {
     const logger = getLogger();
 
     const possiblePaths = [
-      // Relative to current file (ES module)
+      // Relative to current file (ES module) - nested node_modules
       path.join(path.dirname(fileURLToPath(import.meta.url)), '../../node_modules/tree-sitter-wasms/out'),
+      // Hoisted in parent node_modules (npx scenario where deps are hoisted)
+      path.join(path.dirname(fileURLToPath(import.meta.url)), '../../../tree-sitter-wasms/out'),
       // From project root
       path.join(process.cwd(), 'node_modules/tree-sitter-wasms/out'),
       // Global node_modules (npm link scenario)

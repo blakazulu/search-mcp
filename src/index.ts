@@ -83,7 +83,8 @@ async function main() {
   // Legacy flag support for backward compatibility
   if (args.includes('--setup')) {
     const { runSetup } = await import('./cli/setup.js');
-    await runSetup();
+    const verbose = args.includes('--verbose') || args.includes('-V');
+    await runSetup({ verbose });
     process.exit(0);
   }
 

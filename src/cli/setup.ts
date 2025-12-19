@@ -18,6 +18,8 @@ import { execSync } from 'node:child_process';
 import * as readline from 'node:readline';
 import ora, { Ora } from 'ora';
 import cliProgress from 'cli-progress';
+import { getLogger, initGlobalLogger } from '../utils/logger.js';
+import { setPreferredDevice, resetEmbeddingEngine } from '../engines/embedding.js';
 
 const PACKAGE_NAME = '@liraz-sbz/search-mcp';
 
@@ -400,29 +402,34 @@ async function deleteExistingIndex(projectPath: string): Promise<boolean> {
 }
 
 /**
- * Run indexing with progress display
+ * Extended result with separate code and docs stats
  */
-async function runIndexingWithProgress(projectPath: string): Promise<{
+interface IndexingResult {
   success: boolean;
-  filesIndexed: number;
-  chunksCreated: number;
+  codeFiles: number;
+  codeChunks: number;
+  docsFiles: number;
+  docsChunks: number;
   duration: string;
+  computeDevice?: string;
   error?: string;
-}> {
-  const { IndexManager } = await import('../engines/indexManager.js');
-  const { DocsIndexManager } = await import('../engines/docsIndexManager.js');
-  const { getIndexPath } = await import('../utils/paths.js');
-  const { loadConfig } = await import('../storage/config.js');
+}
 
-  const indexPath = getIndexPath(projectPath);
-  const config = await loadConfig(indexPath);
-
+/**
+ * Create a progress callback factory for code or docs indexing
+ * SMCP-101: Handles batch-based progress by accumulating across batches
+ */
+function createProgressCallbackFactory(label: string) {
   let progressBar: cliProgress.SingleBar | null = null;
   let currentPhase = '';
   let phaseSpinner: Ora | null = null;
+  let cumulativeChunks = 0;
+  let cumulativeFiles = 0;
+  let lastSeenTotal = 0;
+  let scanTotal = 0;
+  let scanIndexable = 0;
 
-  // Progress callback with inline type to avoid dynamic import issues
-  const progressCallback = (progress: {
+  const callback = (progress: {
     phase: 'scanning' | 'chunking' | 'embedding' | 'storing';
     current: number;
     total: number;
@@ -430,97 +437,206 @@ async function runIndexingWithProgress(projectPath: string): Promise<{
   }) => {
     // Handle phase transitions
     if (progress.phase !== currentPhase) {
-      // Stop previous progress bar
-      stopProgressBar(progressBar);
-      progressBar = null;
-      stopSpinner(phaseSpinner);
-      phaseSpinner = null;
+      // Stop previous indicators
+      if (progressBar) {
+        progressBar.stop();
+        progressBar = null;
+      }
+      if (phaseSpinner) {
+        phaseSpinner.succeed();
+        phaseSpinner = null;
+      }
 
       currentPhase = progress.phase;
+      cumulativeChunks = 0;
+      cumulativeFiles = 0;
+      lastSeenTotal = 0;
 
       // Start new indicator based on phase
       switch (progress.phase) {
         case 'scanning':
-          phaseSpinner = ora('Scanning files...').start();
+          phaseSpinner = ora(`  Scanning ${label}...`).start();
           break;
         case 'chunking':
-          progressBar = createProgressBar('  Chunking  [{bar}] {percentage}% | {value}/{total} files');
+          // Show scan results before starting chunking
+          if (scanTotal > 0) {
+            console.log(`  ${'\u2714'} Scanned ${scanTotal.toLocaleString()} files \u2192 ${scanIndexable.toLocaleString()} indexable`);
+          }
+          progressBar = createProgressBar(`  Chunking  [{bar}] {percentage}% | {value}/{total} files`);
           progressBar.start(progress.total, 0);
+          lastSeenTotal = progress.total;
           break;
         case 'embedding':
-          progressBar = createProgressBar('  Embedding [{bar}] {percentage}% | {value}/{total} chunks');
+          progressBar = createProgressBar(`  Embedding [{bar}] {percentage}% | {value}/{total} chunks`);
           progressBar.start(progress.total, 0);
+          lastSeenTotal = progress.total;
           break;
         case 'storing':
-          phaseSpinner = ora('Storing chunks...').start();
+          phaseSpinner = ora(`  Storing...`).start();
           break;
       }
+    } else if (progressBar && progress.total !== lastSeenTotal && progress.current === 0) {
+      // New batch starting - accumulate the previous batch total
+      if (currentPhase === 'chunking') {
+        cumulativeFiles += lastSeenTotal;
+      } else if (currentPhase === 'embedding') {
+        cumulativeChunks += lastSeenTotal;
+      }
+      lastSeenTotal = progress.total;
+      const newTotal = (currentPhase === 'chunking' ? cumulativeFiles : cumulativeChunks) + progress.total;
+      progressBar.setTotal(newTotal);
     }
 
     // Update progress
     if (progressBar && progress.total > 0) {
-      progressBar.update(progress.current);
+      const base = currentPhase === 'chunking' ? cumulativeFiles : cumulativeChunks;
+      progressBar.update(base + progress.current);
     }
-    if (phaseSpinner && progress.phase === 'scanning' && progress.total > 0) {
-      phaseSpinner.text = `Scanning files... (${progress.current}/${progress.total})`;
+    if (phaseSpinner && progress.phase === 'scanning') {
+      scanTotal = progress.total;
+      // For scanning, current often represents indexable files found
+      if (progress.current > 0) {
+        scanIndexable = progress.current;
+      }
+      phaseSpinner.text = `  Scanning ${label}... (${progress.total.toLocaleString()} files)`;
     }
   };
 
-  try {
-    // Run code indexing
-    const indexManager = new IndexManager(projectPath);
-    const codeResult = await indexManager.createIndex(progressCallback);
+  const cleanup = (success: boolean, message?: string) => {
+    if (progressBar) {
+      progressBar.stop();
+      progressBar = null;
+    }
+    if (phaseSpinner) {
+      if (success) {
+        phaseSpinner.succeed(message || phaseSpinner.text);
+      } else {
+        phaseSpinner.fail(message || 'Failed');
+      }
+      phaseSpinner = null;
+    }
+  };
 
-    // Run docs indexing if enabled
+  return { callback, cleanup };
+}
+
+/**
+ * Run indexing with progress display
+ * SMCP-101: Shows separate progress for code and docs indexing
+ */
+async function runIndexingWithProgress(projectPath: string): Promise<IndexingResult> {
+  const { IndexManager } = await import('../engines/indexManager.js');
+  const { DocsIndexManager } = await import('../engines/docsIndexManager.js');
+  const { getIndexPath } = await import('../utils/paths.js');
+  const { loadConfig } = await import('../storage/config.js');
+  const { getCodeEmbeddingEngine } = await import('../engines/embedding.js');
+
+  const indexPath = getIndexPath(projectPath);
+  const config = await loadConfig(indexPath);
+  const startTime = Date.now();
+
+  try {
+    // === Code Indexing ===
+    console.log('');
+    print('Code Index:', 'cyan');
+
+    const codeProgress = createProgressCallbackFactory('code files');
+    const indexManager = new IndexManager(projectPath);
+    const codeResult = await indexManager.createIndex(codeProgress.callback);
+    codeProgress.cleanup(true, `  \u2714 Stored ${codeResult.chunksCreated.toLocaleString()} chunks`);
+
+    print(`  \u2714 Code index complete: ${codeResult.filesIndexed} files, ${codeResult.chunksCreated.toLocaleString()} chunks`, 'green');
+
+    // Get compute device info
+    let computeDevice: string | undefined;
+    try {
+      const engine = getCodeEmbeddingEngine();
+      const deviceInfo = engine.getDeviceInfo();
+      if (deviceInfo) {
+        computeDevice = deviceInfo.gpuName || (deviceInfo.device === 'cpu' ? 'CPU' : deviceInfo.device);
+      }
+    } catch {
+      // Ignore device detection errors
+    }
+
+    // === Docs Indexing ===
     let docsFilesIndexed = 0;
     let docsChunksCreated = 0;
-    let docsDurationMs = 0;
 
     if (config.indexDocs) {
-      stopSpinner(phaseSpinner);
-      phaseSpinner = ora('Indexing documentation...').start();
+      console.log('');
+      print('Docs Index:', 'cyan');
 
+      const docsProgress = createProgressCallbackFactory('doc files');
       const docsIndexManager = new DocsIndexManager(projectPath, indexPath);
       await docsIndexManager.initialize();
-      const docsResult = await docsIndexManager.createDocsIndex();
+      const docsResult = await docsIndexManager.createDocsIndex(docsProgress.callback);
       await docsIndexManager.close();
 
       docsFilesIndexed = docsResult.filesIndexed;
       docsChunksCreated = docsResult.chunksCreated;
-      docsDurationMs = docsResult.durationMs;
 
-      stopSpinner(phaseSpinner, 'Documentation indexed');
-      phaseSpinner = null;
+      docsProgress.cleanup(true, `  \u2714 Stored ${docsChunksCreated.toLocaleString()} chunks`);
+      print(`  \u2714 Docs index complete: ${docsFilesIndexed} files, ${docsChunksCreated.toLocaleString()} chunks`, 'green');
     }
 
-    // Clean up progress indicators
-    stopProgressBar(progressBar);
-    stopSpinner(phaseSpinner);
-
-    // Combine results
-    const totalDurationMs = codeResult.durationMs + docsDurationMs;
-    const totalFilesIndexed = codeResult.filesIndexed + docsFilesIndexed;
-    const totalChunksCreated = codeResult.chunksCreated + docsChunksCreated;
+    // === Summary ===
+    const totalDurationMs = Date.now() - startTime;
 
     return {
       success: true,
-      filesIndexed: totalFilesIndexed,
-      chunksCreated: totalChunksCreated,
+      codeFiles: codeResult.filesIndexed,
+      codeChunks: codeResult.chunksCreated,
+      docsFiles: docsFilesIndexed,
+      docsChunks: docsChunksCreated,
       duration: formatDuration(totalDurationMs),
+      computeDevice,
     };
   } catch (error) {
-    // Clean up on error
-    stopProgressBar(progressBar);
-    if (phaseSpinner) phaseSpinner.fail('Indexing failed');
-
     return {
       success: false,
-      filesIndexed: 0,
-      chunksCreated: 0,
+      codeFiles: 0,
+      codeChunks: 0,
+      docsFiles: 0,
+      docsChunks: 0,
       duration: '0s',
       error: error instanceof Error ? error.message : String(error),
     };
   }
+}
+
+/**
+ * Prompt user to choose compute device for indexing
+ * Only shows GPU option on Windows (DirectML)
+ */
+async function promptDeviceChoice(): Promise<void> {
+  const isWindows = os.platform() === 'win32';
+
+  if (!isWindows) {
+    // Non-Windows: CPU only, no choice needed
+    setPreferredDevice('cpu');
+    return;
+  }
+
+  console.log('');
+  print('Compute Device:', 'cyan');
+  console.log('');
+  console.log('  [1] GPU (DirectML) - Faster, but may cause system stuttering');
+  console.log('  [2] CPU - Slower, but system stays responsive');
+  console.log('');
+
+  const answer = await prompt('Select compute device [1]: ');
+
+  if (answer === '2') {
+    setPreferredDevice('cpu');
+    print('Using CPU for embedding generation.', 'dim');
+  } else {
+    setPreferredDevice('dml');
+    print('Using GPU (DirectML) for embedding generation.', 'dim');
+  }
+
+  // Reset any existing engine instances to apply new device preference
+  resetEmbeddingEngine();
 }
 
 /**
@@ -593,7 +709,10 @@ async function runIndexingFlow(): Promise<boolean> {
       deleteSpinner.succeed('Existing index deleted');
     }
 
-    // Step 3: Run indexing
+    // Step 3: Choose compute device
+    await promptDeviceChoice();
+
+    // Step 4: Run indexing
     console.log('');
     print(`Creating index for: ${projectPath}`, 'cyan');
     console.log('');
@@ -605,12 +724,19 @@ async function runIndexingFlow(): Promise<boolean> {
       return false;
     }
 
-    // Step 4: Show results
+    // Step 5: Show results summary
     console.log('');
+    print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     print('Index created successfully!', 'green');
-    console.log(`  Files indexed:  ${result.filesIndexed.toLocaleString()}`);
-    console.log(`  Chunks created: ${result.chunksCreated.toLocaleString()}`);
-    console.log(`  Duration:       ${result.duration}`);
+    console.log('');
+    console.log(`  Code:     ${result.codeFiles.toLocaleString()} files, ${result.codeChunks.toLocaleString()} chunks`);
+    if (result.docsFiles > 0) {
+      console.log(`  Docs:     ${result.docsFiles.toLocaleString()} files, ${result.docsChunks.toLocaleString()} chunks`);
+    }
+    console.log(`  Duration: ${result.duration}`);
+    if (result.computeDevice) {
+      console.log(`  Device:   ${result.computeDevice}`);
+    }
 
     return true;
   } catch (error) {
@@ -625,9 +751,25 @@ async function runIndexingFlow(): Promise<boolean> {
 // ============================================================================
 
 /**
- * Main setup flow
+ * Options for setup command
  */
-export async function runSetup(): Promise<void> {
+export interface SetupOptions {
+  /** Show verbose logging output (default: false) */
+  verbose?: boolean;
+}
+
+/**
+ * Main setup flow
+ * @param options - Setup options including verbose flag
+ */
+export async function runSetup(options: SetupOptions = {}): Promise<void> {
+  // Initialize global logger and set silent mode unless verbose
+  initGlobalLogger();
+  const logger = getLogger();
+  if (!options.verbose) {
+    logger.setSilentConsole(true);
+  }
+
   console.log('');
   print('Search MCP Setup', 'cyan');
   print('================', 'cyan');
@@ -716,12 +858,12 @@ export async function runSetup(): Promise<void> {
   print('Available MCP clients to configure:', 'cyan');
   console.log('');
 
-  const options: { key: string; label: string; action: () => { success: boolean; message: string } | Promise<{ success: boolean; message: string }> }[] = [];
+  const menuOptions: { key: string; label: string; action: () => { success: boolean; message: string } | Promise<{ success: boolean; message: string }> }[] = [];
 
   // Add Claude CLI option if available
   if (hasClaudeCLI) {
-    options.push({
-      key: String(options.length + 1),
+    menuOptions.push({
+      key: String(menuOptions.length + 1),
       label: 'Claude Code (via CLI) - Recommended',
       action: configureWithClaudeCLI,
     });
@@ -729,21 +871,21 @@ export async function runSetup(): Promise<void> {
 
   // Add unconfigured clients
   for (const client of unconfiguredClients) {
-    options.push({
-      key: String(options.length + 1),
+    menuOptions.push({
+      key: String(menuOptions.length + 1),
       label: client.name,
       action: () => configureClient(client),
     });
   }
 
   // Add "all" option if multiple choices
-  if (options.length > 1) {
-    options.push({
+  if (menuOptions.length > 1) {
+    menuOptions.push({
       key: 'a',
       label: 'Configure all',
       action: async () => {
         const results: string[] = [];
-        for (const opt of options.slice(0, -1)) {
+        for (const opt of menuOptions.slice(0, -1)) {
           const result = await opt.action();
           results.push(result.message);
         }
@@ -753,7 +895,7 @@ export async function runSetup(): Promise<void> {
   }
 
   // Show options
-  for (const opt of options) {
+  for (const opt of menuOptions) {
     console.log(`  [${opt.key}] ${opt.label}`);
   }
   console.log(`  [q] Quit`);
@@ -767,7 +909,7 @@ export async function runSetup(): Promise<void> {
     return;
   }
 
-  const selected = options.find(o => o.key === answer.toLowerCase());
+  const selected = menuOptions.find(o => o.key === answer.toLowerCase());
   if (!selected) {
     print('Invalid option.', 'red');
     return;
@@ -791,6 +933,9 @@ export async function runSetup(): Promise<void> {
     print(result.message, 'red');
   }
   console.log('');
+
+  // Restore console logging
+  logger.setSilentConsole(false);
 }
 
 /**
@@ -953,6 +1098,7 @@ Usage:
 Options:
   --setup     Configure MCP clients to use search-mcp
   --logs      Show log file locations for debugging
+  --verbose   Show detailed logging output (for debugging)
   --version   Show version number
   --help      Show this help message
 

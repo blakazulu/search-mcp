@@ -29,6 +29,12 @@ export interface Logger {
   debug(component: string, message: string, meta?: object): void;
   setLevel(level: LogLevel): void;
   getLevel(): LogLevel;
+  /**
+   * Enable or disable console output while still writing to log files.
+   * Used by CLI to suppress verbose logs during normal operation.
+   * @param silent - True to suppress console output, false to enable it
+   */
+  setSilentConsole(silent: boolean): void;
 }
 
 /**
@@ -73,6 +79,8 @@ class FileLogger implements Logger {
   private fileName: string;
   private writeQueue: Promise<void>;
   private initialized: boolean;
+  /** When true, suppress console output but still write to log files */
+  private silentConsole: boolean = false;
 
   constructor(config: LoggerConfig = {}) {
     this.level = config.level ?? LogLevel.INFO;
@@ -215,8 +223,14 @@ class FileLogger implements Logger {
 
   /**
    * Write to console as fallback
+   * Respects silentConsole flag to suppress output
    */
   private writeToConsole(level: LogLevel, message: string): void {
+    // Skip console output if silent mode is enabled
+    if (this.silentConsole) {
+      return;
+    }
+
     switch (level) {
       case LogLevel.ERROR:
         console.error(message);
@@ -231,6 +245,15 @@ class FileLogger implements Logger {
         console.debug(message);
         break;
     }
+  }
+
+  /**
+   * Enable or disable console output while still writing to log files.
+   * Used by CLI to suppress verbose logs during normal operation.
+   * @param silent - True to suppress console output, false to enable it
+   */
+  setSilentConsole(silent: boolean): void {
+    this.silentConsole = silent;
   }
 
   error(component: string, message: string, meta?: object): void {

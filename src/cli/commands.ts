@@ -33,6 +33,7 @@ import { loadMetadata } from '../storage/metadata.js';
 import { formatDuration } from '../tools/createIndex.js';
 import { MCPError, isMCPError } from '../errors/index.js';
 import type { CompactSearchOutput } from '../utils/searchResultProcessing.js';
+import { getLogger, initGlobalLogger } from '../utils/logger.js';
 
 // ============================================================================
 // Types
@@ -44,6 +45,7 @@ interface CLIOptions {
   mode?: 'hybrid' | 'vector' | 'fts';
   alpha?: number;
   docs?: boolean;
+  verbose?: boolean;
 }
 
 interface SearchResultItem {
@@ -149,6 +151,12 @@ function createProgressBar(format: string): cliProgress.SingleBar {
  * Create or update index for current project
  */
 async function indexCommand(options: CLIOptions): Promise<void> {
+  // Set silent mode unless verbose flag is passed
+  if (!options.verbose) {
+    const logger = getLogger();
+    logger.setSilentConsole(true);
+  }
+
   const cwd = process.cwd();
 
   if (options.json) {
@@ -596,6 +604,12 @@ async function statusCommand(options: CLIOptions): Promise<void> {
  * Rebuild entire index from scratch
  */
 async function reindexCommand(options: CLIOptions): Promise<void> {
+  // Set silent mode unless verbose flag is passed
+  if (!options.verbose) {
+    const logger = getLogger();
+    logger.setSilentConsole(true);
+  }
+
   const cwd = process.cwd();
 
   if (options.json) {
@@ -707,6 +721,7 @@ export function createCLI(): Command {
     .command('index')
     .description('Create or update search index for current project')
     .option('--json', 'Output results as JSON')
+    .option('--verbose', 'Show detailed logging output')
     .action(indexCommand);
 
   // search command
@@ -732,15 +747,19 @@ export function createCLI(): Command {
     .command('reindex')
     .description('Rebuild entire index from scratch')
     .option('--json', 'Output results as JSON')
+    .option('--verbose', 'Show detailed logging output')
     .action(reindexCommand);
 
   // setup command (existing)
   program
     .command('setup')
     .description('Configure MCP clients to use search-mcp')
-    .action(async () => {
+    .option('--verbose', 'Show detailed logging output')
+    .option('-V, --verbose-flag', 'Show detailed logging output (alias)')
+    .action(async (options) => {
       const { runSetup } = await import('./setup.js');
-      await runSetup();
+      const verbose = options.verbose || options.verboseFlag;
+      await runSetup({ verbose });
     });
 
   // logs command (existing)

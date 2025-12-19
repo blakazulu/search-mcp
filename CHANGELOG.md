@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.5] - 2025-12-19
+
+### Added
+
+#### Live Progress Display with Current File (SMCP-102)
+
+- **Multi-bar progress display during indexing** - Shows both current file and overall progress
+  - Current line: Animated spinner + filename + live percentage
+  - Overall line: Progress bar with file count
+  - Example:
+    ```
+    Code Index
+      Scanning... Found 366 files to index
+      Current  ⠋ auth-service.ts 45%
+      Overall  [████████████████░░░░░░░░░░░░░░░░░░░░░░░░] 45% | 165/366 files
+    ```
+- **Smooth spinner animation** - Timer-based animation (80ms) independent of progress callbacks
+  - Spinner cycles through frames: ⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏
+  - Percentage updates in real-time as files are processed
+- **Applied to both CLI commands and setup wizard** - Consistent experience across all indexing operations
+
 ## [1.6.2] - 2025-12-19
 
 ### Changed

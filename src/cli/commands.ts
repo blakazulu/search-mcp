@@ -271,11 +271,12 @@ function createCliProgressCallback(label: string) {
   let fileBar: cliProgress.SingleBar | null = null;
   let progressBar: cliProgress.SingleBar | null = null;
   let phaseSpinner: Ora | null = null;
+  let spinnerTimer: ReturnType<typeof setInterval> | null = null;
   let scanTotal = 0;
   let hasShownScanResults = false;
   let hasCreatedProgressBar = false;
   let totalFiles = 0;
-  let currentFile = '';
+  let currentFilename = '';
   // For batch processing: track cumulative progress
   let batchBaseOffset = 0;
   let lastBatchTotal = 0;
@@ -283,6 +284,14 @@ function createCliProgressCallback(label: string) {
   // Spinner frames
   const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
   let spinnerIndex = 0;
+
+  const updateFileBar = () => {
+    if (fileBar && currentFilename) {
+      spinnerIndex = (spinnerIndex + 1) % spinnerFrames.length;
+      const pct = totalFiles > 0 ? Math.round((maxProgress / totalFiles) * 100) : 0;
+      fileBar.update(0, { spinner: spinnerFrames[spinnerIndex], filename: currentFilename, pct: `${pct}%` });
+    }
+  };
 
   const callback = (progress: IndexProgress) => {
     switch (progress.phase) {
@@ -315,16 +324,18 @@ function createCliProgressCallback(label: string) {
           multiBar = new cliProgress.MultiBar({
             clearOnComplete: false,
             hideCursor: true,
-            format: '{prefix} {bar} {percentage}% | {value}/{total} files',
             barCompleteChar: '\u2588',
             barIncompleteChar: '\u2591',
           }, cliProgress.Presets.shades_classic);
 
-          // Current file bar (using custom format)
-          fileBar = multiBar.create(1, 0, { prefix: '  Current  \u2014' });
+          // Current file line (spinner + filename + percentage)
+          fileBar = multiBar.create(1, 0, {}, { format: '  Current  {spinner} {filename} {pct}' });
           // Overall progress bar
-          progressBar = multiBar.create(totalFiles, 0, { prefix: '  Overall ' });
+          progressBar = multiBar.create(totalFiles, 0, {}, { format: '  Overall  [{bar}] {percentage}% | {value}/{total} files' });
           hasCreatedProgressBar = true;
+
+          // Start spinner animation timer
+          spinnerTimer = setInterval(updateFileBar, 80);
         }
 
         // Detect new batch
@@ -337,13 +348,10 @@ function createCliProgressCallback(label: string) {
           }
         }
 
-        // Update current file display
-        if (progress.currentFile && fileBar && multiBar) {
-          currentFile = progress.currentFile;
-          const filename = currentFile.split('/').pop() || currentFile;
-          const truncated = filename.length > 30 ? filename.substring(0, 27) + '...' : filename;
-          spinnerIndex = (spinnerIndex + 1) % spinnerFrames.length;
-          fileBar.update(0, { prefix: `  Current  ${spinnerFrames[spinnerIndex]} ${truncated}` });
+        // Update current file
+        if (progress.currentFile) {
+          const filename = progress.currentFile.split('/').pop() || progress.currentFile;
+          currentFilename = filename.length > 40 ? filename.substring(0, 37) + '...' : filename;
         }
 
         // Update overall progress
@@ -364,12 +372,17 @@ function createCliProgressCallback(label: string) {
   };
 
   const cleanup = () => {
+    // Stop spinner timer
+    if (spinnerTimer) {
+      clearInterval(spinnerTimer);
+      spinnerTimer = null;
+    }
     // Complete and stop progress bars
     if (progressBar) {
       progressBar.update(totalFiles);
     }
     if (fileBar) {
-      fileBar.update(0, { prefix: '  Current  \u2714 done' });
+      fileBar.update(0, { spinner: '\u2714', filename: 'done', pct: '' });
     }
     if (multiBar) {
       multiBar.stop();

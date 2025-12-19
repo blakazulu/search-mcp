@@ -418,6 +418,7 @@ interface IndexingResult {
 /**
  * Create a progress callback factory for code or docs indexing
  * SMCP-101: Handles batch-based progress by accumulating across batches
+ * SMCP-102: Fixed to properly handle multiple batches without resetting progress
  */
 function createProgressCallbackFactory(label: string) {
   let progressBar: cliProgress.SingleBar | null = null;
@@ -428,6 +429,9 @@ function createProgressCallbackFactory(label: string) {
   let lastSeenTotal = 0;
   let scanTotal = 0;
   let scanIndexable = 0;
+  let hasShownScanResults = false;
+  // Track phases we've already seen (for batch-based indexing)
+  const seenPhases = new Set<string>();
 
   const callback = (progress: {
     phase: 'scanning' | 'chunking' | 'embedding' | 'storing';
@@ -435,8 +439,11 @@ function createProgressCallbackFactory(label: string) {
     total: number;
     currentFile?: string;
   }) => {
+    const isNewPhase = progress.phase !== currentPhase;
+    const isReturningToPhase = seenPhases.has(progress.phase) && isNewPhase;
+
     // Handle phase transitions
-    if (progress.phase !== currentPhase) {
+    if (isNewPhase) {
       // Stop previous indicators
       if (progressBar) {
         progressBar.stop();
@@ -448,35 +455,51 @@ function createProgressCallbackFactory(label: string) {
       }
 
       currentPhase = progress.phase;
-      cumulativeChunks = 0;
-      cumulativeFiles = 0;
-      lastSeenTotal = 0;
+      seenPhases.add(progress.phase);
+
+      // Only reset counters for truly new phases, not when returning to a phase in a new batch
+      if (!isReturningToPhase) {
+        cumulativeChunks = 0;
+        cumulativeFiles = 0;
+        lastSeenTotal = 0;
+      }
 
       // Start new indicator based on phase
       switch (progress.phase) {
         case 'scanning':
-          phaseSpinner = ora(`  Scanning ${label}...`).start();
+          // Only show scanning spinner if we haven't finished scanning yet
+          if (!hasShownScanResults) {
+            phaseSpinner = ora(`  Scanning ${label}...`).start();
+          }
           break;
         case 'chunking':
-          // Show scan results before starting chunking
-          if (scanTotal > 0) {
+          // Show scan results only once, before starting chunking
+          if (scanTotal > 0 && !hasShownScanResults) {
             console.log(`  ${'\u2714'} Scanned ${scanTotal.toLocaleString()} files \u2192 ${scanIndexable.toLocaleString()} indexable`);
+            hasShownScanResults = true;
           }
+          // For batch-based indexing, use the total from progress (total files to index)
+          const chunkingTotal = isReturningToPhase ? cumulativeFiles + progress.total : progress.total;
           progressBar = createProgressBar(`  Chunking  [{bar}] {percentage}% | {value}/{total} files`);
-          progressBar.start(progress.total, 0);
+          progressBar.start(chunkingTotal, isReturningToPhase ? cumulativeFiles : 0);
           lastSeenTotal = progress.total;
           break;
         case 'embedding':
+          // For embedding, accumulate across batches
+          const embeddingTotal = isReturningToPhase ? cumulativeChunks + progress.total : progress.total;
           progressBar = createProgressBar(`  Embedding [{bar}] {percentage}% | {value}/{total} chunks`);
-          progressBar.start(progress.total, 0);
+          progressBar.start(embeddingTotal, isReturningToPhase ? cumulativeChunks : 0);
           lastSeenTotal = progress.total;
           break;
         case 'storing':
-          phaseSpinner = ora(`  Storing...`).start();
+          // Only show storing spinner on first batch
+          if (!isReturningToPhase) {
+            phaseSpinner = ora(`  Storing...`).start();
+          }
           break;
       }
     } else if (progressBar && progress.total !== lastSeenTotal && progress.current === 0) {
-      // New batch starting - accumulate the previous batch total
+      // New batch starting within same phase - accumulate the previous batch total
       if (currentPhase === 'chunking') {
         cumulativeFiles += lastSeenTotal;
       } else if (currentPhase === 'embedding') {
@@ -514,6 +537,9 @@ function createProgressCallbackFactory(label: string) {
         phaseSpinner.fail(message || 'Failed');
       }
       phaseSpinner = null;
+    } else if (message && success) {
+      // If no spinner but message provided (e.g., storing completed in batch > 1)
+      console.log(`\x1b[32m${message}\x1b[0m`);
     }
   };
 

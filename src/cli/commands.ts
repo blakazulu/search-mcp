@@ -278,10 +278,18 @@ async function runIndexing(projectPath: string, showProgress: boolean): Promise<
   let progressBar: cliProgress.SingleBar | null = null;
   let currentPhase = '';
   let phaseSpinner: Ora | null = null;
+  let cumulativeChunks = 0;
+  let cumulativeFiles = 0;
+  let lastSeenTotal = 0;
+  // Track phases we've already seen (for batch-based indexing)
+  const seenPhases = new Set<string>();
 
   const progressCallback = showProgress ? (progress: IndexProgress) => {
+    const isNewPhase = progress.phase !== currentPhase;
+    const isReturningToPhase = seenPhases.has(progress.phase) && isNewPhase;
+
     // Handle phase transitions
-    if (progress.phase !== currentPhase) {
+    if (isNewPhase) {
       // Stop previous progress bar
       stopProgressBar(progressBar);
       progressBar = null;
@@ -289,29 +297,60 @@ async function runIndexing(projectPath: string, showProgress: boolean): Promise<
       phaseSpinner = null;
 
       currentPhase = progress.phase;
+      seenPhases.add(progress.phase);
+
+      // Only reset counters for truly new phases, not when returning to a phase in a new batch
+      if (!isReturningToPhase) {
+        cumulativeChunks = 0;
+        cumulativeFiles = 0;
+        lastSeenTotal = 0;
+      }
 
       // Start new indicator based on phase
       switch (progress.phase) {
         case 'scanning':
-          phaseSpinner = ora('Scanning files...').start();
+          // Only show scanning spinner if we haven't completed scanning
+          if (!seenPhases.has('chunking')) {
+            phaseSpinner = ora('Scanning files...').start();
+          }
           break;
-        case 'chunking':
+        case 'chunking': {
+          const chunkingTotal = isReturningToPhase ? cumulativeFiles + progress.total : progress.total;
           progressBar = createProgressBar('  Chunking  [{bar}] {percentage}% | {value}/{total} files');
-          progressBar.start(progress.total, 0);
+          progressBar.start(chunkingTotal, isReturningToPhase ? cumulativeFiles : 0);
+          lastSeenTotal = progress.total;
           break;
-        case 'embedding':
+        }
+        case 'embedding': {
+          const embeddingTotal = isReturningToPhase ? cumulativeChunks + progress.total : progress.total;
           progressBar = createProgressBar('  Embedding [{bar}] {percentage}% | {value}/{total} chunks');
-          progressBar.start(progress.total, 0);
+          progressBar.start(embeddingTotal, isReturningToPhase ? cumulativeChunks : 0);
+          lastSeenTotal = progress.total;
           break;
+        }
         case 'storing':
-          phaseSpinner = ora('Storing chunks...').start();
+          // Only show storing spinner on first batch
+          if (!isReturningToPhase) {
+            phaseSpinner = ora('Storing chunks...').start();
+          }
           break;
       }
+    } else if (progressBar && progress.total !== lastSeenTotal && progress.current === 0) {
+      // New batch starting within same phase - accumulate the previous batch total
+      if (currentPhase === 'chunking') {
+        cumulativeFiles += lastSeenTotal;
+      } else if (currentPhase === 'embedding') {
+        cumulativeChunks += lastSeenTotal;
+      }
+      lastSeenTotal = progress.total;
+      const newTotal = (currentPhase === 'chunking' ? cumulativeFiles : cumulativeChunks) + progress.total;
+      progressBar.setTotal(newTotal);
     }
 
     // Update progress
     if (progressBar && progress.total > 0) {
-      progressBar.update(progress.current);
+      const base = currentPhase === 'chunking' ? cumulativeFiles : cumulativeChunks;
+      progressBar.update(base + progress.current);
     }
     if (phaseSpinner && progress.phase === 'scanning' && progress.total > 0) {
       phaseSpinner.text = `Scanning files... (${progress.current}/${progress.total})`;

@@ -417,19 +417,25 @@ interface IndexingResult {
 
 /**
  * Create a progress callback factory for code or docs indexing
- * Simplified UX: scanning → single indexing progress bar → complete
+ * Shows: spinner with current file + overall progress bar
  */
 function createProgressCallbackFactory(label: string) {
+  let multiBar: cliProgress.MultiBar | null = null;
+  let fileBar: cliProgress.SingleBar | null = null;
   let progressBar: cliProgress.SingleBar | null = null;
   let phaseSpinner: Ora | null = null;
   let scanTotal = 0;
   let hasShownScanResults = false;
   let hasCreatedProgressBar = false;
   let totalFiles = 0;
+  let currentFile = '';
   // For batch processing: track cumulative progress
   let batchBaseOffset = 0;
   let lastBatchTotal = 0;
   let maxProgress = 0;
+  // Spinner frames
+  const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+  let spinnerIndex = 0;
 
   const callback = (progress: {
     phase: 'scanning' | 'chunking' | 'embedding' | 'storing';
@@ -462,14 +468,24 @@ function createProgressCallbackFactory(label: string) {
           lastBatchTotal = progress.total;
         }
 
-        // Create progress bar only once
+        // Create multi-bar only once
         if (!hasCreatedProgressBar) {
-          progressBar = createProgressBar(`  Indexing  [{bar}] {percentage}% | {value}/{total} files`);
-          progressBar.start(totalFiles, 0);
+          multiBar = new cliProgress.MultiBar({
+            clearOnComplete: false,
+            hideCursor: true,
+            format: '{prefix} {bar} {percentage}% | {value}/{total} files',
+            barCompleteChar: '\u2588',
+            barIncompleteChar: '\u2591',
+          }, cliProgress.Presets.shades_classic);
+
+          // Current file bar (using custom format)
+          fileBar = multiBar.create(1, 0, { prefix: '  Current  \u2014' });
+          // Overall progress bar
+          progressBar = multiBar.create(totalFiles, 0, { prefix: '  Overall ' });
           hasCreatedProgressBar = true;
         }
 
-        // Detect new batch (current resets to 0 or small value, total changes)
+        // Detect new batch
         if (progress.current < maxProgress && progress.total !== lastBatchTotal) {
           batchBaseOffset += lastBatchTotal;
           lastBatchTotal = progress.total;
@@ -479,7 +495,16 @@ function createProgressCallbackFactory(label: string) {
           }
         }
 
-        // Update progress (accumulate across batches)
+        // Update current file display
+        if (progress.currentFile && fileBar && multiBar) {
+          currentFile = progress.currentFile;
+          const filename = currentFile.split('/').pop() || currentFile;
+          const truncated = filename.length > 30 ? filename.substring(0, 27) + '...' : filename;
+          spinnerIndex = (spinnerIndex + 1) % spinnerFrames.length;
+          fileBar.update(0, { prefix: `  Current  ${spinnerFrames[spinnerIndex]} ${truncated}` });
+        }
+
+        // Update overall progress
         const currentProgress = batchBaseOffset + progress.current;
         if (currentProgress > maxProgress) {
           maxProgress = currentProgress;
@@ -491,17 +516,22 @@ function createProgressCallbackFactory(label: string) {
 
       case 'embedding':
       case 'storing':
-        // Keep progress bar at current state, don't stop it
+        // Keep progress bars at current state
         break;
     }
   };
 
   const cleanup = (success: boolean, _message?: string) => {
-    // Complete and stop progress bar
+    // Complete and stop progress bars
     if (progressBar) {
       progressBar.update(totalFiles);
-      progressBar.stop();
-      progressBar = null;
+    }
+    if (fileBar) {
+      fileBar.update(0, { prefix: '  Current  \u2714 done' });
+    }
+    if (multiBar) {
+      multiBar.stop();
+      multiBar = null;
     }
     if (phaseSpinner) {
       phaseSpinner.stop();

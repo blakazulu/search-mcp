@@ -19,6 +19,7 @@ import ora, { Ora } from 'ora';
 import cliProgress from 'cli-progress';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as readline from 'node:readline';
 
 // Project imports
 import { IndexManager, IndexResult, IndexProgress } from '../engines/indexManager.js';
@@ -32,6 +33,7 @@ import { loadConfig } from '../storage/config.js';
 import { loadMetadata } from '../storage/metadata.js';
 import { formatDuration } from '../tools/createIndex.js';
 import { MCPError, isMCPError } from '../errors/index.js';
+import { safeDeleteIndex } from '../tools/deleteIndex.js';
 import type { CompactSearchOutput } from '../utils/searchResultProcessing.js';
 import { getLogger, initGlobalLogger } from '../utils/logger.js';
 
@@ -46,6 +48,7 @@ interface CLIOptions {
   alpha?: number;
   docs?: boolean;
   verbose?: boolean;
+  force?: boolean;
 }
 
 interface SearchResultItem {
@@ -671,6 +674,130 @@ async function reindexCommand(options: CLIOptions): Promise<void> {
 }
 
 // ============================================================================
+// Command: delete
+// ============================================================================
+
+/**
+ * Prompt user for confirmation
+ */
+function promptConfirm(question: string): Promise<boolean> {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  return new Promise((resolve) => {
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes');
+    });
+  });
+}
+
+/**
+ * Delete index for current project
+ */
+async function deleteCommand(options: CLIOptions): Promise<void> {
+  const cwd = process.cwd();
+
+  if (options.json) {
+    try {
+      const projectPath = await detectProject(cwd);
+      const indexPath = getIndexPath(projectPath);
+      const metadata = await loadMetadata(indexPath);
+
+      if (!metadata) {
+        console.log(JSON.stringify({ success: false, error: 'No index found' }));
+        process.exit(1);
+        return;
+      }
+
+      const result = await safeDeleteIndex(indexPath);
+      console.log(JSON.stringify({
+        success: result.success,
+        projectPath,
+        warnings: result.warnings,
+      }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.log(JSON.stringify({ success: false, error: message }));
+      process.exit(1);
+    }
+    return;
+  }
+
+  // Interactive mode
+  printHeader('Search MCP - Delete Index');
+
+  const spinner = ora('Detecting project root...').start();
+
+  try {
+    const projectPath = await detectProject(cwd);
+    spinner.succeed(`Project: ${chalk.cyan(projectPath)}`);
+
+    // Check if index exists
+    const indexPath = getIndexPath(projectPath);
+    const metadata = await loadMetadata(indexPath);
+
+    if (!metadata) {
+      console.log('');
+      console.log(chalk.yellow('  No index found for this project.'));
+      console.log('');
+      return;
+    }
+
+    // Show index info
+    console.log('');
+    console.log(chalk.white('  Index found:'));
+    console.log(chalk.gray(`    Path: ${indexPath}`));
+    console.log('');
+
+    // Confirm deletion (skip if force flag is set)
+    if (!options.force) {
+      console.log(chalk.red.bold('  Warning: This will permanently delete the index.'));
+      console.log(chalk.red('  You will need to re-run "search-mcp index" to rebuild it.'));
+      console.log('');
+
+      const confirmed = await promptConfirm(chalk.yellow('  Delete index? [y/N]: '));
+
+      if (!confirmed) {
+        console.log('');
+        console.log(chalk.gray('  Cancelled.'));
+        console.log('');
+        return;
+      }
+    }
+
+    // Delete the index
+    const deleteSpinner = ora('Deleting index...').start();
+    const result = await safeDeleteIndex(indexPath);
+
+    if (result.success) {
+      deleteSpinner.succeed('Index deleted successfully');
+
+      if (result.warnings.length > 0) {
+        console.log('');
+        console.log(chalk.yellow('  Warnings:'));
+        for (const warning of result.warnings) {
+          console.log(chalk.yellow(`    - ${warning}`));
+        }
+      }
+
+      console.log('');
+      console.log(chalk.gray('  Run ') + chalk.cyan('search-mcp index') + chalk.gray(' to create a new index.'));
+    } else {
+      deleteSpinner.fail('Failed to delete index');
+    }
+
+    console.log('');
+
+  } catch (error) {
+    spinner.fail('Delete failed');
+    handleError(error);
+  }
+}
+
+// ============================================================================
 // Error Handling
 // ============================================================================
 
@@ -750,6 +877,14 @@ export function createCLI(): Command {
     .option('--verbose', 'Show detailed logging output')
     .action(reindexCommand);
 
+  // delete command
+  program
+    .command('delete')
+    .description('Delete index for current project')
+    .option('--json', 'Output results as JSON (skips confirmation)')
+    .option('-f, --force', 'Skip confirmation prompt')
+    .action(deleteCommand);
+
   // setup command (existing)
   program
     .command('setup')
@@ -804,5 +939,6 @@ export {
   searchCommand,
   statusCommand,
   reindexCommand,
+  deleteCommand,
   handleError,
 };

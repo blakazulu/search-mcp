@@ -39,6 +39,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Only shown on Windows (DirectML is Windows-only)
   - New `setPreferredDevice()` API for programmatic control
 
+- **CLI `delete` command** - Remove index for current project
+  - `search-mcp delete` - Interactive with confirmation
+  - `search-mcp delete --force` - Skip confirmation
+  - `search-mcp delete --json` - JSON output for scripting
+
 - **Logger `setSilentConsole()` method** - New API to programmatically suppress console output
   - Logs still written to log files for debugging
   - Only console output is suppressed

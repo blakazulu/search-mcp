@@ -26,7 +26,47 @@ search-mcp <command>
 | [`search`](#search---search-code) | Search code with natural language |
 | [`status`](#status---show-index-status) | Show index statistics |
 | [`reindex`](#reindex---rebuild-index) | Rebuild entire index |
+| [`delete`](#delete---remove-index) | Delete index for current project |
 | [`logs`](#logs---show-log-locations) | Show log file locations |
+
+---
+
+## Quick Reference
+
+All commands and their options at a glance:
+
+```bash
+# Setup and configuration
+search-mcp setup [--verbose]
+
+# Index management
+search-mcp index [--verbose] [--json]
+search-mcp reindex [--verbose] [--json]
+search-mcp delete [--force] [--json]
+search-mcp status [--json]
+
+# Searching
+search-mcp search <query> [-k <n>] [-m <mode>] [-a <alpha>] [-d] [--json]
+
+# Utilities
+search-mcp logs
+search-mcp --help
+search-mcp --version
+```
+
+### All Options
+
+| Option | Commands | Description |
+|--------|----------|-------------|
+| `--verbose` | setup, index, reindex | Show detailed logging output |
+| `--json` | index, search, status, reindex, delete | Output results as JSON |
+| `-k, --top-k <n>` | search | Number of results (default: 10) |
+| `-m, --mode <mode>` | search | Search mode: hybrid, vector, fts |
+| `-a, --alpha <n>` | search | Hybrid search balance (0-1) |
+| `-d, --docs` | search | Search documentation instead of code |
+| `-f, --force` | delete | Skip confirmation prompt |
+| `-h, --help` | all | Show help for command |
+| `-v, --version` | global | Show version number |
 
 ---
 
@@ -302,6 +342,55 @@ search-mcp reindex --json
 - If search results seem stale
 - After changing configuration
 - When troubleshooting index issues
+
+---
+
+## `delete` - Remove Index
+
+Delete the search index for the current project.
+
+```bash
+# Interactive (with confirmation)
+search-mcp delete
+
+# Force delete without confirmation
+search-mcp delete --force
+
+# JSON output (skips confirmation)
+search-mcp delete --json
+```
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `-f, --force` | Skip confirmation prompt |
+| `--json` | Output results as JSON (skips confirmation) |
+
+**Example output:**
+```
+Search MCP - Delete Index
+=========================
+
+✓ Project: /Users/dev/my-project
+
+  Index found:
+    Path: ~/.mcp/search/indexes/a1b2c3d4/
+
+  Warning: This will permanently delete the index.
+  You will need to re-run "search-mcp index" to rebuild it.
+
+  Delete index? [y/N]: y
+
+✓ Index deleted successfully
+
+  Run search-mcp index to create a new index.
+```
+
+**When to use:**
+- Free up disk space
+- Start fresh with a new index
+- Before switching to a different project configuration
+- Troubleshooting index corruption
 
 ---
 

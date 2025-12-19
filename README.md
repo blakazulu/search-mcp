@@ -47,9 +47,7 @@ Your AI assistant searches your entire codebase semantically. No API keys. No cl
 
 ---
 
-<a id="what-does-this-do"></a>
-
-## What Does This Do?
+<h2 id="what-does-this-do">What Does This Do?</h2>
 
 Search MCP makes your AI assistant **smarter about your code**. Instead of you copying and pasting files into the chat, the AI can automatically search your project and find exactly what it needs.
 
@@ -72,9 +70,7 @@ AI: "Based on src/auth/login.ts, here's how login works..."
 
 ---
 
-<a id="features"></a>
-
-## Features
+<h2 id="features">Features</h2>
 
 - **Just Works** - No setup, no API keys, no accounts
 - **Private** - Your code never leaves your computer
@@ -84,9 +80,7 @@ AI: "Based on src/auth/login.ts, here's how login works..."
 
 ---
 
-<a id="quick-start"></a>
-
-## Quick Start
+<h2 id="quick-start">Quick Start</h2>
 
 **Prerequisites:** [Node.js 18+](https://nodejs.org/)
 
@@ -145,9 +139,7 @@ That's it!
 
 ---
 
-<a id="standalone-cli"></a>
-
-## Standalone CLI
+<h2 id="standalone-cli">Standalone CLI</h2>
 
 Search MCP also works as a standalone CLI tool - no MCP client required:
 
@@ -173,9 +165,7 @@ Perfect for quick searches, debugging, or CI/CD integration.
 
 ---
 
-<a id="what-can-you-ask"></a>
-
-## What Can You Ask?
+<h2 id="what-can-you-ask">What Can You Ask?</h2>
 
 Once set up, just talk naturally:
 
@@ -190,9 +180,7 @@ See more [examples and use cases](docs/readme-files/examples.md).
 
 ---
 
-<a id="performance"></a>
-
-## Performance
+<h2 id="performance">Performance</h2>
 
 | Metric | Value |
 |--------|-------|
@@ -207,9 +195,7 @@ Semantic search returns focused code chunks instead of entire files. Your AI sta
 
 ---
 
-<a id="configuration"></a>
-
-## Configuration
+<h2 id="configuration">Configuration</h2>
 
 Config is auto-generated when you first index a project:
 - **macOS/Linux:** `~/.mcp/search/indexes/<project-hash>/config.json`
@@ -238,9 +224,7 @@ For full configuration options, see the [Configuration Reference](docs/readme-fi
 
 ---
 
-<a id="faq"></a>
-
-## FAQ
+<h2 id="faq">FAQ</h2>
 
 **Does my code leave my computer?**
 Never. All processing happens locally. No cloud, no API calls, no tracking.
@@ -256,9 +240,7 @@ File changes are detected automatically. Use `reindex_project` for a full rebuil
 
 ---
 
-<a id="documentation"></a>
-
-## Documentation
+<h2 id="documentation">Documentation</h2>
 
 | Guide | Description |
 |-------|-------------|
@@ -274,9 +256,7 @@ File changes are detected automatically. Use `reindex_project` for a full rebuil
 
 ---
 
-<a id="for-developers"></a>
-
-## For Developers
+<h2 id="for-developers">For Developers</h2>
 
 ### Architecture
 
@@ -353,9 +333,7 @@ For full technical documentation, see [ENGINEERING.RFC.md](docs/design/ENGINEERI
 
 ---
 
-<a id="updating--uninstalling"></a>
-
-## Updating & Uninstalling
+<h2 id="updating--uninstalling">Updating & Uninstalling</h2>
 
 ### Updating
 
@@ -384,9 +362,7 @@ npm uninstall -g @liraz-sbz/search-mcp
 
 ---
 
-<a id="troubleshooting"></a>
-
-## Troubleshooting
+<h2 id="troubleshooting">Troubleshooting</h2>
 
 **Common issues:**
 
@@ -413,9 +389,7 @@ For all error codes and solutions, see the [Troubleshooting Guide](docs/readme-f
 
 ---
 
-<a id="privacy--license"></a>
-
-## Privacy & License
+<h2 id="privacy--license">Privacy & License</h2>
 
 **Your code stays on your computer.** Nothing is uploaded anywhere. No accounts, no API keys, no tracking.
 

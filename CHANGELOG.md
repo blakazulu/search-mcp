@@ -5,11 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.8] - 2025-12-19
+
+### Fixed
+
+- **README anchor links** - Replaced separate `<a id>` tags with HTML `<h2 id>` headers for reliable cross-platform anchor navigation (GitHub, npm, and other markdown renderers)
+
 ## [1.6.7] - 2025-12-19
 
 ### Fixed
 
-- **README anchor links** - Added explicit anchor tags to all Table of Contents sections for cross-platform compatibility (GitHub and npm render markdown differently)
+- **README anchor links** - Added explicit anchor tags to all Table of Contents sections (superseded by 1.6.8)
 
 ## [1.6.6] - 2025-12-19
 

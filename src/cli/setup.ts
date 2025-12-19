@@ -18,6 +18,7 @@ import { execSync } from 'node:child_process';
 import * as readline from 'node:readline';
 import ora, { Ora } from 'ora';
 import cliProgress from 'cli-progress';
+import chalk from 'chalk';
 import { getLogger, initGlobalLogger } from '../utils/logger.js';
 import { setPreferredDevice, resetEmbeddingEngine } from '../engines/embedding.js';
 
@@ -430,19 +431,32 @@ function createProgressCallbackFactory(label: string) {
   let hasCreatedProgressBar = false;
   let totalFiles = 0;
   let currentFilename = '';
+  let lastFilename = '';
   // For batch processing: track cumulative progress
   let batchBaseOffset = 0;
   let lastBatchTotal = 0;
   let maxProgress = 0;
-  // Spinner frames
+  // Spinner frames (ora dots spinner)
   const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
   let spinnerIndex = 0;
+  // Per-file progress (0-100)
+  let fileProgress = 0;
 
   const updateFileBar = () => {
     if (fileBar && currentFilename) {
       spinnerIndex = (spinnerIndex + 1) % spinnerFrames.length;
-      const pct = totalFiles > 0 ? Math.round((maxProgress / totalFiles) * 100) : 0;
-      fileBar.update(0, { spinner: spinnerFrames[spinnerIndex], filename: currentFilename, pct: `${pct}%` });
+      // Detect file change and reset per-file progress
+      if (currentFilename !== lastFilename) {
+        fileProgress = 0;
+        lastFilename = currentFilename;
+      }
+      // Animate per-file progress (increment by 2-5% per tick, capped at 95% until file completes)
+      if (fileProgress < 95) {
+        fileProgress += Math.random() * 3 + 2;
+        if (fileProgress > 95) fileProgress = 95;
+      }
+      const purpleSpinner = chalk.magenta(spinnerFrames[spinnerIndex]);
+      fileBar.update(0, { spinner: purpleSpinner, filename: currentFilename, pct: `${Math.round(fileProgress)}%` });
     }
   };
 

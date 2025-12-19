@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.6] - 2025-12-19
+
+### Changed
+
+#### Purple Spinner with Per-File Progress (SMCP-102)
+
+- **Purple animated spinner** - Current file spinner now uses magenta/purple color to differentiate from the blue scanning spinner
+- **Per-file progress percentage** - Shows progress for each individual file (0-100%), resets when new file starts
+  - Animates smoothly from 0% to 95% while file is processing
+  - Resets to 0% when a new file begins
+- Example display:
+  ```
+  Code Index
+    ✔ Scanned 366 files → 366 indexable
+    Current  ⠋ auth-service.ts 47%
+    Overall  [████████████████░░░░░░░░░░░░░░░░░░░░░░░░] 45% | 165/366 files
+  ```
+
 ## [1.6.5] - 2025-12-19
 
 ### Added

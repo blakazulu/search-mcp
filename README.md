@@ -47,6 +47,8 @@ Your AI assistant searches your entire codebase semantically. No API keys. No cl
 
 ---
 
+<a id="what-does-this-do"></a>
+
 ## What Does This Do?
 
 Search MCP makes your AI assistant **smarter about your code**. Instead of you copying and pasting files into the chat, the AI can automatically search your project and find exactly what it needs.
@@ -70,6 +72,8 @@ AI: "Based on src/auth/login.ts, here's how login works..."
 
 ---
 
+<a id="features"></a>
+
 ## Features
 
 - **Just Works** - No setup, no API keys, no accounts
@@ -79,6 +83,8 @@ AI: "Based on src/auth/login.ts, here's how login works..."
 - **Secure** - Built-in protections against path traversal, symlink attacks, and resource exhaustion
 
 ---
+
+<a id="quick-start"></a>
 
 ## Quick Start
 
@@ -139,6 +145,8 @@ That's it!
 
 ---
 
+<a id="standalone-cli"></a>
+
 ## Standalone CLI
 
 Search MCP also works as a standalone CLI tool - no MCP client required:
@@ -165,6 +173,8 @@ Perfect for quick searches, debugging, or CI/CD integration.
 
 ---
 
+<a id="what-can-you-ask"></a>
+
 ## What Can You Ask?
 
 Once set up, just talk naturally:
@@ -180,6 +190,8 @@ See more [examples and use cases](docs/readme-files/examples.md).
 
 ---
 
+<a id="performance"></a>
+
 ## Performance
 
 | Metric | Value |
@@ -194,6 +206,8 @@ Semantic search returns focused code chunks instead of entire files. Your AI sta
 [Full benchmark details →](docs/readme-files/search-comparison-test.md)
 
 ---
+
+<a id="configuration"></a>
 
 ## Configuration
 
@@ -224,6 +238,8 @@ For full configuration options, see the [Configuration Reference](docs/readme-fi
 
 ---
 
+<a id="faq"></a>
+
 ## FAQ
 
 **Does my code leave my computer?**
@@ -240,6 +256,8 @@ File changes are detected automatically. Use `reindex_project` for a full rebuil
 
 ---
 
+<a id="documentation"></a>
+
 ## Documentation
 
 | Guide | Description |
@@ -255,6 +273,8 @@ File changes are detected automatically. Use `reindex_project` for a full rebuil
 | [Contributing](CONTRIBUTING.md) | How to contribute |
 
 ---
+
+<a id="for-developers"></a>
 
 ## For Developers
 
@@ -333,6 +353,8 @@ For full technical documentation, see [ENGINEERING.RFC.md](docs/design/ENGINEERI
 
 ---
 
+<a id="updating--uninstalling"></a>
+
 ## Updating & Uninstalling
 
 ### Updating
@@ -362,6 +384,8 @@ npm uninstall -g @liraz-sbz/search-mcp
 
 ---
 
+<a id="troubleshooting"></a>
+
 ## Troubleshooting
 
 **Common issues:**
@@ -388,6 +412,8 @@ See the [CLI Reference](docs/readme-files/cli.md) for all commands and options.
 For all error codes and solutions, see the [Troubleshooting Guide](docs/readme-files/troubleshooting.md).
 
 ---
+
+<a id="privacy--license"></a>
 
 ## Privacy & License
 

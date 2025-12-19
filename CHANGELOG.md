@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.2] - 2025-12-19
+
+### Changed
+
+#### Simplified CLI Progress Display (SMCP-103)
+- **Cleaner indexing progress output** - Streamlined from 4 phases to 2 visual steps
+  - Before: Scanning spinner → Chunking bar → Embedding bar → Storing spinner
+  - After: Scanning → single "Indexing" progress bar → complete
+- **Improved scan results format** - Shows "Scanned X files → Y indexable" with correct counts
+- **Better summary format** - Added separator line and organized Code/Docs/Duration/Device info
+
+### Fixed
+
+#### Delete Command Not Working (SMCP-104)
+- **Fixed `delete` command hanging** - Command was missing from CLI_COMMANDS routing list
+  - Before: `npx @liraz-sbz/search-mcp delete` would hang (tried to start MCP server)
+  - After: Command routes correctly to CLI handler
+
 ## [1.6.1] - 2025-12-19
 
 ### Fixed

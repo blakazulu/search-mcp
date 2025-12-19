@@ -50,7 +50,7 @@ function logCrash(error: unknown): void {
 const args = process.argv.slice(2);
 
 // CLI commands that should be routed to the CLI handler
-const CLI_COMMANDS = ['index', 'search', 'status', 'reindex', 'setup', 'logs'];
+const CLI_COMMANDS = ['index', 'search', 'status', 'reindex', 'delete', 'setup', 'logs'];
 
 // Check if any CLI command is present
 const hasCliCommand = args.length > 0 && (

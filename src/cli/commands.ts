@@ -201,20 +201,20 @@ async function indexCommand(options: CLIOptions): Promise<void> {
     }
 
     // Step 3: Run indexing with progress
-    console.log('');
     const result = await runIndexing(projectPath, true);
 
     // Step 4: Print summary
     console.log('');
+    console.log(chalk.white('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
     printSuccess('Index created successfully!');
     console.log('');
-    printInfo('Project', result.projectPath);
-    printInfo('Files indexed', result.filesIndexed);
-    printInfo('Chunks created', result.chunksCreated);
+    printInfo('Code', `${result.codeFiles.toLocaleString()} files, ${result.codeChunks.toLocaleString()} chunks`);
+    if (result.docsFiles > 0) {
+      printInfo('Docs', `${result.docsFiles.toLocaleString()} files, ${result.docsChunks.toLocaleString()} chunks`);
+    }
     printInfo('Duration', result.duration);
-
     if (result.computeDevice) {
-      printInfo('Compute device', result.computeDevice);
+      printInfo('Device', result.computeDevice);
     }
 
     console.log('');
@@ -263,128 +263,153 @@ function stopProgressBar(bar: cliProgress.SingleBar | null): void {
 }
 
 /**
+ * Create a progress callback factory for code or docs indexing
+ * Simplified UX: scanning → single indexing progress bar → complete
+ */
+function createCliProgressCallback(label: string) {
+  let progressBar: cliProgress.SingleBar | null = null;
+  let currentPhase = '';
+  let phaseSpinner: Ora | null = null;
+  let scanTotal = 0;
+  let hasShownScanResults = false;
+  let indexingTotal = 0;
+
+  const callback = (progress: IndexProgress) => {
+    const isNewPhase = progress.phase !== currentPhase;
+
+    if (isNewPhase) {
+      currentPhase = progress.phase;
+
+      switch (progress.phase) {
+        case 'scanning':
+          if (!hasShownScanResults) {
+            phaseSpinner = ora(`  Scanning ${label}...`).start();
+          }
+          break;
+
+        case 'chunking':
+          if (phaseSpinner) {
+            phaseSpinner.stop();
+            phaseSpinner = null;
+          }
+          // Show scan results: total files scanned → indexable files (from chunking total)
+          if (!hasShownScanResults) {
+            const indexableCount = progress.total;
+            console.log(`  \u2714 Scanned ${scanTotal.toLocaleString()} files \u2192 ${indexableCount.toLocaleString()} indexable`);
+            hasShownScanResults = true;
+          }
+          indexingTotal = progress.total;
+          progressBar = createProgressBar(`  Indexing  [{bar}] {percentage}% | {value}/{total} files`);
+          progressBar.start(indexingTotal, 0);
+          break;
+
+        case 'embedding':
+          // Continue with progress bar, no change needed
+          break;
+
+        case 'storing':
+          if (progressBar) {
+            progressBar.update(indexingTotal);
+            progressBar.stop();
+            progressBar = null;
+          }
+          break;
+      }
+    }
+
+    // Update progress based on phase
+    if (progress.phase === 'scanning') {
+      // Track total files scanned
+      scanTotal = progress.total;
+      if (phaseSpinner) {
+        phaseSpinner.text = `  Scanning ${label}... (${progress.total.toLocaleString()} files)`;
+      }
+    } else if (progress.phase === 'chunking' && progressBar) {
+      progressBar.update(progress.current);
+    }
+  };
+
+  const cleanup = () => {
+    if (progressBar) {
+      progressBar.stop();
+      progressBar = null;
+    }
+    if (phaseSpinner) {
+      phaseSpinner.stop();
+      phaseSpinner = null;
+    }
+  };
+
+  return { callback, cleanup };
+}
+
+/**
  * Run indexing with optional progress display
  */
 async function runIndexing(projectPath: string, showProgress: boolean): Promise<{
   projectPath: string;
   filesIndexed: number;
   chunksCreated: number;
+  codeFiles: number;
+  codeChunks: number;
+  docsFiles: number;
+  docsChunks: number;
   duration: string;
   computeDevice?: string;
 }> {
   const indexPath = getIndexPath(projectPath);
   const config = await loadConfig(indexPath);
 
-  let progressBar: cliProgress.SingleBar | null = null;
-  let currentPhase = '';
-  let phaseSpinner: Ora | null = null;
-  let cumulativeChunks = 0;
-  let cumulativeFiles = 0;
-  let lastSeenTotal = 0;
-  // Track phases we've already seen (for batch-based indexing)
-  const seenPhases = new Set<string>();
+  let codeProgressHelper: ReturnType<typeof createCliProgressCallback> | null = null;
+  let docsProgressHelper: ReturnType<typeof createCliProgressCallback> | null = null;
 
-  const progressCallback = showProgress ? (progress: IndexProgress) => {
-    const isNewPhase = progress.phase !== currentPhase;
-    const isReturningToPhase = seenPhases.has(progress.phase) && isNewPhase;
+  // === Code Indexing ===
+  if (showProgress) {
+    console.log('');
+    console.log(chalk.cyan('Code Index:'));
+    codeProgressHelper = createCliProgressCallback('code files');
+  }
 
-    // Handle phase transitions
-    if (isNewPhase) {
-      // Stop previous progress bar
-      stopProgressBar(progressBar);
-      progressBar = null;
-      stopSpinner(phaseSpinner);
-      phaseSpinner = null;
-
-      currentPhase = progress.phase;
-      seenPhases.add(progress.phase);
-
-      // Only reset counters for truly new phases, not when returning to a phase in a new batch
-      if (!isReturningToPhase) {
-        cumulativeChunks = 0;
-        cumulativeFiles = 0;
-        lastSeenTotal = 0;
-      }
-
-      // Start new indicator based on phase
-      switch (progress.phase) {
-        case 'scanning':
-          // Only show scanning spinner if we haven't completed scanning
-          if (!seenPhases.has('chunking')) {
-            phaseSpinner = ora('Scanning files...').start();
-          }
-          break;
-        case 'chunking': {
-          const chunkingTotal = isReturningToPhase ? cumulativeFiles + progress.total : progress.total;
-          progressBar = createProgressBar('  Chunking  [{bar}] {percentage}% | {value}/{total} files');
-          progressBar.start(chunkingTotal, isReturningToPhase ? cumulativeFiles : 0);
-          lastSeenTotal = progress.total;
-          break;
-        }
-        case 'embedding': {
-          const embeddingTotal = isReturningToPhase ? cumulativeChunks + progress.total : progress.total;
-          progressBar = createProgressBar('  Embedding [{bar}] {percentage}% | {value}/{total} chunks');
-          progressBar.start(embeddingTotal, isReturningToPhase ? cumulativeChunks : 0);
-          lastSeenTotal = progress.total;
-          break;
-        }
-        case 'storing':
-          // Only show storing spinner on first batch
-          if (!isReturningToPhase) {
-            phaseSpinner = ora('Storing chunks...').start();
-          }
-          break;
-      }
-    } else if (progressBar && progress.total !== lastSeenTotal && progress.current === 0) {
-      // New batch starting within same phase - accumulate the previous batch total
-      if (currentPhase === 'chunking') {
-        cumulativeFiles += lastSeenTotal;
-      } else if (currentPhase === 'embedding') {
-        cumulativeChunks += lastSeenTotal;
-      }
-      lastSeenTotal = progress.total;
-      const newTotal = (currentPhase === 'chunking' ? cumulativeFiles : cumulativeChunks) + progress.total;
-      progressBar.setTotal(newTotal);
-    }
-
-    // Update progress
-    if (progressBar && progress.total > 0) {
-      const base = currentPhase === 'chunking' ? cumulativeFiles : cumulativeChunks;
-      progressBar.update(base + progress.current);
-    }
-    if (phaseSpinner && progress.phase === 'scanning' && progress.total > 0) {
-      phaseSpinner.text = `Scanning files... (${progress.current}/${progress.total})`;
-    }
-  } : undefined;
-
-  // Run code indexing
   const indexManager = new IndexManager(projectPath);
-  const codeResult = await indexManager.createIndex(progressCallback);
+  const codeResult = await indexManager.createIndex(codeProgressHelper?.callback);
 
-  // Run docs indexing if enabled
+  if (showProgress && codeProgressHelper) {
+    codeProgressHelper.cleanup();
+    console.log(chalk.green(`  \u2714 Code index complete: ${codeResult.filesIndexed.toLocaleString()} files, ${codeResult.chunksCreated.toLocaleString()} chunks`));
+  }
+
+  // Get compute device info
+  let computeDevice: string | undefined;
+  try {
+    const { getCodeEmbeddingEngine } = await import('../engines/embedding.js');
+    const engine = getCodeEmbeddingEngine();
+    const deviceInfo = engine.getDeviceInfo();
+    if (deviceInfo) {
+      computeDevice = deviceInfo.gpuName || (deviceInfo.device === 'cpu' ? 'CPU' : deviceInfo.device);
+    }
+  } catch {
+    // Ignore device detection errors
+  }
+
+  // === Docs Indexing ===
   let docsResult: DocsIndexResult | null = null;
   if (config.indexDocs) {
-    // Only show spinner in docs phase if showProgress is true
     if (showProgress) {
-      // Stop any existing spinner before starting docs phase
-      stopSpinner(phaseSpinner);
-      phaseSpinner = ora('Indexing documentation...').start();
+      console.log('');
+      console.log(chalk.cyan('Docs Index:'));
+      docsProgressHelper = createCliProgressCallback('doc files');
     }
 
     const docsIndexManager = new DocsIndexManager(projectPath, indexPath);
     await docsIndexManager.initialize();
-    docsResult = await docsIndexManager.createDocsIndex();
+    docsResult = await docsIndexManager.createDocsIndex(docsProgressHelper?.callback);
     await docsIndexManager.close();
 
-    if (showProgress) {
-      stopSpinner(phaseSpinner, 'Documentation indexed');
-      phaseSpinner = null;
+    if (showProgress && docsProgressHelper) {
+      docsProgressHelper.cleanup();
+      console.log(chalk.green(`  \u2714 Docs index complete: ${docsResult.filesIndexed.toLocaleString()} files, ${docsResult.chunksCreated.toLocaleString()} chunks`));
     }
   }
-
-  // Clean up progress indicators
-  stopProgressBar(progressBar);
-  stopSpinner(phaseSpinner);
 
   // Combine results
   const totalDurationMs = codeResult.durationMs + (docsResult?.durationMs || 0);
@@ -395,8 +420,12 @@ async function runIndexing(projectPath: string, showProgress: boolean): Promise<
     projectPath,
     filesIndexed: totalFilesIndexed,
     chunksCreated: totalChunksCreated,
+    codeFiles: codeResult.filesIndexed,
+    codeChunks: codeResult.chunksCreated,
+    docsFiles: docsResult?.filesIndexed || 0,
+    docsChunks: docsResult?.chunksCreated || 0,
     duration: formatDuration(totalDurationMs),
-    computeDevice: undefined, // Will be added when embedding engine exposes device info
+    computeDevice,
   };
 }
 
@@ -693,17 +722,21 @@ async function reindexCommand(options: CLIOptions): Promise<void> {
     }
 
     // Run indexing with progress
-    console.log('');
     const result = await runIndexing(projectPath, true);
 
     // Print summary
     console.log('');
+    console.log(chalk.white('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
     printSuccess('Index rebuilt successfully!');
     console.log('');
-    printInfo('Project', result.projectPath);
-    printInfo('Files indexed', result.filesIndexed);
-    printInfo('Chunks created', result.chunksCreated);
+    printInfo('Code', `${result.codeFiles.toLocaleString()} files, ${result.codeChunks.toLocaleString()} chunks`);
+    if (result.docsFiles > 0) {
+      printInfo('Docs', `${result.docsFiles.toLocaleString()} files, ${result.docsChunks.toLocaleString()} chunks`);
+    }
     printInfo('Duration', result.duration);
+    if (result.computeDevice) {
+      printInfo('Device', result.computeDevice);
+    }
     console.log('');
 
   } catch (error) {

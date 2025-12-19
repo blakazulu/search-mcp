@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-#### Purple Spinner with Per-File Progress (SMCP-102)
+#### Purple Spinner with Per-File Progress
 
 - **Purple animated spinner** - Current file spinner now uses magenta/purple color to differentiate from the blue scanning spinner
 - **Per-file progress percentage** - Shows progress for each individual file (0-100%), resets when new file starts
@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-#### Live Progress Display with Current File (SMCP-102)
+#### Live Progress Display with Current File
 
 - **Multi-bar progress display during indexing** - Shows both current file and overall progress
   - Current line: Animated spinner + filename + live percentage
@@ -945,6 +945,7 @@ interface AdvancedRankingConfig {
 ### Added
 
 - **Human-Readable Index Summary** - `create_index` now returns a formatted `summary` field with:
+
   ```
   Index created successfully for /path/to/project
 

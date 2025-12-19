@@ -268,69 +268,80 @@ function stopProgressBar(bar: cliProgress.SingleBar | null): void {
  */
 function createCliProgressCallback(label: string) {
   let progressBar: cliProgress.SingleBar | null = null;
-  let currentPhase = '';
   let phaseSpinner: Ora | null = null;
   let scanTotal = 0;
   let hasShownScanResults = false;
-  let indexingTotal = 0;
+  let hasCreatedProgressBar = false;
+  let totalFiles = 0;
+  // For batch processing: track cumulative progress
+  let batchBaseOffset = 0;
+  let lastBatchTotal = 0;
+  let maxProgress = 0;
 
   const callback = (progress: IndexProgress) => {
-    const isNewPhase = progress.phase !== currentPhase;
-
-    if (isNewPhase) {
-      currentPhase = progress.phase;
-
-      switch (progress.phase) {
-        case 'scanning':
-          if (!hasShownScanResults) {
+    switch (progress.phase) {
+      case 'scanning':
+        // Start/update scanning spinner
+        if (!hasShownScanResults) {
+          if (!phaseSpinner) {
             phaseSpinner = ora(`  Scanning ${label}...`).start();
           }
-          break;
+          scanTotal = progress.total;
+          phaseSpinner.text = `  Scanning ${label}... (${progress.total.toLocaleString()} files)`;
+        }
+        break;
 
-        case 'chunking':
-          if (phaseSpinner) {
-            phaseSpinner.stop();
-            phaseSpinner = null;
-          }
-          // Show scan results: total files scanned → indexable files (from chunking total)
-          if (!hasShownScanResults) {
-            const indexableCount = progress.total;
-            console.log(`  \u2714 Scanned ${scanTotal.toLocaleString()} files \u2192 ${indexableCount.toLocaleString()} indexable`);
-            hasShownScanResults = true;
-          }
-          indexingTotal = progress.total;
+      case 'chunking':
+        // Stop scanning spinner and show results (only once)
+        if (phaseSpinner) {
+          phaseSpinner.stop();
+          phaseSpinner = null;
+        }
+        if (!hasShownScanResults) {
+          totalFiles = progress.total;
+          console.log(`  \u2714 Scanned ${scanTotal.toLocaleString()} files \u2192 ${totalFiles.toLocaleString()} indexable`);
+          hasShownScanResults = true;
+          lastBatchTotal = progress.total;
+        }
+
+        // Create progress bar only once
+        if (!hasCreatedProgressBar) {
           progressBar = createProgressBar(`  Indexing  [{bar}] {percentage}% | {value}/{total} files`);
-          progressBar.start(indexingTotal, 0);
-          break;
+          progressBar.start(totalFiles, 0);
+          hasCreatedProgressBar = true;
+        }
 
-        case 'embedding':
-          // Continue with progress bar, no change needed
-          break;
-
-        case 'storing':
+        // Detect new batch (current resets to 0 or small value, total changes)
+        if (progress.current < maxProgress && progress.total !== lastBatchTotal) {
+          batchBaseOffset += lastBatchTotal;
+          lastBatchTotal = progress.total;
+          totalFiles = batchBaseOffset + progress.total;
           if (progressBar) {
-            progressBar.update(indexingTotal);
-            progressBar.stop();
-            progressBar = null;
+            progressBar.setTotal(totalFiles);
           }
-          break;
-      }
-    }
+        }
 
-    // Update progress based on phase
-    if (progress.phase === 'scanning') {
-      // Track total files scanned
-      scanTotal = progress.total;
-      if (phaseSpinner) {
-        phaseSpinner.text = `  Scanning ${label}... (${progress.total.toLocaleString()} files)`;
-      }
-    } else if (progress.phase === 'chunking' && progressBar) {
-      progressBar.update(progress.current);
+        // Update progress (accumulate across batches)
+        const currentProgress = batchBaseOffset + progress.current;
+        if (currentProgress > maxProgress) {
+          maxProgress = currentProgress;
+          if (progressBar) {
+            progressBar.update(maxProgress);
+          }
+        }
+        break;
+
+      case 'embedding':
+      case 'storing':
+        // Keep progress bar at current state, don't stop it
+        break;
     }
   };
 
   const cleanup = () => {
+    // Complete and stop progress bar
     if (progressBar) {
+      progressBar.update(totalFiles);
       progressBar.stop();
       progressBar = null;
     }

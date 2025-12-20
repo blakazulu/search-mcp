@@ -54,12 +54,12 @@ Security and stability issues that should be addressed.
 
 Performance optimizations that would improve search speed and resource usage.
 
-| Improvement | Description | Impact | Related Task |
-|-------------|-------------|--------|--------------|
-| FTS engine memory caching | Keep deserialized FTS in memory instead of reading from disk every search | ~10x faster searches | - |
-| Search result caching | LRU cache for repeated queries with smart invalidation | ~10x for repeated queries | - |
-| Adaptive batch sizing | Tune embedding batch size based on content length and memory | Better memory efficiency | - |
-| Adaptive RRF constant | Tune k parameter based on corpus size (currently hardcoded k=60) | Better ranking | SMCP-087 |
+| Improvement | Description | Impact |
+|-------------|-------------|--------|
+| FTS engine memory caching | Keep deserialized FTS in memory instead of reading from disk every search | ~10x faster searches |
+| Search result caching | LRU cache for repeated queries with smart invalidation | ~10x for repeated queries |
+| Adaptive batch sizing | Tune embedding batch size based on content length and memory | Better memory efficiency |
+| Adaptive RRF constant | Tune k parameter based on corpus size (currently hardcoded k=60) | Better ranking |
 
 ---
 
@@ -67,11 +67,9 @@ Performance optimizations that would improve search speed and resource usage.
 
 Improvements to search relevance and result quality.
 
-| Improvement | Description | Related Task |
-|-------------|-------------|--------------|
-| Content-based deduplication | Deduplicate results with identical content across different files | - |
-| Query expansion | Rewrite queries to match synonyms (e.g., "hash" → "SHA256") | **SMCP-095** |
-| File importance signals | Rank by recency, import frequency, file connectivity | **SMCP-087** |
+| Improvement | Description |
+|-------------|-------------|
+| Content-based deduplication | Deduplicate results with identical content across different files |
 
 ---
 
@@ -96,20 +94,16 @@ Improvements to search relevance and result quality.
 
 ### Advanced Features
 
-| Feature | Description | Complexity | Related Task |
-|---------|-------------|------------|--------------|
-| Multi-Root Support | Index multiple folders as one project | Medium | - |
-| Query Expansion | Rewrite queries for better retrieval | Medium | **SMCP-095** |
-| Custom Models | Allow users to specify embedding model | Medium | - |
-| AST Chunking | Language-aware splitting via tree-sitter | High | **SMCP-086** |
+| Feature | Description | Complexity |
+|---------|-------------|------------|
+| Multi-Root Support | Index multiple folders as one project | Medium |
+| Custom Models | Allow users to specify embedding model | Medium |
 
 ### Documentation Support
 
-| Feature | Description | Related Task |
-|---------|-------------|--------------|
-| RST/AsciiDoc Support | Add .rst and .adoc to doc search | - |
-| Markdown Header Chunking | Split docs by headers for better context | **SMCP-099** |
-| Code comment extraction | Index comments separately for doc search | **SMCP-100** |
+| Feature | Description |
+|---------|-------------|
+| RST/AsciiDoc Support | Add .rst and .adoc to doc search |
 
 ### User Experience
 
@@ -141,6 +135,27 @@ These are ideas we're evaluating but haven't committed to:
 ---
 
 ## Completed
+
+### v1.6.x
+- [x] **AST-based chunking** (SMCP-086) - Tree-sitter powered semantic chunking for 10+ languages
+- [x] **Query intent detection** (SMCP-085) - Smart query classification and routing
+- [x] **Multi-factor search ranking** (SMCP-087) - Improved relevance with file importance signals
+- [x] **Zero-config CLI** (SMCP-088) - Interactive setup with `npx @liraz-sbz/search-mcp setup`
+- [x] **Merkle DAG change detection** (SMCP-089) - Efficient incremental updates
+- [x] **Symbol extraction** (SMCP-090) - `get_file_summary` tool with complexity metrics
+- [x] **Connection pooling** (SMCP-093) - LanceDB connection management
+- [x] **Search-triggered reindexing** (SMCP-094) - Auto-reindex stale indexes
+- [x] **Query expansion** (SMCP-095) - Synonym and related term expansion
+- [x] **Domain embedding prompts** (SMCP-096) - Optimized prompts for code/docs
+- [x] **Multi-language code chunking** (SMCP-097) - Extended language support
+- [x] **Incremental reindexing** (SMCP-098) - Partial file reindexing
+- [x] **Markdown header chunking** (SMCP-099) - Section-aware doc chunking
+- [x] **Code comment extraction** (SMCP-100) - Index comments for doc search
+- [x] **Clean CLI output** (SMCP-101) - Improved user experience
+
+### v1.5.x
+- [x] **LanceDB GPU acceleration** (SMCP-091) - DirectML support on Windows
+- [x] **CUDA/MPS embedding support** (SMCP-092) - GPU backend options
 
 ### v1.4.0
 - [x] **GPU Acceleration via DirectML** - Windows GPU support for faster indexing

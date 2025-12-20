@@ -4,7 +4,7 @@ This document outlines the planned features and improvements for Search MCP.
 
 ---
 
-## Current Version: 1.4.0
+## Current Version: 1.6.x
 
 ### What's Working
 - Semantic search for code and documentation
@@ -14,6 +14,13 @@ This document outlines the planned features and improvements for Search MCP.
 - Local embedding model (no API keys needed)
 - Cross-platform support (macOS, Linux, Windows)
 - **GPU acceleration via DirectML** (Windows)
+- **AST-based chunking** with Tree-sitter (10+ languages)
+- **Query intent detection** and expansion
+- **Multi-factor search ranking**
+- **Zero-config CLI** with interactive setup
+- **Symbol extraction** with complexity metrics
+- **Markdown header chunking** for docs
+- **Incremental reindexing** for large files
 
 ---
 
@@ -28,60 +35,6 @@ This document outlines the planned features and improvements for Search MCP.
 ### Quality Improvements
 - [ ] Improve flaky file watcher tests
 - [ ] Add integration test suite
-
----
-
-## Planned Features (Task Tracked)
-
-These features have detailed task files in `docs/tasks/active/11-upgrades/`.
-
-### GPU Acceleration (P0-P1)
-
-| Task | Title | Priority | Hours |
-|------|-------|----------|-------|
-| [SMCP-091](docs/tasks/active/11-upgrades/SMCP-091-lancedb-gpu-acceleration.md) | LanceDB GPU Acceleration (CUDA/MPS) | P0 | 20 |
-| [SMCP-092](docs/tasks/active/11-upgrades/SMCP-092-cuda-mps-embedding-support.md) | CUDA/MPS Embedding Support | P1 | 16 |
-
-### Indexing & Performance (P1-P2)
-
-| Task | Title | Priority | Hours |
-|------|-------|----------|-------|
-| [SMCP-089](docs/tasks/active/11-upgrades/SMCP-089-merkle-dag-change-detection.md) | Merkle DAG Change Detection | P1 | 10 |
-| [SMCP-093](docs/tasks/active/11-upgrades/SMCP-093-connection-pooling.md) | Connection Pooling for LanceDB | P1 | 8 |
-| [SMCP-094](docs/tasks/active/11-upgrades/SMCP-094-search-triggered-reindexing.md) | Search-Triggered Auto-Reindexing | P1 | 10 |
-| [SMCP-098](docs/tasks/active/11-upgrades/SMCP-098-incremental-reindexing.md) | Incremental Reindexing | P2 | 12 |
-
-### Search Quality (P1-P2)
-
-| Task | Title | Priority | Hours |
-|------|-------|----------|-------|
-| [SMCP-085](docs/tasks/active/11-upgrades/SMCP-085-query-intent-detection.md) | Query Intent Detection | P1 | 8 |
-| [SMCP-087](docs/tasks/active/11-upgrades/SMCP-087-multi-factor-search-ranking.md) | Multi-Factor Search Ranking | P1 | 12 |
-| [SMCP-095](docs/tasks/active/11-upgrades/SMCP-095-query-expansion.md) | Query Expansion & Synonyms | P2 | 6 |
-| [SMCP-096](docs/tasks/active/11-upgrades/SMCP-096-domain-embedding-prompts.md) | Domain-Specific Embedding Prompts | P2 | 4 |
-
-### Code Intelligence (P2-P3)
-
-| Task | Title | Priority | Hours |
-|------|-------|----------|-------|
-| [SMCP-086](docs/tasks/active/11-upgrades/SMCP-086-ast-based-chunking.md) | AST-Based Chunking | P2 | 16 |
-| [SMCP-090](docs/tasks/active/11-upgrades/SMCP-090-symbol-extraction.md) | Symbol Extraction | P2 | 8 |
-| [SMCP-097](docs/tasks/active/11-upgrades/SMCP-097-multi-language-code-chunking.md) | Multi-Language Code Chunking | P2 | 16 |
-
-### Documentation Search (P2-P3)
-
-| Task | Title | Priority | Hours |
-|------|-------|----------|-------|
-| [SMCP-099](docs/tasks/active/11-upgrades/SMCP-099-markdown-header-chunking.md) | Markdown Header Chunking | P2 | 6 |
-| [SMCP-100](docs/tasks/active/11-upgrades/SMCP-100-code-comment-extraction.md) | Code Comment Extraction | P3 | 8 |
-
-### User Experience (P2)
-
-| Task | Title | Priority | Hours |
-|------|-------|----------|-------|
-| [SMCP-088](docs/tasks/active/11-upgrades/SMCP-088-zero-config-cli.md) | Zero-Config CLI | P2 | 6 |
-
-**Total Planned Hours: 166**
 
 ---
 
@@ -122,24 +75,20 @@ Improvements to search relevance and result quality.
 
 ---
 
-## Medium Term (v1.5.x)
+## Medium Term (Next Minor Release)
 
 ### New Features
 
-| Feature | Description | Priority | Related Task |
-|---------|-------------|----------|--------------|
-| `list_projects` | Show all indexed projects with stats | High | - |
-| PDF Doc Support | Add PDF text extraction to `search_docs` | Medium | - |
-| GPU Acceleration | CUDA/MPS for indexing and embedding | High | **SMCP-091, SMCP-092** |
+| Feature | Description | Priority |
+|---------|-------------|----------|
+| `list_projects` | Show all indexed projects with stats | High |
+| PDF Doc Support | Add PDF text extraction to `search_docs` | Medium |
 
 ### Improvements
 
-| Improvement | Description | Related Task |
-|-------------|-------------|--------------|
-| Better error messages | More actionable error messages with suggestions | - |
-| Search result ranking | Improve relevance scoring | **SMCP-087** |
-| Incremental reindexing | Only reindex changed parts of large files | **SMCP-098** |
-| Multi-language code chunking | Extend code-aware chunking to 20+ languages | **SMCP-097** |
+| Improvement | Description |
+|-------------|-------------|
+| Better error messages | More actionable error messages with suggestions |
 
 ---
 

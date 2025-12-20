@@ -3,10 +3,11 @@
 | Metadata | Details |
 |:---------|:--------|
 | **Document Type** | Technical Specification & RFC |
-| **Version** | 1.0.0 |
+| **Version** | 2.0.0 |
 | **Status** | Approved |
 | **Engineering Owner** | Search MCP Team |
 | **Target System** | Node.js / TypeScript / MCP / LanceDB |
+| **Last Updated** | 2025-12-20 |
 
 ---
 
@@ -40,13 +41,17 @@ The system operates autonomously using file watchers and incremental updates to 
 ┌─────────────────────────────────────────────────────────────┐
 │                    MCP SERVER                                │
 │  ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌─────────────┐ │
-│  │create_    │ │search_code │ │search_by_ │ │get_index_   │ │
-│  │index      │ │           │ │path       │ │status       │ │
+│  │create_    │ │search_code │ │search_    │ │search_by_   │ │
+│  │index      │ │           │ │docs       │ │path         │ │
 │  └───────────┘ └───────────┘ └───────────┘ └─────────────┘ │
-│  ┌───────────┐ ┌───────────┐ ┌───────────┐                 │
-│  │reindex_   │ │reindex_   │ │delete_    │                 │
-│  │project    │ │file       │ │index      │                 │
-│  └───────────┘ └───────────┘ └───────────┘                 │
+│  ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌─────────────┐ │
+│  │get_index_ │ │get_file_  │ │get_       │ │reindex_     │ │
+│  │status     │ │summary    │ │config     │ │project      │ │
+│  └───────────┘ └───────────┘ └───────────┘ └─────────────┘ │
+│  ┌───────────┐ ┌───────────┐                               │
+│  │reindex_   │ │delete_    │                               │
+│  │file       │ │index      │                               │
+│  └───────────┘ └───────────┘                               │
 └─────────────────────────┬───────────────────────────────────┘
                           │
         ┌─────────────────┼─────────────────┐
@@ -66,6 +71,12 @@ The system operates autonomously using file watchers and incremental updates to 
 │   Chunking    │ │   Embedding   │ │   LanceDB     │
 │   Engine      │ │   Engine      │ │   Store       │
 └───────────────┘ └───────────────┘ └───────────────┘
+        │                 │                 │
+        ▼                 ▼                 ▼
+┌───────────────┐ ┌───────────────┐ ┌───────────────┐
+│   Query       │ │   Hybrid      │ │   Advanced    │
+│   Expansion   │ │   Search/FTS  │ │   Ranking     │
+└───────────────┘ └───────────────┘ └───────────────┘
 ```
 
 ### 2.2 Component Responsibilities
@@ -76,9 +87,15 @@ The system operates autonomously using file watchers and incremental updates to 
 | **Index Manager** | Orchestrates indexing operations (create, update, delete) |
 | **File Watcher** | Monitors filesystem for changes, triggers incremental updates |
 | **Integrity Engine** | Periodic reconciliation to fix drift from missed events |
-| **Chunking Engine** | Splits files into indexable chunks |
-| **Embedding Engine** | Converts text chunks to vectors |
-| **LanceDB Store** | Persists vectors and enables similarity search |
+| **Chunking Engine** | Splits files into indexable chunks (character, code-aware, AST, markdown) |
+| **Embedding Engine** | Converts text chunks to vectors (GPU-accelerated on Windows) |
+| **LanceDB Store** | Persists vectors and enables similarity search (with IVF-PQ indexing) |
+| **FTS Engine** | Full-text search for keyword matching (BM25-based) |
+| **Hybrid Search** | Combines vector + FTS results via Reciprocal Rank Fusion |
+| **Query Expansion** | Expands queries with synonyms (60+ mappings) |
+| **Advanced Ranking** | Multi-factor ranking with intent detection and name matching |
+| **Auto-Reindexer** | Search-triggered automatic reindexing for stale files |
+| **Symbol Extractor** | On-demand extraction of functions, classes, complexity metrics |
 
 ---
 
@@ -121,27 +138,44 @@ Indices are stored in a global user directory to:
 | `id` | String | Unique UUIDv4 for the chunk |
 | `path` | String | Relative file path (e.g., `src/main.ts`) |
 | `text` | String | The actual text content of the chunk |
-| `vector` | Float32[384] | Embedding vector (384 dimensions for MiniLM) |
+| `vector` | Float32[384] | Embedding vector (384 dimensions for BGE-small) |
 | `start_line` | Int | Start line number in source file |
 | `end_line` | Int | End line number in source file |
 | `content_hash` | String | SHA256 hash of source file (for versioning) |
+| `chunk_hash` | String | Position-independent hash of chunk text (for incremental reindex) |
+| `chunk_type` | String | (Optional) Semantic type: function, class, method, etc. |
+| `chunk_name` | String | (Optional) Symbol name if AST-parsed |
+| `chunk_signature` | String | (Optional) Full signature if available |
+| `chunk_docstring` | String | (Optional) Extracted docstring/comment |
+| `chunk_parent` | String | (Optional) Parent class/struct name |
+| `chunk_tags` | String[] | (Optional) Semantic tags: async, export, static, etc. |
+| `chunk_language` | String | (Optional) Programming language |
 
 ### 3.2.1 Database Schema (Docs)
 
 **Database:** `docs.lancedb/`
 **Table Name:** `project_docs_prose`
 
-Same schema as code chunks, but with prose-optimized chunking parameters.
+Same schema as code chunks, but with prose-optimized chunking and larger embedding model.
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | String | Unique UUIDv4 for the chunk |
-| `path` | String | Relative file path (e.g., `docs/README.md`) |
+| `path` | String | Relative file path (e.g., `docs/README.md`) or `[code-comment]src/file.ts` |
 | `text` | String | The actual text content of the chunk |
-| `vector` | Float32[384] | Embedding vector (384 dimensions for MiniLM) |
+| `vector` | Float32[768] | Embedding vector (768 dimensions for BGE-base) |
 | `start_line` | Int | Start line number in source file |
 | `end_line` | Int | End line number in source file |
 | `content_hash` | String | SHA256 hash of source file (for versioning) |
+| `header_path` | String[] | (Optional) Markdown header hierarchy for .md files |
+| `header_level` | Int | (Optional) Header level (1-6) for markdown sections |
+
+**Embedding model differences:**
+| Parameter | Code | Docs |
+|-----------|------|------|
+| Model | `Xenova/bge-small-en-v1.5` | `Xenova/bge-base-en-v1.5` |
+| Dimensions | 384 | 768 |
+| Optimized for | Code search | Prose/documentation |
 
 **Chunking differences:**
 | Parameter | Code | Docs |
@@ -149,6 +183,7 @@ Same schema as code chunks, but with prose-optimized chunking parameters.
 | Chunk Size | 4000 chars (~1000 tokens) | 8000 chars (~2000 tokens) |
 | Chunk Overlap | 800 chars (~200 tokens) | 2000 chars (~500 tokens) |
 | Separators | `\n\n`, `\n`, ` `, `` | `\n\n`, `\n`, `. `, ` `, `` |
+| Markdown Strategy | N/A | Header-aware chunking for .md files |
 
 ### 3.3 Fingerprints Schema
 
@@ -170,7 +205,7 @@ Key-value store mapping relative file paths to SHA256 content hashes. Used for d
 
 ```json
 {
-  "version": "1.0.0",
+  "version": "2.0.0",
   "projectPath": "/Users/dev/my-project",
   "createdAt": "2024-01-15T10:00:00Z",
   "lastFullIndex": "2024-01-15T10:00:00Z",
@@ -185,7 +220,24 @@ Key-value store mapping relative file paths to SHA256 content hashes. Used for d
     "totalDocChunks": 45,
     "docsStorageSizeBytes": 1048576
   },
-  "lastDocsIndex": "2024-01-15T10:00:00Z"
+  "lastDocsIndex": "2024-01-15T10:00:00Z",
+  "embeddingModels": {
+    "codeModel": "Xenova/bge-small-en-v1.5",
+    "codeDimension": 384,
+    "docsModel": "Xenova/bge-base-en-v1.5",
+    "docsDimension": 768
+  },
+  "vectorIndex": {
+    "hasIndex": true,
+    "indexType": "ivf_pq",
+    "numPartitions": 32,
+    "numSubVectors": 24,
+    "distanceType": "l2",
+    "indexCreationTimeMs": 1250,
+    "chunkCount": 1205,
+    "createdAt": "2024-01-15T10:00:00Z"
+  },
+  "computeDevice": "directml"
 }
 ```
 
@@ -230,7 +282,7 @@ Creates a new index for the current project.
 
 ### 4.2 `search_code`
 
-Performs semantic similarity search.
+Performs hybrid semantic + keyword search on code files.
 
 **Input Schema:**
 ```json
@@ -245,6 +297,22 @@ Performs semantic similarity search.
       "type": "number",
       "default": 10,
       "description": "Number of results to return (1-50)"
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["hybrid", "vector", "fts"],
+      "default": "hybrid",
+      "description": "Search mode: hybrid (vector+keyword), vector (semantic only), fts (keyword only)"
+    },
+    "alpha": {
+      "type": "number",
+      "default": 0.5,
+      "description": "Weight for hybrid search (0=keyword only, 1=semantic only)"
+    },
+    "compact": {
+      "type": "boolean",
+      "default": false,
+      "description": "Return compact format with shorter field names (~5% token savings)"
     }
   },
   "required": ["query"]
@@ -260,13 +328,26 @@ Performs semantic similarity search.
       "text": "export async function login(email: string, password: string) {...}",
       "score": 0.92,
       "startLine": 45,
-      "endLine": 78
+      "endLine": 78,
+      "metadata": {
+        "type": "function",
+        "name": "login",
+        "signature": "async function login(email: string, password: string): Promise<User>"
+      }
     }
   ],
   "totalResults": 3,
   "searchTimeMs": 45
 }
 ```
+
+**Behavior:**
+1. Expand query with synonyms (e.g., "auth" → "authentication authorize login...")
+2. Generate query embedding with instruction prefix
+3. Perform hybrid search (vector + FTS) based on mode
+4. Apply advanced ranking (intent detection, name matching, path relevance)
+5. Deduplicate and optimize results
+6. Auto-reindex stale files if needed (small changes only)
 
 **Confirmation Required:** No
 
@@ -447,7 +528,7 @@ Removes the index for the current project.
 
 ### 4.8 `search_docs`
 
-Performs semantic similarity search on documentation files only (.md, .txt).
+Performs hybrid semantic + keyword search on documentation files (.md, .txt) and extracted code comments.
 
 **Input Schema:**
 ```json
@@ -462,6 +543,22 @@ Performs semantic similarity search on documentation files only (.md, .txt).
       "type": "number",
       "default": 10,
       "description": "Number of results to return (1-50)"
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["hybrid", "vector", "fts"],
+      "default": "hybrid",
+      "description": "Search mode: hybrid (vector+keyword), vector (semantic only), fts (keyword only)"
+    },
+    "alpha": {
+      "type": "number",
+      "default": 0.5,
+      "description": "Weight for hybrid search (0=keyword only, 1=semantic only)"
+    },
+    "compact": {
+      "type": "boolean",
+      "default": false,
+      "description": "Return compact format with shorter field names (~5% token savings)"
     }
   },
   "required": ["query"]
@@ -474,10 +571,15 @@ Performs semantic similarity search on documentation files only (.md, .txt).
   "results": [
     {
       "path": "docs/authentication.md",
-      "text": "## Authentication\n\nThe authentication system uses JWT tokens...",
+      "text": "[Guide > Authentication]\n\n## JWT Tokens\n\nThe authentication system uses JWT tokens...",
       "score": 0.89,
       "startLine": 15,
-      "endLine": 45
+      "endLine": 45,
+      "metadata": {
+        "headerPath": ["Guide", "Authentication"],
+        "headerLevel": 2,
+        "sectionTitle": "JWT Tokens"
+      }
     }
   ],
   "totalResults": 3,
@@ -486,16 +588,19 @@ Performs semantic similarity search on documentation files only (.md, .txt).
 ```
 
 **Behavior:**
-1. Check if docs index exists
-2. If no docs index, return DOCS_INDEX_NOT_FOUND error
-3. Generate query embedding
-4. Search docs LanceDB table for similar chunks
-5. Return formatted results with scores
+1. Expand query with synonyms
+2. Generate query embedding with instruction prefix (768-dim BGE-base model)
+3. Perform hybrid search (vector + FTS) based on mode
+4. Apply advanced ranking
+5. Return results with markdown section context
 
 **Key Differences from `search_code`:**
-- Searches only documentation files (.md, .txt)
-- Uses prose-optimized chunking (larger chunks, more overlap)
+- Searches documentation files (.md, .txt) AND extracted code comments (JSDoc, docstrings, etc.)
+- Uses prose-optimized embedding model (BGE-base, 768 dims vs BGE-small, 384 dims)
+- Uses larger chunks (8000 chars) with more overlap (2000 chars)
+- Markdown files use header-aware chunking (sections align with h1-h6 headers)
 - Stored in separate LanceDB table (`docs.lancedb/`)
+- Includes breadcrumb context in chunks (e.g., `[Guide > Installation]`)
 
 **Hybrid Search Behavior:**
 
@@ -539,6 +644,120 @@ function getToolDescription(tool: string, enhanced: boolean): string {
   const base = TOOL_DESCRIPTIONS[tool];
   if (!enhanced) return base;
   return base + ENHANCED_HINTS[tool];
+}
+```
+
+**Confirmation Required:** No
+
+---
+
+### 4.9 `get_file_summary`
+
+Returns a structured summary of a file including functions, classes, imports, exports, and complexity metrics without reading the entire file content.
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string",
+      "description": "Path to the file (relative to project root or absolute)"
+    },
+    "includeComplexity": {
+      "type": "boolean",
+      "default": true,
+      "description": "Include cyclomatic complexity metrics"
+    },
+    "includeDocstrings": {
+      "type": "boolean",
+      "default": true,
+      "description": "Include extracted docstrings/comments"
+    }
+  },
+  "required": ["path"]
+}
+```
+
+**Output:**
+```json
+{
+  "path": "src/auth/login.ts",
+  "language": "typescript",
+  "lines": {
+    "total": 250,
+    "code": 180,
+    "blank": 45,
+    "comments": 25
+  },
+  "functions": [
+    {
+      "name": "login",
+      "type": "function",
+      "startLine": 45,
+      "endLine": 78,
+      "signature": "async function login(email: string, password: string): Promise<User>",
+      "docstring": "Authenticates a user with email and password",
+      "isAsync": true,
+      "isExported": true,
+      "paramCount": 2,
+      "complexity": 5,
+      "nestingDepth": 2
+    }
+  ],
+  "classes": [],
+  "imports": [
+    { "source": "./types", "specifiers": ["User", "AuthResponse"] }
+  ],
+  "exports": [
+    { "name": "login", "type": "function" }
+  ],
+  "complexity": {
+    "cyclomatic": 12,
+    "maxNesting": 3,
+    "avgFunctionComplexity": 4.0,
+    "decisionPoints": 8,
+    "score": 75
+  },
+  "size": 8192,
+  "extractionTimeMs": 45,
+  "fullSupport": true
+}
+```
+
+**Supported Languages:** JavaScript, TypeScript, TSX, Python, Go, Java, Rust, C, C++, C#
+
+**Confirmation Required:** No
+
+---
+
+### 4.10 `get_config`
+
+Returns the configuration file path and contents for the current project.
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {},
+  "required": []
+}
+```
+
+**Output:**
+```json
+{
+  "configPath": "~/.mcp/search/indexes/<hash>/config.json",
+  "config": {
+    "include": ["**/*"],
+    "exclude": [],
+    "respectGitignore": true,
+    "chunkingStrategy": "code-aware",
+    "hybridSearch": {
+      "enabled": true,
+      "defaultAlpha": 0.5
+    }
+  }
 }
 ```
 
@@ -621,17 +840,99 @@ For each file:
 
 ### 5.3 Chunking Engine
 
-**Purpose:** Split files into indexable chunks.
+**Purpose:** Split files into indexable chunks using language-aware strategies.
 
-**Strategy:** Recursive Character Text Splitter
+**Available Strategies:**
 
-| Parameter | Value | Rationale |
-|-----------|-------|-----------|
-| Chunk Size | ~1000 tokens (~4000 chars) | Fits well in context, captures meaningful code blocks |
-| Chunk Overlap | ~200 tokens (~800 chars) | Preserves context across chunk boundaries |
-| Separators | `\n\n`, `\n`, ` `, `` | Prioritize natural breaks (paragraphs, lines) |
+| Strategy | Description | Languages | Use Case |
+|----------|-------------|-----------|----------|
+| `character` | Recursive character splitter | All | Fallback, simple text |
+| `code-aware` | Heuristic-based code boundaries | 22+ languages | Default for code |
+| `ast` | Tree-sitter AST parsing | 10 languages | Best accuracy |
+| `markdown` | Header-aware section splitting | .md files | Documentation |
+
+**Strategy Selection (Automatic):**
+```
+1. If .md file → markdown strategy
+2. If AST-supported language → ast strategy
+3. If code-aware language → code-aware strategy
+4. Fallback → character strategy
+```
+
+**Base Parameters:**
+| Parameter | Code | Docs |
+|-----------|------|------|
+| Chunk Size | ~1000 tokens (~4000 chars) | ~2000 tokens (~8000 chars) |
+| Chunk Overlap | ~200 tokens (~800 chars) | ~500 tokens (~2000 chars) |
+| Separators | `\n\n`, `\n`, ` `, `` | `\n\n`, `\n`, `. `, ` `, `` |
+
+#### 5.3.1 Code-Aware Chunking (22+ Languages)
+
+Heuristic-based chunking that splits at semantic boundaries using regex patterns.
+
+**Tier 1 - High Priority:**
+- TypeScript, JavaScript, Python, Java, Go, Rust, C#, C, C++, Kotlin, Swift
+
+**Tier 2 - Medium Priority:**
+- Ruby, PHP, Scala, Shell/Bash
+
+**Tier 3 - Markup/Config:**
+- CSS, SCSS, LESS, HTML, Vue, Svelte, SQL, YAML, JSON, XML, GraphQL
+
+**Tier 4 - Infrastructure:**
+- Terraform, HCL, Dockerfile
+
+#### 5.3.2 AST-Based Chunking (Tree-sitter)
+
+True AST parsing via Tree-sitter WASM for the highest accuracy.
+
+**Supported Languages:** JavaScript, TypeScript, TSX, Python, Go, Java, Rust, C, C++, C#
+
+**Rich Metadata Extraction:**
+```typescript
+interface ChunkMetadata {
+  type: 'function' | 'class' | 'method' | 'interface' | 'struct' | 'trait' | 'impl' | 'enum' | 'module' | 'other';
+  name?: string;           // Symbol name
+  signature?: string;      // Full signature
+  docstring?: string;      // Extracted documentation
+  decorators?: string[];   // @annotations
+  parentName?: string;     // Parent class/struct
+  parentType?: ChunkType;
+  tags?: string[];         // async, export, static, etc.
+  language: string;
+  isAsync?: boolean;
+  isExport?: boolean;
+  isStatic?: boolean;
+  visibility?: 'public' | 'private' | 'protected';
+  paramCount?: number;
+  returnType?: string;
+  genericParams?: string[];
+}
+```
+
+#### 5.3.3 Markdown Chunking
+
+Header-aware chunking for .md files that aligns with section boundaries.
+
+**Features:**
+- Parses ATX headers (`#` through `######`) and setext headers (`===`, `---`)
+- Strips YAML frontmatter
+- Preserves code blocks as atomic units
+- Includes breadcrumb context: `[Parent > Grandparent]`
+- Sub-chunks large sections with "(continued)" markers
 
 **Chunk Metadata:**
+```typescript
+interface MarkdownChunkMetadata {
+  headerPath: string[];    // ["Guide", "Installation"]
+  headerLevel: number;     // 1-6
+  sectionTitle: string;    // Current section title
+  part?: number;           // For sub-chunked sections
+  totalParts?: number;
+}
+```
+
+**Legacy Chunk Interface:**
 ```typescript
 interface Chunk {
   id: string;          // UUIDv4
@@ -640,21 +941,41 @@ interface Chunk {
   startLine: number;   // Starting line in source
   endLine: number;     // Ending line in source
   contentHash: string; // SHA256 of source file
+  chunkHash?: string;  // Position-independent hash (for incremental reindex)
+  metadata?: ChunkMetadata; // Rich metadata (AST/markdown)
 }
 ```
 
 ### 5.4 Embedding Engine
 
-**Purpose:** Convert text chunks to vector embeddings.
+**Purpose:** Convert text chunks to vector embeddings using dual models optimized for code and prose.
 
-**Model:** `Xenova/all-MiniLM-L6-v2`
+**Models:**
 
-| Property | Value |
-|----------|-------|
-| Dimensions | 384 |
-| Model Size | ~90MB |
-| Runtime | ONNX (via @xenova/transformers) |
-| Location | CPU (no GPU required) |
+| Purpose | Model | Dimensions | Size |
+|---------|-------|------------|------|
+| **Code** | `Xenova/bge-small-en-v1.5` | 384 | ~90MB |
+| **Docs** | `Xenova/bge-base-en-v1.5` | 768 | ~180MB |
+
+**Runtime:** ONNX via `@huggingface/transformers` (v3)
+
+**GPU Acceleration:**
+
+| Platform | GPU Support | Notes |
+|----------|-------------|-------|
+| **Windows** | DirectML | Automatic on NVIDIA, AMD, Intel GPUs |
+| **macOS** | CPU only | CoreML not available in Node.js |
+| **Linux** | CPU only | CUDA requires separate package |
+
+**Batch Processing:**
+| Device | Batch Size | Notes |
+|--------|------------|-------|
+| CPU | 32 | Reliable, works on all systems |
+| GPU (DirectML) | 64 | Faster for large codebases (>5000 chunks) |
+
+**Domain-Specific Prompts (BGE Best Practice):**
+- **Document embedding:** No prefix (optimized for passages)
+- **Query embedding:** Prefix with "Represent this sentence for searching relevant passages: "
 
 **First-Run Behavior:**
 ```
@@ -663,13 +984,25 @@ interface Chunk {
    - Display: "Downloading embedding model... (one-time, ~90MB)"
    - Download model
    - Display: "Done! Model cached for future use."
-3. Load model
-4. Ready for inference
+3. Detect best compute device (DirectML > CPU)
+4. Load model with device selection
+5. Ready for inference
 ```
 
-**Batch Processing:**
-- Process chunks in batches of 32
-- Provides progress updates during indexing
+**API:**
+```typescript
+// Get singleton instances
+const codeEngine = getCodeEmbeddingEngine();
+const docsEngine = getDocsEmbeddingEngine();
+
+// Embed with prompt type
+await codeEngine.embed(text, 'query');    // For search queries
+await codeEngine.embed(text, 'document'); // For indexing
+
+// Device info
+codeEngine.getDeviceInfo();  // { device: 'directml', isGPU: true, ... }
+codeEngine.isUsingGPU();     // true/false
+```
 
 ### 5.5 File Watcher Engine
 
@@ -814,6 +1147,186 @@ interface IndexingStrategy {
 - All JSON files written atomically (write to temp, rename)
 - Prevents corruption from crashes or concurrent writes
 
+### 5.9 Hybrid Search Engine
+
+**Purpose:** Combine vector similarity search with keyword (BM25) search for better retrieval.
+
+**Algorithm: Reciprocal Rank Fusion (RRF)**
+```
+score(d) = Σ 1 / (k + rank_i(d))
+
+Where:
+- k = 60 (constant)
+- rank_i(d) = rank of document d in result list i
+```
+
+**FTS Engines:**
+
+| Engine | Implementation | Best For |
+|--------|---------------|----------|
+| `js` | `natural` npm package (TF-IDF/BM25) | Small-medium projects |
+| `native` | SQLite FTS5 (if available) | Large projects (>5000 files) |
+| `auto` | Auto-select based on size | Default |
+
+**Parameters:**
+- `mode`: `'hybrid'` (default), `'vector'`, `'fts'`
+- `alpha`: 0-1 weight (0=keyword only, 1=semantic only, 0.5=balanced)
+
+**Index Storage:**
+- FTS index persisted to `fts-index.json` in index directory
+- Updated during indexing and incremental reindex
+
+### 5.10 Query Expansion Engine
+
+**Purpose:** Improve search recall by expanding abbreviations and synonyms.
+
+**Expansion Mappings (60+):**
+
+| Category | Examples |
+|----------|----------|
+| Authentication | auth → authentication authorize login session token |
+| Database | db → database sql mongo postgres redis cache |
+| API | api → endpoint route http rest graphql request |
+| Async | async → await promise callback concurrent thread |
+| Errors | err → error exception catch throw fail handle |
+| Config | config → env settings options param |
+| Testing | test → mock spec stub spy assert expect |
+| Common Abbrevs | fn → function, util → utility, msg → message |
+
+**Configuration:**
+```typescript
+interface QueryExpansionConfig {
+  enabled: boolean;           // Default: true
+  maxExpansionTerms: number;  // Default: 10
+  customExpansions?: Record<string, string>;
+}
+```
+
+**Performance:** < 1ms per query expansion
+
+### 5.11 Advanced Ranking Engine
+
+**Purpose:** Multi-factor ranking for significantly better search result quality.
+
+**Ranking Factors:**
+
+| Factor | Weight | Description |
+|--------|--------|-------------|
+| Base Score | 1.0 | From vector/hybrid search |
+| Chunk Type | 1.0-1.3 | Boost based on query intent |
+| Name Match | 1.0-1.4 | CamelCase/snake_case aware matching |
+| Path Relevance | 1.0-1.2 | Query tokens in file path |
+| Docstring Bonus | 1.05 | Documented code preferred |
+| Complexity Penalty | 0.95-0.98 | Penalize oversized chunks |
+
+**Query Intent Detection (8 Categories):**
+- FUNCTION, CLASS, ERROR, DATABASE, API, AUTH, TEST, CONFIG
+
+**Name Matching Boosts:**
+- Exact match: 1.4x
+- 80%+ token overlap: 1.3x
+- 50%+ token overlap: 1.2x
+- 30%+ token overlap: 1.1x
+- Any overlap: 1.05x
+
+**Performance:** < 50ms for 100 results
+
+### 5.12 Auto-Reindexer Engine
+
+**Purpose:** Search-triggered automatic reindexing for stale files.
+
+**Behavior:**
+- Checks for stale files every N searches (default: 10)
+- Silently reindexes small changes (≤5 files)
+- Skips large changes to avoid search delays
+- No daemon process needed
+
+**Configuration:**
+```typescript
+interface AutoReindexConfig {
+  enabled: boolean;              // Default: true
+  checkEveryNSearches: number;   // Default: 10
+  maxAutoReindexFiles: number;   // Default: 5
+  stalenessThresholdMs: number;  // Default: 300000 (5 min)
+  logActivity: boolean;          // Default: true
+}
+```
+
+### 5.13 Incremental Reindex Engine
+
+**Purpose:** Surgical chunk-level updates for faster reindexing.
+
+**Algorithm:**
+```
+1. Compute position-independent hash for each new chunk
+2. Load existing chunks for the file
+3. Diff chunks by hash:
+   - Unchanged (same hash, same position): Keep as-is
+   - Moved (same hash, different position): Update metadata only
+   - Added (new hash): Embed and insert
+   - Removed (hash no longer present): Delete
+4. Only re-embed added chunks
+```
+
+**Performance:**
+- Edit 1 line in 5000-line file: ~100ms (vs ~2.5s for full reindex)
+- 25x faster for small edits in large files
+
+**Decision Logic:**
+- Use incremental for files with 3+ existing chunks
+- Require ≥25% savings to be "worthwhile"
+
+### 5.14 Symbol Extraction Engine
+
+**Purpose:** On-demand extraction of functions, classes, and complexity metrics.
+
+**Uses Tree-sitter infrastructure from AST chunking.**
+
+**Extracted Symbols:**
+- Functions and methods (with parameters, return types)
+- Classes, interfaces, structs, traits, enums
+- Imports and exports
+- Decorators and annotations
+
+**Complexity Metrics:**
+- Cyclomatic complexity per function
+- Maximum nesting depth
+- Decision points (if, while, for, &&, ||)
+- Overall score (0-100, higher = better)
+
+**Supported Languages:** JavaScript, TypeScript, TSX, Python, Go, Java, Rust, C, C++, C#
+
+**Performance:** < 100ms per typical file
+
+### 5.15 Vector Index Engine (IVF-PQ)
+
+**Purpose:** Accelerate similarity search for large codebases.
+
+**Index Type:** IVF-PQ (Inverted File with Product Quantization)
+
+**Auto-Creation Threshold:** ≥10,000 chunks
+
+**Parameters (Auto-Calculated):**
+- `numPartitions`: sqrt(numRows), clamped to 1-256
+- `numSubVectors`: dimension/16 or dimension/8
+- `distanceType`: 'l2' (default), 'cosine', 'dot'
+
+**Metadata Tracking:**
+```json
+{
+  "vectorIndex": {
+    "hasIndex": true,
+    "indexType": "ivf_pq",
+    "numPartitions": 32,
+    "numSubVectors": 24,
+    "indexCreationTimeMs": 1250,
+    "chunkCount": 10500
+  }
+}
+```
+
+**Note:** GPU acceleration for index building is NOT available in LanceDB Node.js SDK. Index building runs on CPU only.
+
 ---
 
 ## 6. Error Handling
@@ -867,9 +1380,28 @@ Created at `~/.mcp/search/indexes/<hash>/config.json` on first index:
 
   "docPatterns": ["**/*.md", "**/*.txt"],
   "indexDocs": true,
+  "extractComments": true,
+
+  "chunkingStrategy": "code-aware",
+
+  "hybridSearch": {
+    "enabled": true,
+    "ftsEngine": "auto",
+    "defaultAlpha": 0.5
+  },
+
+  "queryExpansion": {
+    "enabled": true,
+    "maxExpansionTerms": 10
+  },
+
+  "autoReindex": {
+    "enabled": true,
+    "checkEveryNSearches": 10,
+    "maxAutoReindexFiles": 5
+  },
 
   "enhancedToolDescriptions": false,
-
   "indexingStrategy": "realtime",
 
   "_hardcodedExcludes": [
@@ -880,7 +1412,7 @@ Created at `~/.mcp/search/indexes/<hash>/config.json` on first index:
     "// - .env, .env.*, *.pem, *.key  (secrets)",
     "// - *.log, *.lock, package-lock.json, yarn.lock  (logs/locks)",
     "// - .idea/, .vscode/, .DS_Store  (IDE config)",
-    "// - coverage/  (test coverage)",
+    "// - coverage/, .angular/, .next/, .nuxt/  (framework caches)",
     "// - Binary files (images, videos, etc.) are auto-detected and skipped"
   ],
 
@@ -892,6 +1424,13 @@ Created at `~/.mcp/search/indexes/<hash>/config.json` on first index:
     "maxFiles": "Warn if project exceeds this many files.",
     "docPatterns": "Glob patterns for documentation files. Default: ['**/*.md', '**/*.txt'].",
     "indexDocs": "If true, index documentation files with prose-optimized chunking. Default: true.",
+    "extractComments": "If true, extract JSDoc/docstrings from code files into docs index. Default: true.",
+    "chunkingStrategy": "Chunking strategy: 'character', 'code-aware', 'ast'. Default: 'code-aware'.",
+    "hybridSearch.enabled": "Enable hybrid vector+keyword search. Default: true.",
+    "hybridSearch.ftsEngine": "FTS engine: 'auto', 'js', 'native'. Default: 'auto'.",
+    "hybridSearch.defaultAlpha": "Default alpha for hybrid search (0-1). Default: 0.5.",
+    "queryExpansion.enabled": "Enable query expansion with synonyms. Default: true.",
+    "autoReindex.enabled": "Enable search-triggered auto-reindexing. Default: true.",
     "enhancedToolDescriptions": "If true, tool descriptions include AI hints. Default: false.",
     "indexingStrategy": "Indexing strategy: 'realtime' (immediate), 'lazy' (on search), 'git' (on commit). Default: 'realtime'."
   }
@@ -922,14 +1461,21 @@ Invalid config → Use defaults + log warning
 | Package | Version | Purpose |
 |---------|---------|---------|
 | `@modelcontextprotocol/sdk` | ^1.5.0 | MCP server framework |
-| `@xenova/transformers` | ^2.17.0 | Local embedding model |
-| `vectordb` (LanceDB) | ^0.4.0 | Vector database |
+| `@huggingface/transformers` | ^3.0.0 | Local embedding models (BGE) |
+| `@lancedb/lancedb` | ^0.4.0 | Vector database |
 | `chokidar` | ^3.5.0 | File watching |
 | `glob` | ^10.0.0 | Glob pattern matching |
 | `ignore` | ^5.3.0 | Gitignore parsing |
 | `is-binary-path` | ^2.1.0 | Binary file detection |
 | `uuid` | ^9.0.0 | UUID generation |
 | `zod` | ^3.22.0 | Schema validation |
+| `web-tree-sitter` | ^0.26.3 | WASM-based AST parsing |
+| `tree-sitter-wasms` | ^0.1.13 | Pre-built WASM grammars |
+| `natural` | ^6.0.0 | BM25/TF-IDF for FTS |
+| `commander` | ^12.0.0 | CLI framework |
+| `chalk` | ^5.0.0 | Terminal colors |
+| `ora` | ^8.0.0 | Terminal spinners |
+| `cli-progress` | ^3.0.0 | Progress bars |
 
 ### 8.2 Dev Dependencies
 
@@ -938,6 +1484,7 @@ Invalid config → Use defaults + log warning
 | `typescript` | ^5.3.0 | Type checking |
 | `vitest` | ^1.0.0 | Testing |
 | `@types/node` | ^20.0.0 | Node.js types |
+| `cross-env` | ^7.0.0 | Cross-platform env vars |
 
 ---
 
@@ -999,15 +1546,36 @@ This project follows **Semantic Versioning (SemVer)**.
 
 ---
 
-## 12. Future Roadmap (v2.0+)
+## 12. Completed Features (v1.2.0 - v1.6.x)
+
+| Feature | Version | Description |
+|---------|---------|-------------|
+| ✅ **Hybrid Search** | v1.2.0 | Vector + BM25 keyword search with RRF |
+| ✅ **AST Chunking** | v1.5.0 | Tree-sitter WASM for 10 languages |
+| ✅ **Query Expansion** | v1.5.0 | 60+ synonym mappings |
+| ✅ **Advanced Ranking** | v1.5.0 | Multi-factor ranking with intent detection |
+| ✅ **Code-Aware Chunking** | v1.5.0 | 22+ languages with semantic boundaries |
+| ✅ **Markdown Chunking** | v1.5.0 | Header-aware sections for .md files |
+| ✅ **Comment Extraction** | v1.5.0 | JSDoc, docstrings indexed in docs search |
+| ✅ **Incremental Reindex** | v1.5.0 | Chunk-level surgical updates |
+| ✅ **Auto-Reindexer** | v1.5.0 | Search-triggered staleness checks |
+| ✅ **Symbol Extraction** | v1.5.0 | `get_file_summary` tool |
+| ✅ **Vector Index (IVF-PQ)** | v1.5.0 | Accelerated search for large codebases |
+| ✅ **GPU Acceleration** | v1.4.0 | DirectML on Windows |
+| ✅ **CLI Commands** | v1.5.0 | `index`, `search`, `status`, `reindex`, `setup`, `delete` |
+| ✅ **Dual Embedding Models** | v1.3.0 | BGE-small for code, BGE-base for docs |
+
+## 13. Future Roadmap (v2.0+)
 
 | Feature | Description | Complexity |
 |---------|-------------|------------|
-| **AST Chunking** | Use tree-sitter for language-aware splitting (functions/classes) | High |
-| **Hybrid Search** | Combine vector search with BM25 keyword search | Medium |
 | **Multi-Root Support** | Index multiple folders into one logical index (monorepo) | Medium |
-| **Query Expansion** | Rewrite queries for better retrieval | Medium |
 | **`list_projects`** | Show all indexed projects with stats | Low |
+| **Remote/Cloud Index** | Optional cloud backup of indexes | High |
+| **Streaming Embeddings** | Process files as they're discovered | Medium |
+| **Cross-Project Search** | Search across multiple indexed projects | Medium |
+| **GPU Index Building** | LanceDB GPU support when SDK adds it | Blocked |
+| **Real-time Collaboration** | Multiple users sharing index | High |
 
 ---
 
@@ -1016,26 +1584,55 @@ This project follows **Semantic Versioning (SemVer)**.
 ```
 search-mcp/
 ├── src/
-│   ├── index.ts              # Entry point
+│   ├── index.ts              # Entry point (CLI + MCP)
 │   ├── server.ts             # MCP server setup
+│   ├── cli/
+│   │   ├── commands.ts       # CLI command handlers
+│   │   └── setup.ts          # Setup wizard
 │   ├── tools/
 │   │   ├── createIndex.ts
-│   │   ├── searchNow.ts
+│   │   ├── searchCode.ts
+│   │   ├── searchDocs.ts
 │   │   ├── searchByPath.ts
 │   │   ├── getIndexStatus.ts
+│   │   ├── getFileSummary.ts # Symbol extraction tool
+│   │   ├── getConfig.ts
 │   │   ├── reindexProject.ts
 │   │   ├── reindexFile.ts
-│   │   └── deleteIndex.ts
+│   │   ├── deleteIndex.ts
+│   │   └── toolDescriptions.ts
 │   ├── engines/
 │   │   ├── projectRoot.ts    # Project detection
 │   │   ├── indexPolicy.ts    # File filtering
+│   │   ├── indexManager.ts   # Index orchestration
 │   │   ├── chunking.ts       # Text splitting
-│   │   ├── embedding.ts      # Vector generation
+│   │   ├── codeAwareChunking.ts # 22+ language support
+│   │   ├── astChunking.ts    # Tree-sitter chunking
+│   │   ├── treeSitterParser.ts # WASM parser
+│   │   ├── markdownChunking.ts # Header-aware docs
+│   │   ├── docsChunking.ts   # Docs chunking entry
+│   │   ├── commentExtractor.ts # JSDoc/docstring extraction
+│   │   ├── embedding.ts      # Vector generation (GPU)
+│   │   ├── deviceDetection.ts # GPU detection
+│   │   ├── hybridSearch.ts   # Vector + FTS fusion
+│   │   ├── ftsEngine.ts      # FTS interface
+│   │   ├── naturalBM25.ts    # JS FTS implementation
+│   │   ├── ftsEngineFactory.ts
+│   │   ├── queryExpansion.ts # Synonym expansion
+│   │   ├── queryIntent.ts    # Intent detection
+│   │   ├── advancedRanking.ts # Multi-factor ranking
+│   │   ├── incrementalReindex.ts # Chunk-level updates
+│   │   ├── autoReindexer.ts  # Search-triggered reindex
+│   │   ├── symbolExtractor.ts # File summary extraction
+│   │   ├── merkleTree.ts     # Change detection
 │   │   ├── fileWatcher.ts    # Change detection
-│   │   └── integrity.ts      # Drift reconciliation
+│   │   ├── integrity.ts      # Drift reconciliation
+│   │   └── indexingStrategy.ts
 │   ├── storage/
-│   │   ├── lancedb.ts        # Vector store
-│   │   ├── fingerprints.ts   # Hash tracking
+│   │   ├── lancedb.ts        # Code vector store
+│   │   ├── docsLancedb.ts    # Docs vector store
+│   │   ├── fingerprints.ts   # Code hash tracking
+│   │   ├── docsFingerprints.ts
 │   │   ├── config.ts         # Configuration
 │   │   └── metadata.ts       # Index metadata
 │   ├── errors/
@@ -1043,11 +1640,21 @@ search-mcp/
 │   └── utils/
 │       ├── hash.ts           # SHA256 utilities
 │       ├── paths.ts          # Path manipulation
-│       └── logger.ts         # Logging
+│       ├── logger.ts         # Logging
+│       ├── asyncMutex.ts     # Concurrency control
+│       ├── atomicWrite.ts    # Safe file writes
+│       └── modelCompatibility.ts
 ├── tests/
-│   └── ...
+│   ├── unit/                 # Unit tests
+│   ├── integration/          # Integration tests
+│   ├── configs/              # Config matrix tests
+│   └── reports/              # Generated reports
+├── docs/
+│   └── design/
+│       └── ENGINEERING.RFC.md
 ├── package.json
 ├── tsconfig.json
+├── CHANGELOG.md
 └── README.md
 ```
 
@@ -1059,6 +1666,48 @@ search-mcp/
 
 ```bash
 npm install -g @liraz-sbz/search-mcp
+```
+
+### Quick Setup (Recommended)
+
+```bash
+npx @liraz-sbz/search-mcp setup
+```
+
+The setup wizard will:
+1. Auto-detect installed MCP clients (Claude Desktop, Claude Code, Cursor, Windsurf)
+2. Configure selected clients automatically
+3. Offer to index the current project
+
+### CLI Commands
+
+```bash
+# Create index for current project
+npx @liraz-sbz/search-mcp index
+
+# Search code
+npx @liraz-sbz/search-mcp search "authentication function"
+
+# Search with options
+npx @liraz-sbz/search-mcp search "error handling" --top-k 5 --mode hybrid
+
+# Search documentation
+npx @liraz-sbz/search-mcp search "setup instructions" --docs
+
+# Get index status
+npx @liraz-sbz/search-mcp status
+
+# Rebuild index
+npx @liraz-sbz/search-mcp reindex
+
+# Delete index
+npx @liraz-sbz/search-mcp delete
+
+# Show log file locations
+npx @liraz-sbz/search-mcp logs
+
+# JSON output for scripting
+npx @liraz-sbz/search-mcp status --json | jq '.totalFiles'
 ```
 
 ### Claude Desktop Configuration
@@ -1075,6 +1724,12 @@ npm install -g @liraz-sbz/search-mcp
     }
   }
 }
+```
+
+### Claude Code CLI Configuration
+
+```bash
+claude mcp add search -- npx @liraz-sbz/search-mcp
 ```
 
 ### Cursor Configuration

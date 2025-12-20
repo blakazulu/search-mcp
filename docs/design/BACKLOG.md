@@ -84,11 +84,8 @@ jobs:
 
 | Feature | Description | Complexity |
 |---------|-------------|------------|
-| AST Chunking | Language-aware splitting via tree-sitter | High |
 | Multi-Root Support | Index multiple folders as one project | Medium |
-| Query Expansion | Rewrite queries for better retrieval | Medium |
 | RST/AsciiDoc Support | Add .rst and .adoc to doc search | Low |
-| Markdown Header Chunking | Split docs by headers for better context | Medium |
 
 ### 2.3 Low Priority
 

@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.14] - 2025-12-20
+
+### Fixed
+
+- **Claude CLI configured detection** - Fixed "✓ configured" indicator not appearing for Claude Code CLI option in setup. Now properly checks `~/.claude.json` project config instead of only checking `.mcp.json` files.
+
+- **GPU fallback notification** - When user selects GPU but system falls back to CPU (e.g., due to hybrid GPU system), a clear warning is now displayed: "⚠ GPU could not be used - running with CPU instead" with the reason. Previously, the fallback happened silently.
+
+### Improved
+
+- **Hybrid GPU detection upfront** - Setup now detects hybrid GPU systems (discrete + integrated) before asking for device choice and warns the user. Default changes to CPU for hybrid systems to avoid issues.
+
+- **Friendlier CLI experience** - Multiple UX improvements:
+  - Empty input now shows "Please select an option" instead of silently quitting
+  - Invalid options show which options are valid
+  - Step-by-step headers explain what each phase does ("Step 1: Connect to your AI assistant", "Step 2: Index your codebase")
+  - GPU options have clearer descriptions ("Faster for large codebases" vs "Reliable, works on all systems")
+  - Skip option is clearer: "Already configured - Skip to code indexing"
+  - Better completion message when skipping to indexing
+
 ## [1.6.13] - 2025-12-20
 
 ### Fixed

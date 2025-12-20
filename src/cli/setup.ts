@@ -81,6 +81,46 @@ function isClaudeCodeCLIAvailable(): boolean {
 }
 
 /**
+ * Check if search-mcp is configured via Claude CLI
+ * Claude CLI stores project config in ~/.claude.json under projects["path"].mcpServers
+ */
+function isClaudeCLIConfigured(): boolean {
+  try {
+    const claudeConfigPath = path.join(os.homedir(), '.claude.json');
+    if (!fs.existsSync(claudeConfigPath)) return false;
+
+    const content = fs.readFileSync(claudeConfigPath, 'utf-8');
+    const config = JSON.parse(content);
+
+    if (!config.projects) return false;
+
+    const cwd = process.cwd();
+    // Check both forward and backslash versions (Windows path normalization issue)
+    const cwdForwardSlash = cwd.replace(/\\/g, '/');
+    const cwdBackslash = cwd.replace(/\//g, '\\');
+
+    // Check each project path variant
+    for (const projectPath of [cwd, cwdForwardSlash, cwdBackslash]) {
+      const projectConfig = config.projects[projectPath];
+      if (projectConfig?.mcpServers) {
+        const servers = projectConfig.mcpServers;
+        // Check if any server uses our package
+        const hasSearch = Object.entries(servers).some(([name, server]: [string, any]) => {
+          if (name === 'search') return true;
+          const args = server.args || [];
+          return args.some((arg: string) => arg.includes(PACKAGE_NAME) || arg.includes('search-mcp'));
+        });
+        if (hasSearch) return true;
+      }
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Check if a config file has search-mcp already configured
  */
 function isAlreadyConfigured(configPath: string): boolean {
@@ -605,16 +645,29 @@ async function runIndexingWithProgress(projectPath: string): Promise<IndexingRes
 
     print(`  \u2714 Code index complete: ${codeResult.filesIndexed.toLocaleString()} files, ${codeResult.chunksCreated.toLocaleString()} chunks`, 'green');
 
-    // Get compute device info
+    // Get compute device info and check for fallback
     let computeDevice: string | undefined;
+    let didFallback = false;
+    let fallbackReason: string | null = null;
     try {
       const engine = getCodeEmbeddingEngine();
       const deviceInfo = engine.getDeviceInfo();
       if (deviceInfo) {
         computeDevice = deviceInfo.gpuName || (deviceInfo.device === 'cpu' ? 'CPU' : deviceInfo.device);
       }
+      didFallback = engine.didFallbackToCPU();
+      fallbackReason = engine.getFallbackReason();
     } catch {
       // Ignore device detection errors
+    }
+
+    // Notify user if GPU was selected but fell back to CPU
+    if (didFallback) {
+      console.log('');
+      print('⚠ GPU could not be used - running with CPU instead', 'yellow');
+      if (fallbackReason) {
+        print(`  Reason: ${fallbackReason}`, 'dim');
+      }
     }
 
     // === Docs Indexing ===
@@ -664,6 +717,40 @@ async function runIndexingWithProgress(projectPath: string): Promise<IndexingRes
 }
 
 /**
+ * Detect hybrid GPU system for early warning.
+ * Returns true if multiple GPUs detected (NVIDIA/AMD discrete + Intel/AMD integrated).
+ */
+async function isHybridGPUSystem(): Promise<boolean> {
+  if (os.platform() !== 'win32') return false;
+
+  try {
+    const output = execSync('wmic path win32_VideoController get name', {
+      encoding: 'utf8',
+      timeout: 5000,
+    });
+
+    const lines = output.split('\n').filter(line => line.trim() && !line.includes('Name'));
+    const gpuNames = lines.map(line => line.trim()).filter(Boolean);
+
+    if (gpuNames.length <= 1) return false;
+
+    const hasNvidia = gpuNames.some(name => name.toLowerCase().includes('nvidia'));
+    const hasAmdDiscrete = gpuNames.some(name => name.toLowerCase().includes('radeon rx'));
+    const hasIntegrated = gpuNames.some(name => {
+      const lower = name.toLowerCase();
+      return (
+        (lower.includes('intel') && (lower.includes('graphics') || lower.includes('uhd') || lower.includes('iris'))) ||
+        (lower.includes('amd') && lower.includes('radeon') && !lower.includes('rx'))
+      );
+    });
+
+    return (hasNvidia || hasAmdDiscrete) && hasIntegrated;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Prompt user to choose compute device for indexing
  * Only shows GPU option on Windows (DirectML)
  */
@@ -676,21 +763,49 @@ async function promptDeviceChoice(): Promise<void> {
     return;
   }
 
+  // Check for hybrid GPU system upfront
+  const isHybrid = await isHybridGPUSystem();
+
   console.log('');
   print('Compute Device:', 'cyan');
+
+  if (isHybrid) {
+    console.log('');
+    print('⚠ Hybrid GPU detected (discrete + integrated graphics)', 'yellow');
+    print('  GPU acceleration may not work reliably. CPU is recommended.', 'dim');
+  }
+
   console.log('');
-  console.log('  [1] GPU (DirectML) - Faster, but may cause system stuttering');
-  console.log('  [2] CPU - Slower, but system stays responsive');
+  console.log('  [1] GPU (DirectML) - Faster for large codebases');
+  console.log('  [2] CPU - Reliable, works on all systems');
   console.log('');
 
-  const answer = await prompt('Select compute device [1]: ');
+  // Default to CPU for hybrid systems
+  const defaultChoice = isHybrid ? '2' : '1';
+  const answer = await prompt(`Select compute device [${defaultChoice}]: `);
 
-  if (answer === '2') {
+  // Use default if empty
+  const choice = answer === '' ? defaultChoice : answer;
+
+  if (choice === '2') {
     setPreferredDevice('cpu');
-    print('Using CPU for embedding generation.', 'dim');
-  } else {
+    print('✓ Using CPU for embedding generation.', 'dim');
+  } else if (choice === '1') {
     setPreferredDevice('dml');
-    print('Using GPU (DirectML) for embedding generation.', 'dim');
+    if (isHybrid) {
+      print('✓ GPU selected. If issues occur, we\'ll automatically switch to CPU.', 'dim');
+    } else {
+      print('✓ GPU (DirectML) selected.', 'dim');
+    }
+  } else {
+    // Invalid input, use default
+    if (defaultChoice === '2') {
+      setPreferredDevice('cpu');
+      print('✓ Using CPU for embedding generation.', 'dim');
+    } else {
+      setPreferredDevice('dml');
+      print('✓ GPU (DirectML) selected.', 'dim');
+    }
   }
 
   // Reset any existing engine instances to apply new device preference
@@ -717,9 +832,12 @@ async function detectProject(): Promise<string> {
  */
 async function runIndexingFlow(): Promise<boolean> {
   console.log('');
+  print('Step 2: Index your codebase', 'cyan');
+  print('This scans your code so your AI assistant can search it.', 'dim');
+  console.log('');
 
   // Ask if user wants to index
-  const indexAnswer = await prompt('Would you like to index this project now? [Y/n]: ');
+  const indexAnswer = await prompt('Index this project now? [Y/n]: ');
 
   if (indexAnswer.toLowerCase() === 'n') {
     print('Skipping indexing.', 'dim');
@@ -861,8 +979,8 @@ export async function runSetup(options: SetupOptions = {}): Promise<void> {
   // Check for Claude Code CLI
   const hasClaudeCLI = isClaudeCodeCLIAvailable();
 
-  // Check if Claude CLI is already configured
-  const isClaudeCLIConfigured = hasClaudeCLI && configuredClients.some(c => c.name.includes('Claude Code'));
+  // Check if Claude CLI is already configured (checks ~/.claude.json properly)
+  const claudeCLIConfigured = hasClaudeCLI && isClaudeCLIConfigured();
 
   if (availableClients.length === 0) {
     print('No MCP clients detected.', 'yellow');
@@ -889,7 +1007,8 @@ export async function runSetup(options: SetupOptions = {}): Promise<void> {
   }
 
   // Show options - include ALL available clients, marking configured ones
-  print('Available MCP clients to configure:', 'cyan');
+  print('Step 1: Connect to your AI assistant', 'cyan');
+  print('Select which client(s) should have access to code search:', 'dim');
   console.log('');
 
   const menuOptions: { key: string; label: string; configured: boolean; action: () => { success: boolean; message: string } | Promise<{ success: boolean; message: string }> }[] = [];
@@ -899,7 +1018,7 @@ export async function runSetup(options: SetupOptions = {}): Promise<void> {
     menuOptions.push({
       key: String(menuOptions.length + 1),
       label: 'Claude Code (via CLI) - Recommended',
-      configured: isClaudeCLIConfigured,
+      configured: claudeCLIConfigured,
       action: () => configureWithClaudeCLI(),
     });
   }
@@ -950,7 +1069,7 @@ export async function runSetup(options: SetupOptions = {}): Promise<void> {
   const hasConfigured = menuOptions.some(o => o.configured);
   if (hasConfigured) {
     console.log('  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log(`  [s] Skip to indexing - No config needed`);
+    console.log(`  [s] Already configured - Skip to code indexing`);
   }
   console.log('');
 
@@ -961,35 +1080,38 @@ export async function runSetup(options: SetupOptions = {}): Promise<void> {
   if (hasConfigured && answer.toLowerCase() === 's') {
     await runIndexingFlow();
     console.log('');
-    print('Done!', 'green');
+    print('Setup complete! Your AI assistant can now search this codebase.', 'green');
     console.log('');
     return;
   }
 
-  if (answer.toLowerCase() === 'q' || answer === '') {
+  if (answer.toLowerCase() === 'q') {
     print('Setup cancelled.', 'dim');
+    return;
+  }
+
+  if (answer === '') {
+    print('Please select an option from the menu above.', 'yellow');
     return;
   }
 
   const selected = menuOptions.find(o => o.key === answer.toLowerCase());
   if (!selected) {
-    print('Invalid option.', 'red');
+    const validKeys = menuOptions.map(o => o.key).join(', ');
+    print(`Invalid option "${answer}". Valid options: ${validKeys}, q`, 'red');
     return;
   }
 
-  // If already configured, notify user we're reconfiguring
+  // If already configured, notify user we're updating the config
   if (selected.configured) {
-    print(`Reconfiguring ${selected.label}...`, 'yellow');
+    print(`Updating existing configuration...`, 'dim');
   }
 
   console.log('');
   const result = await selected.action();
 
   if (result.success) {
-    if (selected.configured) {
-      print(`✓ Reconfigured successfully`, 'green');
-    }
-    print(result.message, 'green');
+    print(`✓ ${result.message}`, 'green');
 
     // Offer indexing after successful configuration
     await runIndexingFlow();

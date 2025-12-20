@@ -753,48 +753,94 @@ export class EmbeddingEngine {
         device: deviceType,
       });
 
-      // Process each text in the batch
-      for (let j = 0; j < batch.length; j++) {
-        const text = batch[j];
-        const originalIndex = i + j;
-        let output: { data: unknown; dispose?: () => void } | null = null;
+      // SMCP-103: True batch processing - pass array to pipeline for GPU efficiency
+      // Previously processed one text at a time, causing 64 GPU transfers per "batch"
+      // Now processes entire batch in single pipeline call
+      const textsWithPrefix = batch.map((text) => prefix + text);
+      let batchOutput: { data: unknown; dims?: number[]; dispose?: () => void } | null = null;
 
-        // SMCP-096: Apply prompt prefix
-        const textWithPrefix = prefix + text;
+      try {
+        batchOutput = await this.pipeline(textsWithPrefix, {
+          pooling: 'mean',
+          normalize: true,
+        });
 
-        try {
-          output = await this.pipeline(textWithPrefix, {
-            pooling: 'mean',
-            normalize: true,
-          });
-          const vector = Array.from(output!.data as Float32Array);
+        // Extract vectors from batch output
+        // Output shape is [batchSize, embeddingDimension] for array input
+        const data = batchOutput!.data as Float32Array;
+        const dims = batchOutput!.dims as number[];
+        const embeddingDim = dims && dims.length === 2 ? dims[1] : this.config.dimension;
+
+        for (let j = 0; j < batch.length; j++) {
+          const originalIndex = i + j;
+          const start = j * embeddingDim;
+          const end = start + embeddingDim;
+          const vector = Array.from(data.slice(start, end));
           vectors.push(vector);
           successIndices.push(originalIndex);
-        } catch (error) {
-          const err = error instanceof Error ? error : new Error(String(error));
-          logger.error('EmbeddingEngine', 'Failed to embed text in batch', {
-            error: err.message,
-            textLength: text.length,
-            textIndex: originalIndex,
-            device: deviceType,
-          });
-          // Track failure but don't add zero vector (MCP-13)
-          failedCount++;
-        } finally {
-          // Dispose tensor to free memory (Bug #10)
-          if (output && typeof output.dispose === 'function') {
-            try {
-              output.dispose();
-            } catch {
-              // Ignore disposal errors
-            }
-          }
         }
 
-        processedCount++;
-        // Report progress
+        processedCount += batch.length;
+        // Report progress after batch
         if (onProgress) {
           onProgress(processedCount, texts.length);
+        }
+      } catch (error) {
+        // Batch failed - fall back to individual processing for error isolation
+        const err = error instanceof Error ? error : new Error(String(error));
+        logger.warn('EmbeddingEngine', 'Batch embedding failed, falling back to individual processing', {
+          error: err.message,
+          batchSize: batch.length,
+          device: deviceType,
+        });
+
+        // Process individually to identify which texts failed
+        for (let j = 0; j < batch.length; j++) {
+          const text = batch[j];
+          const originalIndex = i + j;
+          const textWithPrefix = prefix + text;
+          let output: { data: unknown; dispose?: () => void } | null = null;
+
+          try {
+            output = await this.pipeline(textWithPrefix, {
+              pooling: 'mean',
+              normalize: true,
+            });
+            const vector = Array.from(output!.data as Float32Array);
+            vectors.push(vector);
+            successIndices.push(originalIndex);
+          } catch (textError) {
+            const textErr = textError instanceof Error ? textError : new Error(String(textError));
+            logger.error('EmbeddingEngine', 'Failed to embed text in batch', {
+              error: textErr.message,
+              textLength: text.length,
+              textIndex: originalIndex,
+              device: deviceType,
+            });
+            failedCount++;
+          } finally {
+            if (output && typeof output.dispose === 'function') {
+              try {
+                output.dispose();
+              } catch {
+                // Ignore disposal errors
+              }
+            }
+          }
+
+          processedCount++;
+          if (onProgress) {
+            onProgress(processedCount, texts.length);
+          }
+        }
+      } finally {
+        // Dispose batch tensor to free memory
+        if (batchOutput && typeof batchOutput.dispose === 'function') {
+          try {
+            batchOutput.dispose();
+          } catch {
+            // Ignore disposal errors
+          }
         }
       }
 

@@ -22,8 +22,9 @@ import type { EmbeddingProgressCallback } from '../../../src/engines/embedding.j
 
 /**
  * Create a mock tensor output that mimics @huggingface/transformers output
+ * For single text input, returns a 1D tensor of shape [dimension]
  */
-function createMockTensorOutput(dimension: number = 384): { data: Float32Array } {
+function createMockTensorOutput(dimension: number = 384): { data: Float32Array; dims: number[] } {
   // Create a mock 384-dimensional vector with normalized values
   const data = new Float32Array(dimension);
   for (let i = 0; i < dimension; i++) {
@@ -34,7 +35,35 @@ function createMockTensorOutput(dimension: number = 384): { data: Float32Array }
   for (let i = 0; i < dimension; i++) {
     data[i] = data[i] / magnitude;
   }
-  return { data };
+  return { data, dims: [1, dimension] };
+}
+
+/**
+ * SMCP-103: Create a mock tensor output for batch inputs
+ * Returns a 2D tensor of shape [batchSize, dimension]
+ */
+function createMockBatchTensorOutput(
+  batchSize: number,
+  dimension: number = 384
+): { data: Float32Array; dims: number[] } {
+  const data = new Float32Array(batchSize * dimension);
+  for (let b = 0; b < batchSize; b++) {
+    const offset = b * dimension;
+    // Create unique values for each vector so we can distinguish them
+    for (let i = 0; i < dimension; i++) {
+      data[offset + i] = (b + 1) * 0.01 + Math.random() * 0.001;
+    }
+    // Normalize each vector
+    let magnitude = 0;
+    for (let i = 0; i < dimension; i++) {
+      magnitude += data[offset + i] * data[offset + i];
+    }
+    magnitude = Math.sqrt(magnitude);
+    for (let i = 0; i < dimension; i++) {
+      data[offset + i] = data[offset + i] / magnitude;
+    }
+  }
+  return { data, dims: [batchSize, dimension] };
 }
 
 /**
@@ -60,8 +89,13 @@ describe('Embedding Engine', () => {
     // Reset the singleton by re-importing the module
     vi.resetModules();
 
-    // Setup default mock behavior
-    mockPipelineInstance.mockResolvedValue(createMockTensorOutput());
+    // SMCP-103: Setup default mock behavior that handles both single and batch inputs
+    mockPipelineInstance.mockImplementation((input: string | string[]) => {
+      if (Array.isArray(input)) {
+        return Promise.resolve(createMockBatchTensorOutput(input.length));
+      }
+      return Promise.resolve(createMockTensorOutput());
+    });
     mockPipeline.mockResolvedValue(mockPipelineInstance);
   });
 
@@ -431,15 +465,13 @@ describe('Embedding Engine', () => {
         const texts = ['Query 1', 'Query 2'];
         await engine.embedBatch(texts, undefined, 'query');
 
+        // SMCP-103: With true batch processing, pipeline is called once with an array
         // Both texts should have the query prefix
-        expect(mockPipelineInstance).toHaveBeenNthCalledWith(
-          1,
-          'Represent this sentence for searching relevant passages: Query 1',
-          { pooling: 'mean', normalize: true }
-        );
-        expect(mockPipelineInstance).toHaveBeenNthCalledWith(
-          2,
-          'Represent this sentence for searching relevant passages: Query 2',
+        expect(mockPipelineInstance).toHaveBeenCalledWith(
+          [
+            'Represent this sentence for searching relevant passages: Query 1',
+            'Represent this sentence for searching relevant passages: Query 2',
+          ],
           { pooling: 'mean', normalize: true }
         );
       });
@@ -451,17 +483,12 @@ describe('Embedding Engine', () => {
         const texts = ['Doc 1', 'Doc 2'];
         await engine.embedBatch(texts);
 
+        // SMCP-103: With true batch processing, pipeline is called once with an array
         // No prefix for document prompt type (default)
-        expect(mockPipelineInstance).toHaveBeenNthCalledWith(
-          1,
-          'Doc 1',
-          { pooling: 'mean', normalize: true }
-        );
-        expect(mockPipelineInstance).toHaveBeenNthCalledWith(
-          2,
-          'Doc 2',
-          { pooling: 'mean', normalize: true }
-        );
+        expect(mockPipelineInstance).toHaveBeenCalledWith(['Doc 1', 'Doc 2'], {
+          pooling: 'mean',
+          normalize: true,
+        });
       });
     });
 
@@ -491,13 +518,23 @@ describe('Embedding Engine', () => {
       });
 
       it('should maintain order of embeddings', async () => {
-        // Create distinct mock outputs for each text
-        let callCount = 0;
-        mockPipelineInstance.mockImplementation(() => {
-          const output = createMockTensorOutput();
-          // Mark each output with its index
-          output.data[0] = callCount++;
-          return output;
+        // SMCP-103: With batch processing, pipeline is called once with array
+        // Mock returns batch output with each vector having a distinct first element
+        mockPipelineInstance.mockImplementation((input: string | string[]) => {
+          if (Array.isArray(input)) {
+            // Create batch output where each vector's first element is its index
+            const dimension = 384;
+            const data = new Float32Array(input.length * dimension);
+            for (let i = 0; i < input.length; i++) {
+              const offset = i * dimension;
+              data[offset] = i; // Mark with index
+              for (let j = 1; j < dimension; j++) {
+                data[offset + j] = 0.01;
+              }
+            }
+            return Promise.resolve({ data, dims: [input.length, dimension] });
+          }
+          return Promise.resolve(createMockTensorOutput());
         });
 
         const { EmbeddingEngine } = await import('../../../src/engines/embedding.js');
@@ -523,33 +560,44 @@ describe('Embedding Engine', () => {
           progressCalls.push({ completed, total });
         });
 
-        expect(progressCalls.length).toBe(5);
-        expect(progressCalls[0]).toEqual({ completed: 1, total: 5 });
-        expect(progressCalls[4]).toEqual({ completed: 5, total: 5 });
+        // SMCP-103: With true batch processing, progress is called once per batch
+        // 5 texts fit in one batch (batch size = 32), so we get one progress call
+        expect(progressCalls.length).toBe(1);
+        expect(progressCalls[0]).toEqual({ completed: 5, total: 5 });
       });
 
       it('should process in batches', async () => {
-        const { EmbeddingEngine, BATCH_SIZE } = await import('../../../src/engines/embedding.js');
+        const { EmbeddingEngine, GPU_BATCH_SIZE } = await import('../../../src/engines/embedding.js');
         const engine = new EmbeddingEngine();
 
-        // Create more texts than batch size
-        const texts = Array.from({ length: BATCH_SIZE + 10 }, (_, i) => `Text ${i}`);
+        // SMCP-103: Create enough texts to require 2+ batches
+        // On Windows, DirectML is auto-detected so GPU_BATCH_SIZE (64) is used
+        // Use GPU_BATCH_SIZE + 10 to guarantee 2 batches regardless of device
+        const texts = Array.from({ length: GPU_BATCH_SIZE + 10 }, (_, i) => `Text ${i}`);
 
         await engine.embedBatch(texts);
 
-        // Pipeline should be called once for each text
-        expect(mockPipelineInstance).toHaveBeenCalledTimes(texts.length);
+        // SMCP-103: Pipeline is called once per batch (not per text) for true batch processing
+        // With GPU_BATCH_SIZE + 10 texts, we need 2 batches
+        expect(mockPipelineInstance).toHaveBeenCalledTimes(2);
       });
 
       it('should handle errors in individual texts gracefully (SMCP-054)', async () => {
-        // Make the third call fail
-        let callCount = 0;
-        mockPipelineInstance.mockImplementation(() => {
-          callCount++;
-          if (callCount === 3) {
-            throw new Error('Embedding failed');
+        // SMCP-103: With batch processing, we need to:
+        // 1. Make the batch call fail (throws on array input)
+        // 2. Then individual processing kicks in, where specific texts fail
+        let individualCallCount = 0;
+        mockPipelineInstance.mockImplementation((input: string | string[]) => {
+          if (Array.isArray(input)) {
+            // Batch call fails, triggering fallback to individual processing
+            throw new Error('Batch embedding failed');
           }
-          return createMockTensorOutput();
+          // Individual processing: fail on 3rd text
+          individualCallCount++;
+          if (individualCallCount === 3) {
+            throw new Error('Embedding failed for Text 3');
+          }
+          return Promise.resolve(createMockTensorOutput());
         });
 
         const { EmbeddingEngine } = await import('../../../src/engines/embedding.js');
@@ -572,7 +620,7 @@ describe('Embedding Engine', () => {
       });
 
       it('should handle large batches efficiently', async () => {
-        const { EmbeddingEngine } = await import('../../../src/engines/embedding.js');
+        const { EmbeddingEngine, GPU_BATCH_SIZE } = await import('../../../src/engines/embedding.js');
         const engine = new EmbeddingEngine();
 
         const texts = Array.from({ length: 100 }, (_, i) => `Text ${i}`);
@@ -584,19 +632,29 @@ describe('Embedding Engine', () => {
 
         expect(result.vectors.length).toBe(100);
         expect(result.failedCount).toBe(0);
-        expect(progressCalls.length).toBe(100);
-        expect(progressCalls[99]).toBe(100);
+        // SMCP-103: With true batch processing, progress is called once per batch
+        // On Windows with DirectML: 100 texts / 64 batch size = 2 batches (64+36)
+        const expectedBatches = Math.ceil(100 / GPU_BATCH_SIZE);
+        expect(progressCalls.length).toBe(expectedBatches);
+        expect(progressCalls[progressCalls.length - 1]).toBe(100);
       });
 
       it('should never insert zero vectors (SMCP-054)', async () => {
-        // Make multiple calls fail
-        let callCount = 0;
-        mockPipelineInstance.mockImplementation(() => {
-          callCount++;
-          if (callCount % 3 === 0) {
+        // SMCP-103: With batch processing, we need to:
+        // 1. Make the batch call fail (throws on array input)
+        // 2. Then individual processing kicks in, where every 3rd text fails
+        let individualCallCount = 0;
+        mockPipelineInstance.mockImplementation((input: string | string[]) => {
+          if (Array.isArray(input)) {
+            // Batch call fails, triggering fallback to individual processing
+            throw new Error('Batch embedding failed');
+          }
+          // Individual processing: fail on every 3rd text (indices 2, 5, 8)
+          individualCallCount++;
+          if (individualCallCount % 3 === 0) {
             throw new Error('Embedding failed');
           }
-          return createMockTensorOutput();
+          return Promise.resolve(createMockTensorOutput());
         });
 
         const { EmbeddingEngine } = await import('../../../src/engines/embedding.js');
@@ -782,7 +840,9 @@ describe('Embedding Engine', () => {
           progressCalls.push(completed);
         });
 
-        expect(progressCalls).toEqual([1, 2]);
+        // SMCP-103: With true batch processing, progress is called once per batch
+        // (not per text) for better GPU performance. Both texts fit in one batch.
+        expect(progressCalls).toEqual([2]);
       });
     });
   });

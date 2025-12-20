@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.9] - 2025-12-20
+
+### Fixed
+
+- **GPU batch processing** - Fixed critical bug where embeddings were processed one text at a time instead of true batch processing. GPU (DirectML) is now 10-25% faster than CPU at all tested sizes. Reduced GPU transfers from 64 per batch to 1.
+
 ## [1.6.8] - 2025-12-19
 
 ### Fixed

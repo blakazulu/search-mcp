@@ -306,6 +306,129 @@ export class EmbeddingEngine {
   }
 
   /**
+   * Check if an error is a DirectML GPU memory/allocation error.
+   * These errors occur when the GPU runs out of memory or fails to allocate resources.
+   * @param error - The error to check
+   * @returns True if this is a recoverable DirectML error that should trigger CPU fallback
+   */
+  private isDirectMLAllocationError(error: Error): boolean {
+    const message = error.message || '';
+    // DirectML allocation errors come from DmlCommittedResourceAllocator.cpp
+    // or similar ONNX runtime DirectML execution provider errors
+    return (
+      message.includes('DmlExecutionProvider') ||
+      message.includes('DmlCommittedResourceAllocator') ||
+      message.includes('D:\\a\\_work\\1\\s\\onnxruntime\\core\\providers\\dml') ||
+      (message.includes('onnxruntime') && message.includes('dml'))
+    );
+  }
+
+  /**
+   * Detect if this is a hybrid GPU system (multiple GPUs from different vendors).
+   * On hybrid systems, DirectML may select the wrong GPU (weak integrated instead of discrete).
+   * @returns True if multiple GPUs detected (hybrid system)
+   */
+  private async detectHybridGPU(): Promise<boolean> {
+    // Only relevant on Windows
+    if (process.platform !== 'win32') {
+      return false;
+    }
+
+    const logger = getLogger();
+
+    try {
+      const { execSync } = await import('child_process');
+      // Use WMIC to list GPUs - works on all Windows versions
+      const output = execSync('wmic path win32_VideoController get name', {
+        encoding: 'utf8',
+        timeout: 5000,
+      });
+
+      // Parse GPU names from output
+      const lines = output.split('\n').filter(line => line.trim() && !line.includes('Name'));
+      const gpuNames = lines.map(line => line.trim()).filter(Boolean);
+
+      logger.debug('EmbeddingEngine', `Detected GPUs: ${gpuNames.join(', ')}`);
+
+      // Check if there are multiple GPUs
+      if (gpuNames.length > 1) {
+        // Check if we have both discrete (NVIDIA/AMD Radeon RX) and integrated (AMD Radeon/Intel)
+        const hasNvidia = gpuNames.some(name => name.toLowerCase().includes('nvidia'));
+        const hasAmdDiscrete = gpuNames.some(name => name.toLowerCase().includes('radeon rx'));
+        const hasIntegrated = gpuNames.some(name => {
+          const lower = name.toLowerCase();
+          return (
+            (lower.includes('intel') && (lower.includes('graphics') || lower.includes('uhd') || lower.includes('iris'))) ||
+            (lower.includes('amd') && lower.includes('radeon') && !lower.includes('rx'))
+          );
+        });
+
+        const isHybrid = (hasNvidia || hasAmdDiscrete) && hasIntegrated;
+        if (isHybrid) {
+          logger.info('EmbeddingEngine', 'Hybrid GPU system detected', {
+            gpus: gpuNames,
+            hasDiscreteGPU: hasNvidia || hasAmdDiscrete,
+            hasIntegratedGPU: hasIntegrated,
+          });
+        }
+        return isHybrid;
+      }
+
+      return false;
+    } catch (error) {
+      // If detection fails, assume not hybrid (allow DirectML to try)
+      logger.debug('EmbeddingEngine', 'GPU detection failed, assuming single GPU', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
+  }
+
+  /**
+   * Fallback to CPU at runtime when GPU fails during embedding.
+   * This re-initializes the pipeline with CPU and logs the transition.
+   * @returns True if fallback succeeded
+   */
+  private async fallbackToCPUAtRuntime(): Promise<boolean> {
+    const logger = getLogger();
+
+    // Already on CPU, nothing to do
+    if (this.deviceInfo?.device === 'cpu') {
+      return false;
+    }
+
+    logger.warn('EmbeddingEngine', 'GPU failed at runtime, switching to CPU...', {
+      previousDevice: this.deviceInfo?.device,
+      gpuName: this.deviceInfo?.gpuName,
+    });
+
+    // Reset the pipeline
+    this.pipeline = null;
+
+    try {
+      // Re-initialize with CPU
+      await this.initializePipelineWithDevice('cpu');
+      this.didFallback = true;
+      this.fallbackReason = 'GPU failed during embedding (runtime fallback)';
+      this.deviceInfo = {
+        device: 'cpu',
+        fallbackReason: this.fallbackReason,
+      };
+
+      logger.info('EmbeddingEngine', 'Successfully switched to CPU', {
+        model: this.config.modelName,
+      });
+      return true;
+    } catch (cpuError) {
+      const cpuErr = cpuError instanceof Error ? cpuError : new Error(String(cpuError));
+      logger.error('EmbeddingEngine', 'CPU fallback also failed', {
+        error: cpuErr.message,
+      });
+      throw cpuErr;
+    }
+  }
+
+  /**
    * Initialize the embedding model.
    *
    * Downloads the model on first use (~90MB to ~/.cache/huggingface/).
@@ -492,9 +615,28 @@ export class EmbeddingEngine {
       // Create the feature extraction pipeline
       // Note: Using @ts-expect-error due to complex union types in @huggingface/transformers v3
       // The pipeline function has 60+ overloads which exceed TypeScript's union type complexity limit
+
+      // SMCP-104: For DirectML on hybrid GPU systems, the ONNX runtime JavaScript bindings
+      // don't support device selection (deviceId is only available for CUDA in the types).
+      // On hybrid laptops (e.g., NVIDIA + AMD integrated), DirectML often selects the weak
+      // integrated GPU, causing DmlCommittedResourceAllocator errors.
+      // Workaround: Detect hybrid systems and fall back to CPU.
+      // See: https://github.com/microsoft/onnxruntime/issues/14994
+      let effectiveDevice = device;
+      if (device === 'dml' && !process.env.FORCE_DML) {
+        const isHybrid = await this.detectHybridGPU();
+        if (isHybrid) {
+          logger.warn('EmbeddingEngine', 'Hybrid GPU system detected (multiple GPUs). Using CPU to avoid DirectML selecting the wrong GPU. Set FORCE_DML=1 to force GPU.');
+          effectiveDevice = 'cpu';
+          this.didFallback = true;
+          this.fallbackReason = 'Hybrid GPU system detected - CPU used for reliability';
+          this.deviceInfo = { device: 'cpu', fallbackReason: this.fallbackReason };
+        }
+      }
+
       // @ts-expect-error - TypeScript cannot handle the complex union type of pipeline()
       this.pipeline = await pipeline('feature-extraction', this.config.modelName, {
-      device: device,
+      device: effectiveDevice,
       dtype: 'fp32', // Use fp32 for consistent embeddings across devices
       progress_callback: (progress: {
         status: string;
@@ -786,12 +928,72 @@ export class EmbeddingEngine {
           onProgress(processedCount, texts.length);
         }
       } catch (error) {
-        // Batch failed - fall back to individual processing for error isolation
+        // Batch failed - check if this is a DirectML allocation error
         const err = error instanceof Error ? error : new Error(String(error));
+
+        // SMCP-104: If this is a DirectML GPU allocation error, fallback to CPU for all remaining work
+        if (this.isDirectMLAllocationError(err) && this.isUsingGPU()) {
+          logger.warn('EmbeddingEngine', 'DirectML GPU allocation error detected, switching to CPU', {
+            error: err.message,
+            batchIndex,
+            totalBatches,
+            remainingTexts: texts.length - i,
+          });
+
+          // Fallback to CPU
+          const fallbackSucceeded = await this.fallbackToCPUAtRuntime();
+          if (fallbackSucceeded) {
+            // Retry the current batch on CPU
+            logger.info('EmbeddingEngine', 'Retrying current batch on CPU');
+            try {
+              const retryOutput = await this.pipeline!(textsWithPrefix, {
+                pooling: 'mean',
+                normalize: true,
+              });
+
+              const data = retryOutput!.data as Float32Array;
+              const dims = (retryOutput as { dims?: number[] })!.dims as number[];
+              const embeddingDim = dims && dims.length === 2 ? dims[1] : this.config.dimension;
+
+              for (let j = 0; j < batch.length; j++) {
+                const originalIndex = i + j;
+                const start = j * embeddingDim;
+                const end = start + embeddingDim;
+                const vector = Array.from(data.slice(start, end));
+                vectors.push(vector);
+                successIndices.push(originalIndex);
+              }
+
+              processedCount += batch.length;
+              if (onProgress) {
+                onProgress(processedCount, texts.length);
+              }
+
+              // Dispose retry output
+              if (retryOutput && typeof (retryOutput as { dispose?: () => void }).dispose === 'function') {
+                try {
+                  (retryOutput as { dispose: () => void }).dispose();
+                } catch {
+                  // Ignore disposal errors
+                }
+              }
+
+              // Continue to next batch (skip individual processing below)
+              continue;
+            } catch (retryError) {
+              const retryErr = retryError instanceof Error ? retryError : new Error(String(retryError));
+              logger.error('EmbeddingEngine', 'CPU retry also failed', {
+                error: retryErr.message,
+              });
+              // Fall through to individual processing
+            }
+          }
+        }
+
         logger.warn('EmbeddingEngine', 'Batch embedding failed, falling back to individual processing', {
           error: err.message,
           batchSize: batch.length,
-          device: deviceType,
+          device: this.deviceInfo?.device || deviceType,
         });
 
         // Process individually to identify which texts failed
@@ -815,7 +1017,7 @@ export class EmbeddingEngine {
               error: textErr.message,
               textLength: text.length,
               textIndex: originalIndex,
-              device: deviceType,
+              device: this.deviceInfo?.device || deviceType,
             });
             failedCount++;
           } finally {

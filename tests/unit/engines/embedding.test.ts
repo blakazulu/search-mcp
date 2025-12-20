@@ -567,18 +567,24 @@ describe('Embedding Engine', () => {
       });
 
       it('should process in batches', async () => {
-        const { EmbeddingEngine, GPU_BATCH_SIZE } = await import('../../../src/engines/embedding.js');
+        const { EmbeddingEngine } = await import('../../../src/engines/embedding.js');
         const engine = new EmbeddingEngine();
 
+        // Initialize to determine effective batch size (GPU or CPU depending on system)
+        await engine.initialize();
+        const effectiveBatchSize = engine.getEffectiveBatchSize();
+
         // SMCP-103: Create enough texts to require 2+ batches
-        // On Windows, DirectML is auto-detected so GPU_BATCH_SIZE (64) is used
-        // Use GPU_BATCH_SIZE + 10 to guarantee 2 batches regardless of device
-        const texts = Array.from({ length: GPU_BATCH_SIZE + 10 }, (_, i) => `Text ${i}`);
+        // Use effectiveBatchSize + 10 to guarantee 2 batches regardless of device
+        const texts = Array.from({ length: effectiveBatchSize + 10 }, (_, i) => `Text ${i}`);
+
+        // Reset mock call count after initialization
+        mockPipelineInstance.mockClear();
 
         await engine.embedBatch(texts);
 
         // SMCP-103: Pipeline is called once per batch (not per text) for true batch processing
-        // With GPU_BATCH_SIZE + 10 texts, we need 2 batches
+        // With effectiveBatchSize + 10 texts, we need 2 batches
         expect(mockPipelineInstance).toHaveBeenCalledTimes(2);
       });
 
@@ -620,8 +626,12 @@ describe('Embedding Engine', () => {
       });
 
       it('should handle large batches efficiently', async () => {
-        const { EmbeddingEngine, GPU_BATCH_SIZE } = await import('../../../src/engines/embedding.js');
+        const { EmbeddingEngine } = await import('../../../src/engines/embedding.js');
         const engine = new EmbeddingEngine();
+
+        // Initialize to determine effective batch size (GPU or CPU depending on system)
+        await engine.initialize();
+        const effectiveBatchSize = engine.getEffectiveBatchSize();
 
         const texts = Array.from({ length: 100 }, (_, i) => `Text ${i}`);
         const progressCalls: number[] = [];
@@ -633,8 +643,8 @@ describe('Embedding Engine', () => {
         expect(result.vectors.length).toBe(100);
         expect(result.failedCount).toBe(0);
         // SMCP-103: With true batch processing, progress is called once per batch
-        // On Windows with DirectML: 100 texts / 64 batch size = 2 batches (64+36)
-        const expectedBatches = Math.ceil(100 / GPU_BATCH_SIZE);
+        // Batch count depends on effective batch size (CPU: 32, GPU: 64)
+        const expectedBatches = Math.ceil(100 / effectiveBatchSize);
         expect(progressCalls.length).toBe(expectedBatches);
         expect(progressCalls[progressCalls.length - 1]).toBe(100);
       });
@@ -1122,6 +1132,99 @@ describe('Embedding Engine', () => {
         // Accept any valid device type - 'dml' on Windows, 'webgpu' in browser, 'cpu' as fallback
         expect(['cpu', 'webgpu', 'dml']).toContain(device);
         expect(engine.getDeviceInfo()).not.toBeNull();
+      });
+    });
+
+    describe('Runtime DirectML fallback (SMCP-104)', () => {
+      it('should detect DirectML allocation errors correctly', async () => {
+        const { EmbeddingEngine, CODE_ENGINE_CONFIG } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine({ ...CODE_ENGINE_CONFIG, device: 'cpu' });
+
+        // Access private method for testing
+        const isDirectMLError = (engine as unknown as { isDirectMLAllocationError: (err: Error) => boolean }).isDirectMLAllocationError.bind(engine);
+
+        // Test known DirectML error patterns
+        expect(isDirectMLError(new Error('DmlExecutionProvider error'))).toBe(true);
+        expect(isDirectMLError(new Error('DmlCommittedResourceAllocator.cpp failed'))).toBe(true);
+        expect(isDirectMLError(new Error('D:\\a\\_work\\1\\s\\onnxruntime\\core\\providers\\dml\\something'))).toBe(true);
+        expect(isDirectMLError(new Error('onnxruntime dml failed'))).toBe(true);
+
+        // Test non-DirectML errors
+        expect(isDirectMLError(new Error('Regular error'))).toBe(false);
+        expect(isDirectMLError(new Error('CUDA out of memory'))).toBe(false);
+        expect(isDirectMLError(new Error('WebGPU error'))).toBe(false);
+      });
+
+      it('should fallback to CPU when DirectML fails during batch embedding', async () => {
+        // Force DML to bypass hybrid GPU detection for this test
+        const originalForceDml = process.env.FORCE_DML;
+        process.env.FORCE_DML = '1';
+
+        try {
+          let pipelineCallCount = 0;
+          let embeddingCallCount = 0;
+
+          // Create mock pipeline instance that throws on first embedding call
+          const mockInstance = vi.fn(async () => {
+            embeddingCallCount++;
+            if (embeddingCallCount === 1) {
+              // First embedding call throws DirectML error
+              throw new Error('Error: D:\\a\\_work\\1\\s\\onnxruntime\\core\\providers\\dml\\DmlExecutionProvider\\src\\DmlCommittedResourceAllocator.cpp(22)\\onnx');
+            }
+            // Subsequent calls succeed (after CPU fallback)
+            return {
+              data: new Float32Array(384),
+              dims: [1, 384],
+              dispose: vi.fn(),
+            };
+          });
+
+          // Create mock that always succeeds (both DML init and CPU fallback init)
+          mockPipeline.mockImplementation(async () => {
+            pipelineCallCount++;
+            return mockInstance;
+          });
+
+          const { EmbeddingEngine, CODE_ENGINE_CONFIG } = await import('../../../src/engines/embedding.js');
+          const engine = new EmbeddingEngine({ ...CODE_ENGINE_CONFIG, device: 'dml' });
+
+          await engine.initialize();
+          expect(engine.getDevice()).toBe('dml');
+          expect(pipelineCallCount).toBe(1);
+
+          // This should trigger runtime fallback
+          const result = await engine.embedBatch(['test text']);
+
+          // Should have fallen back to CPU
+          expect(engine.didFallbackToCPU()).toBe(true);
+          expect(engine.getDevice()).toBe('cpu');
+          expect(engine.getFallbackReason()).toContain('runtime fallback');
+          expect(pipelineCallCount).toBe(2); // Second call for CPU fallback
+          expect(embeddingCallCount).toBe(2); // First failed, second succeeded
+          expect(result.vectors.length).toBe(1); // Should have successfully embedded
+        } finally {
+          // Restore original environment
+          if (originalForceDml === undefined) {
+            delete process.env.FORCE_DML;
+          } else {
+            process.env.FORCE_DML = originalForceDml;
+          }
+        }
+      });
+
+      it('should not fallback when already on CPU', async () => {
+        const { EmbeddingEngine, CODE_ENGINE_CONFIG } = await import('../../../src/engines/embedding.js');
+        const engine = new EmbeddingEngine({ ...CODE_ENGINE_CONFIG, device: 'cpu' });
+
+        await engine.initialize();
+        expect(engine.getDevice()).toBe('cpu');
+        expect(engine.didFallbackToCPU()).toBe(false);
+
+        // Calling embed should not trigger fallback
+        await engine.embed('test text');
+
+        // Still on CPU, no fallback occurred
+        expect(engine.didFallbackToCPU()).toBe(false);
       });
     });
   });

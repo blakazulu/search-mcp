@@ -849,37 +849,13 @@ export async function runSetup(options: SetupOptions = {}): Promise<void> {
   const availableClients = clients.filter(c => c.exists);
   const configuredClients = clients.filter(c => c.configured);
 
-  // Show status
-  if (configuredClients.length > 0) {
-    print('Already configured:', 'green');
-    for (const client of configuredClients) {
-      print(`  ✓ ${client.name}`, 'green');
-    }
-    console.log('');
-  }
-
   // Check for Claude Code CLI
   const hasClaudeCLI = isClaudeCodeCLIAvailable();
 
-  // Filter to unconfigured clients
-  const unconfiguredClients = availableClients.filter(c => !c.configured);
+  // Check if Claude CLI is already configured
+  const isClaudeCLIConfigured = hasClaudeCLI && configuredClients.some(c => c.name.includes('Claude Code'));
 
-  if (unconfiguredClients.length === 0 && configuredClients.length > 0) {
-    print('All detected MCP clients are already configured!', 'green');
-
-    // Offer indexing even if clients are already configured
-    await runIndexingFlow();
-
-    console.log('');
-    print('Next steps:', 'cyan');
-    console.log('  1. Restart your AI assistant');
-    console.log('  2. Type /mcp to verify "search" is connected');
-    console.log('  3. Ask: "Search for authentication code"');
-    console.log('');
-    return;
-  }
-
-  if (unconfiguredClients.length === 0 && configuredClients.length === 0) {
+  if (availableClients.length === 0) {
     print('No MCP clients detected.', 'yellow');
     console.log('');
     print('Supported clients:', 'cyan');
@@ -903,26 +879,38 @@ export async function runSetup(options: SetupOptions = {}): Promise<void> {
     return;
   }
 
-  // Show options
+  // Show options - include ALL available clients, marking configured ones
   print('Available MCP clients to configure:', 'cyan');
   console.log('');
 
-  const menuOptions: { key: string; label: string; action: () => { success: boolean; message: string } | Promise<{ success: boolean; message: string }> }[] = [];
+  const menuOptions: { key: string; label: string; configured: boolean; action: () => { success: boolean; message: string } | Promise<{ success: boolean; message: string }> }[] = [];
 
   // Add Claude CLI option if available
   if (hasClaudeCLI) {
     menuOptions.push({
       key: String(menuOptions.length + 1),
       label: 'Claude Code (via CLI) - Recommended',
-      action: configureWithClaudeCLI,
+      configured: isClaudeCLIConfigured,
+      action: async () => {
+        if (isClaudeCLIConfigured) {
+          // Remove existing and reconfigure
+          try {
+            execSync('claude mcp remove search', { stdio: 'ignore' });
+          } catch {
+            // Ignore removal errors
+          }
+        }
+        return configureWithClaudeCLI();
+      },
     });
   }
 
-  // Add unconfigured clients
-  for (const client of unconfiguredClients) {
+  // Add ALL available clients (not just unconfigured)
+  for (const client of availableClients) {
     menuOptions.push({
       key: String(menuOptions.length + 1),
       label: client.name,
+      configured: client.configured,
       action: () => configureClient(client),
     });
   }
@@ -932,9 +920,10 @@ export async function runSetup(options: SetupOptions = {}): Promise<void> {
     menuOptions.push({
       key: 'a',
       label: 'Configure all',
+      configured: false,
       action: async () => {
         const results: string[] = [];
-        for (const opt of menuOptions.slice(0, -1)) {
+        for (const opt of menuOptions.filter(o => o.key !== 'a')) {
           const result = await opt.action();
           results.push(result.message);
         }
@@ -943,15 +932,40 @@ export async function runSetup(options: SetupOptions = {}): Promise<void> {
     });
   }
 
-  // Show options
-  for (const opt of menuOptions) {
-    console.log(`  [${opt.key}] ${opt.label}`);
+  // Show options with configured status (exclude "Configure all" - we'll show it separately)
+  for (const opt of menuOptions.filter(o => o.key !== 'a')) {
+    if (opt.configured) {
+      console.log(`  [${opt.key}] ${opt.label} ${chalk.green('✓ configured')}`);
+    } else {
+      console.log(`  [${opt.key}] ${opt.label}`);
+    }
+  }
+
+  // Show Configure all and Quit
+  if (menuOptions.length > 1) {
+    console.log(`  [a] Configure all`);
   }
   console.log(`  [q] Quit`);
+
+  // Add skip option if any clients are already configured
+  const hasConfigured = menuOptions.some(o => o.configured);
+  if (hasConfigured) {
+    console.log('  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log(`  [s] Skip to indexing - No config needed`);
+  }
   console.log('');
 
   // Get user choice
   const answer = await prompt('Select an option: ');
+
+  // Handle skip to indexing
+  if (hasConfigured && answer.toLowerCase() === 's') {
+    await runIndexingFlow();
+    console.log('');
+    print('Done!', 'green');
+    console.log('');
+    return;
+  }
 
   if (answer.toLowerCase() === 'q' || answer === '') {
     print('Setup cancelled.', 'dim');
@@ -964,10 +978,18 @@ export async function runSetup(options: SetupOptions = {}): Promise<void> {
     return;
   }
 
+  // If already configured, notify user we're reconfiguring
+  if (selected.configured) {
+    print(`Reconfiguring ${selected.label}...`, 'yellow');
+  }
+
   console.log('');
   const result = await selected.action();
 
   if (result.success) {
+    if (selected.configured) {
+      print(`✓ Reconfigured successfully`, 'green');
+    }
     print(result.message, 'green');
 
     // Offer indexing after successful configuration

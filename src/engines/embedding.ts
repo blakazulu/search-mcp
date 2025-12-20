@@ -626,10 +626,12 @@ export class EmbeddingEngine {
       if (device === 'dml' && !process.env.FORCE_DML) {
         const isHybrid = await this.detectHybridGPU();
         if (isHybrid) {
-          logger.warn('EmbeddingEngine', 'Hybrid GPU system detected (multiple GPUs). Using CPU to avoid DirectML selecting the wrong GPU. Set FORCE_DML=1 to force GPU.');
+          logger.warn('EmbeddingEngine', 'Hybrid GPU system detected. Using CPU for reliability.');
+          logger.info('EmbeddingEngine', 'To use GPU: Settings → System → Display → Graphics → Add your IDE → High Performance');
+          logger.info('EmbeddingEngine', 'Then set FORCE_DML=1 environment variable');
           effectiveDevice = 'cpu';
           this.didFallback = true;
-          this.fallbackReason = 'Hybrid GPU system detected - CPU used for reliability';
+          this.fallbackReason = 'Hybrid GPU system - use Windows Graphics Settings to force discrete GPU';
           this.deviceInfo = { device: 'cpu', fallbackReason: this.fallbackReason };
         }
       }

@@ -5,13 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.6.10] - 2025-12-20
+## [1.6.11] - 2025-12-20
 
 ### Fixed
 
-- **DirectML GPU selection on hybrid laptops** - Fixed critical bug where DirectML was selecting the weak integrated GPU (AMD/Intel) instead of the discrete GPU (NVIDIA) on hybrid laptop systems. The integrated GPU would fail with `DmlCommittedResourceAllocator` errors due to insufficient memory. Now automatically detects hybrid GPU systems (e.g., NVIDIA + AMD Radeon integrated) and falls back to CPU for reliability. Users can force GPU with `FORCE_DML=1` environment variable.
+- **DirectML GPU selection on hybrid laptops** - Fixed critical bug where DirectML was selecting the weak integrated GPU (AMD/Intel) instead of the discrete GPU (NVIDIA) on hybrid laptop systems. The integrated GPU would fail with `DmlCommittedResourceAllocator` errors due to insufficient memory. Now automatically detects hybrid GPU systems and falls back to CPU for reliability. Added instructions for enabling GPU via Windows Graphics Settings (Settings → System → Display → Graphics → Add IDE → High Performance) and `FORCE_DML=1` environment variable.
 
 - **DirectML runtime fallback** - Added runtime GPU-to-CPU fallback when DirectML encounters memory allocation errors during embedding. If DirectML fails after initialization (e.g., GPU runs out of memory during batch processing), the embedding engine automatically detects the error and seamlessly switches to CPU to complete the operation.
+
+- **Setup reconfiguration** - Setup now allows reconfiguring already-configured MCP clients. Previously, configured clients were hidden from the menu. Now all clients are shown with a "✓ configured" marker, and selecting one will remove the old config and install fresh.
 
 ## [1.6.9] - 2025-12-20
 

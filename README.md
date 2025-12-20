@@ -329,6 +329,17 @@ Search MCP automatically uses GPU acceleration when available for faster indexin
 
 GPU acceleration is automatic - no configuration needed. The system detects available hardware and selects the best option. Check `get_index_status` to see which compute device is being used.
 
+**Hybrid GPU Laptops (NVIDIA + Intel/AMD integrated):**
+
+On laptops with both discrete and integrated GPUs, Search MCP defaults to CPU to avoid DirectML selecting the wrong GPU. To enable GPU acceleration:
+
+1. Open **Windows Settings → System → Display → Graphics**
+2. Click **Add an app** and select your IDE (VS Code, Cursor, etc.) or terminal
+3. Click on the app → **Options** → Select **High performance**
+4. Set environment variable: `FORCE_DML=1`
+
+This tells Windows to use your discrete GPU (NVIDIA/AMD) for that application.
+
 For full technical documentation, see [ENGINEERING.RFC.md](docs/design/ENGINEERING.RFC.md).
 
 ---

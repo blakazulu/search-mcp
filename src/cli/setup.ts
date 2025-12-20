@@ -227,7 +227,16 @@ function fixWindowsPathNormalization(): void {
  */
 function configureWithClaudeCLI(): { success: boolean; message: string } {
   try {
+    // First, try to remove existing config (ignore errors if it doesn't exist)
+    try {
+      execSync('claude mcp remove search', { stdio: 'ignore' });
+    } catch {
+      // Ignore - server may not exist yet
+    }
+
+    // Now add the new config
     execSync(`claude mcp add search -- npx -y ${PACKAGE_NAME}`, { stdio: 'inherit' });
+
     // Fix Windows path normalization issue (forward slash vs backslash in .claude.json)
     if (os.platform() === 'win32') {
       fixWindowsPathNormalization();
@@ -891,17 +900,7 @@ export async function runSetup(options: SetupOptions = {}): Promise<void> {
       key: String(menuOptions.length + 1),
       label: 'Claude Code (via CLI) - Recommended',
       configured: isClaudeCLIConfigured,
-      action: async () => {
-        if (isClaudeCLIConfigured) {
-          // Remove existing and reconfigure
-          try {
-            execSync('claude mcp remove search', { stdio: 'ignore' });
-          } catch {
-            // Ignore removal errors
-          }
-        }
-        return configureWithClaudeCLI();
-      },
+      action: () => configureWithClaudeCLI(),
     });
   }
 

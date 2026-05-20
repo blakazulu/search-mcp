@@ -120,10 +120,10 @@ describe('MCP Server', () => {
   // --------------------------------------------------------------------------
 
   describe('tools registry', () => {
-    it('should export all 9 tools', async () => {
+    it('should export all 10 tools', async () => {
       const { tools } = await import('../../src/server.js');
 
-      expect(tools).toHaveLength(9);
+      expect(tools).toHaveLength(10);
     });
 
     it('should include create_index tool', async () => {

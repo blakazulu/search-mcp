@@ -26,6 +26,13 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 
+// Silence dotenv's promotional "tips" output. The `natural` dependency bundles
+// `dotenv` and calls `dotenv.config()` on import, which otherwise prints
+// advertising lines to the console during CLI/server startup. This must be set
+// before any module that pulls in `natural` is loaded — safe here because all
+// such modules are loaded later via dynamic `import()`.
+process.env.DOTENV_CONFIG_QUIET = 'true';
+
 // Early crash logging - write to file before any other imports that might fail
 function logCrash(error: unknown): void {
   try {

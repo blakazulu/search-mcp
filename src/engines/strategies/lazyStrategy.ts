@@ -14,7 +14,7 @@
  * - Graceful shutdown with dirty files persistence
  */
 
-import chokidar from 'chokidar';
+import chokidar, { type FSWatcher } from 'chokidar';
 import {
   IndexingStrategy,
   StrategyFileEvent,
@@ -87,7 +87,7 @@ export class LazyStrategy implements IndexingStrategy {
   private readonly dirtyFiles: DirtyFilesManager;
 
   // State
-  private watcher: chokidar.FSWatcher | null = null;
+  private watcher: FSWatcher | null = null;
   private active = false;
   private processedCount = 0;
   private lastActivity: Date | null = null;
@@ -171,10 +171,10 @@ export class LazyStrategy implements IndexingStrategy {
     this.watcher = chokidar.watch(this.projectPath, WATCHER_OPTIONS);
 
     // Bind event handlers
-    this.watcher.on('add', (path) => this.handleChokidarEvent('add', path));
-    this.watcher.on('change', (path) => this.handleChokidarEvent('change', path));
-    this.watcher.on('unlink', (path) => this.handleChokidarEvent('unlink', path));
-    this.watcher.on('error', (error) => this.handleError(error));
+    this.watcher.on('add', (path: string) => this.handleChokidarEvent('add', path));
+    this.watcher.on('change', (path: string) => this.handleChokidarEvent('change', path));
+    this.watcher.on('unlink', (path: string) => this.handleChokidarEvent('unlink', path));
+    this.watcher.on('error', (error: unknown) => this.handleError(error instanceof Error ? error : new Error(String(error))));
 
     // Wait for ready event
     await new Promise<void>((resolve) => {

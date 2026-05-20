@@ -805,7 +805,7 @@ async function executeTool(
     if (error instanceof z.ZodError) {
       throw new McpError(
         McpErrorCode.InvalidParams,
-        `Invalid parameters: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`
+        `Invalid parameters: ${error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`
       );
     }
 

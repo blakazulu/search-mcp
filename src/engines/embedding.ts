@@ -636,7 +636,6 @@ export class EmbeddingEngine {
         }
       }
 
-      // @ts-expect-error - TypeScript cannot handle the complex union type of pipeline()
       this.pipeline = await pipeline('feature-extraction', this.config.modelName, {
       device: effectiveDevice,
       dtype: 'fp32', // Use fp32 for consistent embeddings across devices

@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.5] - 2026-05-20
+
+### Changed
+
+- **Dependency updates** - Updated all dependencies to their latest versions, including major upgrades: `@huggingface/transformers` 3→4, `@lancedb/lancedb` 0.13→0.29, `@modelcontextprotocol/sdk` 1.5→1.29, `chokidar` 3→5, `zod` 3→4, `glob` 10→13, `ignore` 5→7, `is-binary-path` 2→3, `uuid` 9→14, `better-sqlite3` 11→12, `typescript` 5→6, and `vitest` 1→4.
+
+- **chokidar v5 migration** - The file watcher's `ignored` option was converted from a glob-string array to a path-matcher function. chokidar v4+ dropped glob support, so glob-based ignore patterns would no longer have excluded `node_modules/`, `.git/`, etc. The matcher tests each path against the hardcoded deny globs via `minimatch`.
+
+- **Zod v4 compatibility** - Updated validation error handling to use `ZodError.issues` instead of the removed `ZodError.errors` (`server.ts`, `storage/config.ts`, `storage/metadata.ts`).
+
+### Fixed
+
+- **Self-referential dependency** - Removed `@liraz-sbz/search-mcp` from its own `dependencies`. This bug caused npm to install an old v1.3.5 copy of the package nested inside its own `node_modules` on every install.
+
+- **dotenv startup noise** - Suppressed the promotional "tip" log lines (`◇ injected env (N) from .env // tip: ...`) printed during CLI/server startup. The `natural` dependency bundles `dotenv` and calls `config()` on import; `DOTENV_CONFIG_QUIET=true` is now set before any module that loads `natural`.
+
+### Removed
+
+- **`@types/uuid`** - Removed as a dev dependency; `uuid` v14 ships its own TypeScript types.
+
 ## [1.6.14] - 2025-12-20
 
 ### Fixed

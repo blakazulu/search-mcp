@@ -275,7 +275,7 @@ export async function loadConfig(indexPath: string): Promise<Config> {
     const result = ConfigSchema.safeParse(configWithoutDocs);
 
     if (!result.success) {
-      const errors = result.error.errors
+      const errors = result.error.issues
         .map((e) => `${e.path.join('.')}: ${e.message}`)
         .join('; ');
       logger.warn(

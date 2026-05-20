@@ -187,14 +187,19 @@ describe('File Watcher Engine', () => {
       });
     });
 
-    it('should have ignored patterns configured', () => {
+    it('should have an ignore matcher configured', () => {
+      // chokidar v4+ dropped glob support, so `ignored` is now a function
       expect(WATCHER_OPTIONS.ignored).toBeDefined();
-      expect(Array.isArray(WATCHER_OPTIONS.ignored)).toBe(true);
-      const ignored = WATCHER_OPTIONS.ignored as string[];
-      // Should include node_modules pattern
-      expect(ignored.some((p) => p.includes('node_modules'))).toBe(true);
-      // Should include .git pattern
-      expect(ignored.some((p) => p.includes('.git'))).toBe(true);
+      expect(typeof WATCHER_OPTIONS.ignored).toBe('function');
+      const ignored = WATCHER_OPTIONS.ignored as (p: string) => boolean;
+      // Should ignore node_modules
+      expect(ignored('/project/node_modules/pkg/index.js')).toBe(true);
+      // Should ignore .git
+      expect(ignored('/project/.git/config')).toBe(true);
+      // Should ignore deny-listed file extensions
+      expect(ignored('/project/debug.log')).toBe(true);
+      // Should NOT ignore regular source files
+      expect(ignored('/project/src/index.ts')).toBe(false);
     });
   });
 

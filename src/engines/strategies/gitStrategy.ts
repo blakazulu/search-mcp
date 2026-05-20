@@ -17,7 +17,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import chokidar from 'chokidar';
+import chokidar, { type FSWatcher } from 'chokidar';
 import {
   IndexingStrategy,
   StrategyFileEvent,
@@ -94,7 +94,7 @@ export class GitStrategy implements IndexingStrategy {
   private readonly debounceDelayMs: number;
 
   // State
-  private gitWatcher: chokidar.FSWatcher | null = null;
+  private gitWatcher: FSWatcher | null = null;
   private active = false;
   private processedCount = 0;
   private lastActivity: Date | null = null;
@@ -209,7 +209,7 @@ export class GitStrategy implements IndexingStrategy {
     // Bind event handlers
     this.gitWatcher.on('change', () => this.onGitChange());
     this.gitWatcher.on('add', () => this.onGitChange());
-    this.gitWatcher.on('error', (error) => this.handleError(error));
+    this.gitWatcher.on('error', (error: unknown) => this.handleError(error instanceof Error ? error : new Error(String(error))));
 
     // Wait for ready event
     await new Promise<void>((resolve) => {

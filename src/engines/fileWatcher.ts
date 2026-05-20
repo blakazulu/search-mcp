@@ -13,7 +13,8 @@
  * - Graceful error handling (watcher errors don't crash server)
  */
 
-import chokidar from 'chokidar';
+import chokidar, { type FSWatcher, type ChokidarOptions } from 'chokidar';
+import { Minimatch } from 'minimatch';
 import { IndexManager } from './indexManager.js';
 import { DocsIndexManager } from './docsIndexManager.js';
 import { IndexingPolicy, ALL_DENY_PATTERNS, isHardDenied } from './indexPolicy.js';
@@ -109,21 +110,48 @@ export const MAX_RESTART_ATTEMPTS = 3;
 export const RESTART_DELAY_MS = 5000;
 
 /**
- * Convert hardcoded deny patterns to chokidar-compatible patterns
+ * Pre-built ignore globs derived from the hardcoded deny list.
+ *
+ * Each deny pattern is anchored with a leading `**` so it matches anywhere
+ * in an absolute path. Directory patterns (e.g. `node_modules/**`) also get
+ * a bare-directory glob so the directory itself is ignored and chokidar
+ * never descends into it.
  */
-function getDenyPatternsForChokidar(): string[] {
-  // chokidar uses anymatch, which supports globs
-  // We need to convert our patterns to work with chokidar's ignored option
-  const patterns: string[] = [];
-
-  for (const pattern of ALL_DENY_PATTERNS) {
-    // chokidar's ignored option works with both globs and regex
-    patterns.push(`**/${pattern}`);
-    // Also add the pattern without the leading **/
-    patterns.push(pattern);
+const WATCHER_IGNORE_GLOBS: string[] = ALL_DENY_PATTERNS.flatMap((pattern) => {
+  const globs = [`**/${pattern}`];
+  const dirBase = pattern.replace(/\/\*\*$/, '');
+  if (dirBase !== pattern) {
+    globs.push(`**/${dirBase}`);
   }
+  return globs;
+});
 
-  return patterns;
+/**
+ * Pre-compiled matchers for the ignore globs.
+ *
+ * Built once at module load. The `minimatch()` function form recompiles its
+ * pattern on every call, which is costly here because chokidar invokes the
+ * `ignored` matcher for every directory entry on every traversal (and on
+ * Windows the whole tree is re-walked each poll interval).
+ */
+const WATCHER_IGNORE_MATCHERS: Minimatch[] = WATCHER_IGNORE_GLOBS.map(
+  (glob) => new Minimatch(glob, { nocase: true, dot: true })
+);
+
+/**
+ * Path matcher for chokidar's `ignored` option.
+ *
+ * chokidar v4+ dropped glob support, so `ignored` must be a function (or
+ * path/regex) rather than glob strings. This tests the path against the
+ * hardcoded deny globs.
+ *
+ * This is purely a performance optimization to avoid watching huge
+ * directories — the indexer re-checks `isHardDenied` on every event, so a
+ * file slipping past this filter is still excluded from the index.
+ */
+function isWatcherIgnored(testPath: string): boolean {
+  const normalized = testPath.replace(/\\/g, '/');
+  return WATCHER_IGNORE_MATCHERS.some((matcher) => matcher.match(normalized));
 }
 
 /**
@@ -134,8 +162,8 @@ function getDenyPatternsForChokidar(): string[] {
  * - interval: Throttle polling to avoid high CPU usage (Bug #18)
  * - binaryInterval: Higher interval for binary files which change less frequently
  */
-export const WATCHER_OPTIONS: chokidar.WatchOptions = {
-  ignored: getDenyPatternsForChokidar(),
+export const WATCHER_OPTIONS: ChokidarOptions = {
+  ignored: isWatcherIgnored,
   persistent: true,
   ignoreInitial: true, // Don't trigger events on startup scan
   awaitWriteFinish: {
@@ -212,7 +240,7 @@ export class FileWatcher {
    */
   private reconciliationEventQueue: FileEvent[] = [];
 
-  private watcher: chokidar.FSWatcher | null = null;
+  private watcher: FSWatcher | null = null;
   private isRunning = false;
   private stats: WatcherStats = {
     eventsProcessed: 0,
@@ -323,10 +351,10 @@ export class FileWatcher {
     this.watcher = chokidar.watch(this.projectPath, WATCHER_OPTIONS);
 
     // Bind event handlers
-    this.watcher.on('add', (path) => this.onAdd(path));
-    this.watcher.on('change', (path) => this.onChange(path));
-    this.watcher.on('unlink', (path) => this.onUnlink(path));
-    this.watcher.on('error', (error) => this.onError(error));
+    this.watcher.on('add', (path: string) => this.onAdd(path));
+    this.watcher.on('change', (path: string) => this.onChange(path));
+    this.watcher.on('unlink', (path: string) => this.onUnlink(path));
+    this.watcher.on('error', (error: unknown) => this.onError(error instanceof Error ? error : new Error(String(error))));
 
     // Wait for ready event
     await new Promise<void>((resolve) => {
